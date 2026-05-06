@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorldGenDemo</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #ddd;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+      canvas { display: block; }
+
+      .tabs { position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; gap: 4px; }
+      .tab {
+        background: rgba(0,0,0,0.55); color: #ddd; border: 1px solid #444;
+        padding: 6px 10px; cursor: pointer; font: inherit; border-radius: 4px;
+      }
+      .tab.active { background: rgba(80,120,200,0.6); border-color: #88a8ff; }
+
+      .panel { position: absolute; inset: 0; pointer-events: none; }
+      .panel.world > * { pointer-events: auto; }
+      .panel.builder { display: none; background: rgba(10,12,16,0.92); padding: 56px 16px 16px; overflow: auto; }
+      .panel.builder.active { display: block; pointer-events: auto; }
+
+      #hud {
+        position: absolute; bottom: 8px; left: 8px;
+        background: rgba(0,0,0,0.55); padding: 6px 10px; font-size: 12px; line-height: 1.45;
+        border: 1px solid #333; border-radius: 4px; pointer-events: none; white-space: pre;
+      }
+      #hint {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 6px; pointer-events: none;
+      }
+      #hint.hidden { display: none; }
+
+      .builder h2 { margin: 0 0 12px; font-size: 16px; }
+      .builder .row { display: flex; gap: 12px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+      .builder input[type=file] { color: #ddd; }
+      .builder button {
+        background: #2a3142; color: #ddd; border: 1px solid #444;
+        padding: 6px 10px; cursor: pointer; font: inherit; border-radius: 4px;
+      }
+      .builder button:hover { background: #3a4257; }
+      .builder canvas.preview { image-rendering: pixelated; max-width: 256px; max-height: 256px;
+        border: 1px solid #333; background: #111; }
+      .builder table { width: 100%; max-width: 720px; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+      .builder th, .builder td { border-bottom: 1px solid #2a2a2a; padding: 6px 8px; text-align: left; }
+      .builder .swatch { width: 22px; height: 22px; border: 1px solid #333; display: inline-block; vertical-align: middle; }
+      .builder select, .builder input[type=text] {
+        background: #181c24; color: #ddd; border: 1px solid #333; padding: 4px 6px; font: inherit; border-radius: 3px;
+      }
+      .builder textarea {
+        width: 100%; max-width: 720px; min-height: 160px;
+        background: #0e1118; color: #cfd6e0; border: 1px solid #2a2a2a; padding: 8px; font: inherit; border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="tabs">
+        <button class="tab active" data-tab="world">World</button>
+        <button class="tab" data-tab="builder">Scene Builder</button>
+      </div>
+
+      <div class="panel world" id="panel-world">
+        <div id="hint">click to fly · WASD · esc to release</div>
+        <div id="hud">loading…</div>
+      </div>
+
+      <div class="panel builder" id="panel-builder">
+        <h2>Scene Builder · bitmap → scene.json</h2>
+        <div class="row">
+          <input type="file" id="builder-file" accept="image/png,image/jpeg" />
+          <input type="text" id="builder-name" placeholder="scene name" value="my-scene" />
+          <label>tileSize <input type="text" id="builder-tile" value="1.0" style="width:60px"></label>
+        </div>
+        <div class="row">
+          <canvas class="preview" id="builder-preview" width="256" height="256"></canvas>
+          <div id="builder-summary" style="font-size:12px; line-height:1.5;"></div>
+        </div>
+        <div id="builder-table-wrap"></div>
+        <div class="row">
+          <button id="builder-generate">Generate scene.json</button>
+          <button id="builder-download">Download scene.json</button>
+          <button id="builder-download-png">Download map.png</button>
+        </div>
+        <textarea id="builder-output" placeholder="scene.json will appear here…" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

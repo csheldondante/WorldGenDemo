@@ -1,0 +1,36 @@
+{
+  "name": "forest-clearing",
+  "tileSize": 0.6,
+  "labels": [
+    {
+      "color": "#3a5a40",
+      "kind": "terrain",
+      "terrain": "forest"
+    },
+    {
+      "color": "#9bb56b",
+      "kind": "terrain",
+      "terrain": "plains"
+    },
+    {
+      "color": "#a89070",
+      "kind": "terrain",
+      "terrain": "path"
+    },
+    {
+      "color": "#3b6e8f",
+      "kind": "terrain",
+      "terrain": "water"
+    },
+    {
+      "color": "#21472e",
+      "kind": "asset",
+      "asset": "pine"
+    },
+    {
+      "color": "#6b6760",
+      "kind": "asset",
+      "asset": "boulder"
+    }
+  ]
+}

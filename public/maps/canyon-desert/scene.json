@@ -1,0 +1,41 @@
+{
+  "name": "canyon-desert",
+  "tileSize": 0.6,
+  "labels": [
+    {
+      "color": "#d4a373",
+      "kind": "terrain",
+      "terrain": "desert"
+    },
+    {
+      "color": "#7c3a1d",
+      "kind": "terrain",
+      "terrain": "canyon_wall"
+    },
+    {
+      "color": "#a89070",
+      "kind": "terrain",
+      "terrain": "path"
+    },
+    {
+      "color": "#3b6e8f",
+      "kind": "terrain",
+      "terrain": "water"
+    },
+    {
+      "color": "#5e824a",
+      "kind": "asset",
+      "asset": "cactus"
+    },
+    {
+      "color": "#7d6b5d",
+      "kind": "asset",
+      "asset": "shanty"
+    },
+    {
+      "color": "#b58857",
+      "kind": "asset",
+      "asset": "bridge"
+    }
+  ]
+}
