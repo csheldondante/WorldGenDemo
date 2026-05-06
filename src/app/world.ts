@@ -100,6 +100,12 @@ export async function startWorld(opts: WorldOptions) {
     scene.add(terrainMesh);
     tTerrain = performance.now() - t4;
 
+    // Position camera at the south edge looking north along +Z is wrong; we look down -Z by default.
+    // So place at +Z edge looking toward origin (yaw=0 = looking down -Z = "north").
+    const worldDepth = heightmap.height * heightmap.tileSize;
+    const startZ = worldDepth * 0.5 + 6;
+    cam.setStart([0, 8, startZ], 0, -0.18);
+
     const t5 = performance.now();
     const placement = placeAssets({ assetMap, terrainMap, heightmap, seed: 0xa5b1 });
     for (const m of placement.meshes) scene.add(m);

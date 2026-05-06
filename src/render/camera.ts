@@ -5,21 +5,34 @@ export interface FlyCamHandle {
   update(dtSec: number): void;
   dispose(): void;
   setAttached(el: HTMLElement, hintEl: HTMLElement | null): void;
+  setStart(position: [number, number, number], yaw: number, pitch: number): void;
 }
 
+/**
+ * Creative-mode-style fly camera:
+ *   WASD  — move on the XZ ground plane (yaw-only, never affected by pitch)
+ *   Space — up
+ *   Ctrl/C — down
+ *   Shift — boost
+ *   Mouse-look via pointer lock (click canvas to engage, esc to release)
+ */
 export function createFlyCam(): FlyCamHandle {
-  const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 500);
-  camera.position.set(0, 12, 22);
-  camera.lookAt(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 800);
+  // Default start; main app will override via setStart based on map size.
+  camera.position.set(0, 8, 60);
 
   const keys = new Set<string>();
-  let yaw = 0;
-  let pitch = 0;
+  let yaw = 0;     // rotation around world Y, 0 means looking down -Z
+  let pitch = 0;   // rotation around camera X
   let attachedEl: HTMLElement | null = null;
   let hintEl: HTMLElement | null = null;
   let pointerLocked = false;
 
-  const onKeyDown = (e: KeyboardEvent) => keys.add(e.code);
+  const onKeyDown = (e: KeyboardEvent) => {
+    keys.add(e.code);
+    // Prevent space from scrolling the page
+    if (e.code === "Space") e.preventDefault();
+  };
   const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
@@ -45,33 +58,49 @@ export function createFlyCam(): FlyCamHandle {
     if (!attachedEl) return;
     if (!document.pointerLockElement) attachedEl.requestPointerLock();
   };
-  // Wired in setAttached.
 
-  // Initialize yaw/pitch from current camera orientation
-  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, "YXZ");
-  yaw = e.y;
-  pitch = e.x;
+  // Apply initial orientation
+  camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
 
   return {
     camera,
     update(dt: number) {
       camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
-      const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 22 : 10) * dt;
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-      const up = new THREE.Vector3(0, 1, 0);
-      if (keys.has("KeyW")) camera.position.addScaledVector(forward, speed);
-      if (keys.has("KeyS")) camera.position.addScaledVector(forward, -speed);
-      if (keys.has("KeyA")) camera.position.addScaledVector(right, -speed);
-      if (keys.has("KeyD")) camera.position.addScaledVector(right, speed);
-      if (keys.has("Space")) camera.position.addScaledVector(up, speed);
-      if (keys.has("KeyC") || keys.has("ControlLeft")) camera.position.addScaledVector(up, -speed);
+      const boost = (keys.has("ShiftLeft") || keys.has("ShiftRight")) ? 2.4 : 1.0;
+      const speed = 14 * boost * dt;
+
+      // Yaw-only horizontal movement: forward = -Z rotated by yaw around Y.
+      // forward = (-sin(yaw), 0, -cos(yaw)); right = (cos(yaw), 0, -sin(yaw))
+      const sy = Math.sin(yaw), cy = Math.cos(yaw);
+      const fx = -sy, fz = -cy;
+      const rx = cy,  rz = -sy;
+
+      let dx = 0, dz = 0, dy = 0;
+      if (keys.has("KeyW")) { dx += fx; dz += fz; }
+      if (keys.has("KeyS")) { dx -= fx; dz -= fz; }
+      if (keys.has("KeyD")) { dx += rx; dz += rz; }
+      if (keys.has("KeyA")) { dx -= rx; dz -= rz; }
+      if (keys.has("Space")) dy += 1;
+      if (keys.has("KeyC") || keys.has("ControlLeft") || keys.has("ControlRight")) dy -= 1;
+
+      const len = Math.hypot(dx, dz);
+      if (len > 0) { dx /= len; dz /= len; }
+
+      camera.position.x += dx * speed;
+      camera.position.z += dz * speed;
+      camera.position.y += dy * speed;
     },
     setAttached(el: HTMLElement, hint: HTMLElement | null) {
       if (attachedEl) attachedEl.removeEventListener("click", onClick);
       attachedEl = el;
       hintEl = hint;
       attachedEl.addEventListener("click", onClick);
+    },
+    setStart(position, newYaw, newPitch) {
+      camera.position.set(position[0], position[1], position[2]);
+      yaw = newYaw;
+      pitch = newPitch;
+      camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);
