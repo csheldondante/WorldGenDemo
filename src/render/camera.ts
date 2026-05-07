@@ -69,17 +69,20 @@ export function createFlyCam(): FlyCamHandle {
       const boost = (keys.has("ShiftLeft") || keys.has("ShiftRight")) ? 2.4 : 1.0;
       const speed = 14 * boost * dt;
 
-      // Yaw-only horizontal movement: forward = -Z rotated by yaw around Y.
-      // forward = (-sin(yaw), 0, -cos(yaw)); right = (cos(yaw), 0, -sin(yaw))
-      const sy = Math.sin(yaw), cy = Math.cos(yaw);
-      const fx = -sy, fz = -cy;
-      const rx = cy,  rz = -sy;
+      // Forward derived from the actual camera quaternion (more robust than yaw-only math)
+      // and projected onto the XZ ground plane, so look-up/down does not affect WASD travel.
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      fwd.y = 0;
+      if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+      fwd.normalize();
+      // Right = forward × up (Y-up, right-handed)
+      const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0));
 
       let dx = 0, dz = 0, dy = 0;
-      if (keys.has("KeyW")) { dx += fx; dz += fz; }
-      if (keys.has("KeyS")) { dx -= fx; dz -= fz; }
-      if (keys.has("KeyD")) { dx += rx; dz += rz; }
-      if (keys.has("KeyA")) { dx -= rx; dz -= rz; }
+      if (keys.has("KeyW")) { dx += fwd.x;   dz += fwd.z; }
+      if (keys.has("KeyS")) { dx -= fwd.x;   dz -= fwd.z; }
+      if (keys.has("KeyD")) { dx += right.x; dz += right.z; }
+      if (keys.has("KeyA")) { dx -= right.x; dz -= right.z; }
       if (keys.has("Space")) dy += 1;
       if (keys.has("KeyC") || keys.has("ControlLeft") || keys.has("ControlRight")) dy -= 1;
 

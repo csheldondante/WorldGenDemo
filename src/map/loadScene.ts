@@ -5,9 +5,11 @@ export interface LoadedScene {
   scene: SceneFile;
   palette: Palette;
   labelMap: LabelMap;
+  /** The original bitmap, kept so the UI can show it in a minimap. */
+  image: HTMLImageElement;
 }
 
-async function fetchPng(url: string): Promise<{ width: number; height: number; pixels: Uint8ClampedArray }> {
+async function fetchPng(url: string): Promise<{ image: HTMLImageElement; width: number; height: number; pixels: Uint8ClampedArray }> {
   const img = new Image();
   img.crossOrigin = "anonymous";
   const loaded = new Promise<HTMLImageElement>((res, rej) => {
@@ -23,7 +25,7 @@ async function fetchPng(url: string): Promise<{ width: number; height: number; p
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(img, 0, 0);
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  return { width: canvas.width, height: canvas.height, pixels: data.data };
+  return { image: img, width: canvas.width, height: canvas.height, pixels: data.data };
 }
 
 export async function loadScene(name: string): Promise<LoadedScene> {
@@ -44,5 +46,5 @@ export async function loadScene(name: string): Promise<LoadedScene> {
     palette,
     tileSize: scene.tileSize,
   });
-  return { scene, palette, labelMap };
+  return { scene, palette, labelMap, image: png.image };
 }

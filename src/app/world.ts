@@ -1,5 +1,6 @@
 import { createSceneBundle } from "../render/scene";
 import { createFlyCam } from "../render/camera";
+import { createMinimap, type MinimapHandle } from "../render/minimap";
 import { loadScene } from "../map/loadScene";
 import { splitLayers } from "../map/splitLayers";
 import { buildHeightmap } from "../map/heightmap";
@@ -70,6 +71,7 @@ export async function startWorld(opts: WorldOptions) {
   const tStart = performance.now();
   let tLoad = 0, tParse = 0, tSplit = 0, tJfa = 0, tHeight = 0, tTerrain = 0, tComponents = 0;
   let warnCount = 0;
+  let minimap: MinimapHandle | null = null;
 
   try {
     const t0 = performance.now();
@@ -106,6 +108,16 @@ export async function startWorld(opts: WorldOptions) {
     const startZ = worldDepth * 0.5 + 6;
     cam.setStart([0, 8, startZ], 0, -0.18);
 
+    // Minimap shows the original bitmap with the camera's position + facing wedge.
+    minimap = createMinimap({
+      image: loaded.image,
+      mapWidthPixels: loaded.labelMap.width,
+      mapHeightPixels: loaded.labelMap.height,
+      tileSize: loaded.labelMap.tileSize,
+      camera: cam.camera,
+    });
+    opts.panelEl.appendChild(minimap.el);
+
     const t5 = performance.now();
     const placement = placeAssets({ assetMap, terrainMap, heightmap, seed: 0xa5b1 });
     for (const m of placement.meshes) scene.add(m);
@@ -141,6 +153,7 @@ export async function startWorld(opts: WorldOptions) {
     last = now;
     cam.update(dt);
     renderer.render(scene, cam.camera);
+    if (minimap) minimap.update();
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
