@@ -1,10 +1,13 @@
 import * as THREE from "three";
 import { createRegistry } from "../runtime/registry";
-import { writeBuffer } from "../runtime/buffer";
+import { readBuffer, writeBuffer } from "../runtime/buffer";
 import { startLoop } from "../runtime/loop";
 import { registerCoreBuffers, type RuntimeEvent } from "../buffers";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
+import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
+import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
+import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { EVENT_BUFFER_ID } from "../buffers/event";
 import { registerCoreSystems } from "../systems";
 import { attachInputListeners } from "../systems/input";
@@ -73,4 +76,33 @@ export function startWorld(opts: WorldOptions): void {
 
   // 6. Start the runtime loop — picks activeGraph from StateMachineBuffer each tick.
   startLoop(reg);
+
+  // 7. Expose a tiny debug snapshot for headless smoke tests + devtools probing.
+  //    Read-only; safe to leave in production for inspection.
+  (window as unknown as { __runtimeDebug?: () => unknown }).__runtimeDebug = () => {
+    const sm = readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
+    const refsData = readBuffer(reg.getBuffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID));
+    const timing = readBuffer(reg.getBuffer<TimingBufferData>(TIMING_BUFFER_ID));
+    const world = readBuffer(reg.getBuffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
+    return {
+      smState: sm.state,
+      activeGraph: sm.activeGraph,
+      pendingLoad: sm.pendingLoad,
+      pendingRebuild: sm.pendingRebuild ? "<payload>" : null,
+      rebuildGeneration: sm.rebuildGeneration,
+      sceneName: world.sceneName,
+      hasImage: !!world.image,
+      hasLabelMap: !!world.labelMap,
+      hasTerrainMap: !!world.terrainMap,
+      hasHeightmap: !!world.heightmap,
+      hasJfa: !!world.jfa,
+      terrainMeshSet: !!refsData.terrainMesh,
+      assetMeshCount: refsData.assetMeshes.length,
+      stages: timing.stages,
+      warnings: timing.warnings.slice(),
+      buffers: reg.listBuffers().map((b) => ({ id: b.id, version: b.version })),
+      systems: reg.listSystems().map((s) => s.id),
+      graphs: reg.listGraphs().map((g) => ({ id: g.id, order: g.order })),
+    };
+  };
 }

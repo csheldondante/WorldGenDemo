@@ -8,6 +8,13 @@ import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/ren
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
 import { MINIMAP_SYSTEM_ID } from "./minimap";
 import { CAMERA_MOVEMENT_SYSTEM_ID } from "./cameraMovement";
+import { LOAD_SCENE_SYSTEM_ID } from "./loadScene";
+import { PARSE_BITMAP_SYSTEM_ID } from "./pipeline/parseBitmap";
+import { SPLIT_LAYERS_SYSTEM_ID } from "./pipeline/splitLayers";
+import { JFA_SYSTEM_ID } from "./pipeline/jfa";
+import { HEIGHTMAP_SYSTEM_ID } from "./pipeline/heightmap";
+import { TERRAIN_MESH_SYSTEM_ID } from "./pipeline/terrainMesh";
+import { ASSET_PLACEMENT_SYSTEM_ID } from "./pipeline/assetPlacement";
 
 export const HUD_SYSTEM_ID = "hudSystem";
 
@@ -46,7 +53,22 @@ export function createHudSystem(): SystemDescriptor {
       { id: WORLD_DATA_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "read" },
     ],
-    runsAfter: [STATE_MACHINE_SYSTEM_ID, CAMERA_MOVEMENT_SYSTEM_ID, MINIMAP_SYSTEM_ID],
+    // Hud reads `timing`; every system that writes timing must run before us.
+    // (LoadScene writes timing in the Loading graph; pipeline systems write
+    // timing in the Rebuilding graph; both lists include systems that may
+    // not be in every graph — graph builder silently drops out-of-graph edges.)
+    runsAfter: [
+      STATE_MACHINE_SYSTEM_ID,
+      CAMERA_MOVEMENT_SYSTEM_ID,
+      MINIMAP_SYSTEM_ID,
+      LOAD_SCENE_SYSTEM_ID,
+      PARSE_BITMAP_SYSTEM_ID,
+      SPLIT_LAYERS_SYSTEM_ID,
+      JFA_SYSTEM_ID,
+      HEIGHTMAP_SYSTEM_ID,
+      TERRAIN_MESH_SYSTEM_ID,
+      ASSET_PLACEMENT_SYSTEM_ID,
+    ],
     execute: ({ buffer }) => {
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
       const t = readBuffer(buffer<TimingBufferData>(TIMING_BUFFER_ID));
