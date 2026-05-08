@@ -13,7 +13,11 @@ export function createSceneBundle(canvas: HTMLCanvasElement): SceneBundle {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.setPixelRatio(Math.min(2, devicePixelRatio));
-  renderer.setSize(innerWidth, innerHeight, false);
+  // Size against the canvas's parent (or the canvas itself) rather than innerWidth.
+  const host = canvas.parentElement;
+  const w = host?.clientWidth || innerWidth;
+  const h = host?.clientHeight || innerHeight;
+  renderer.setSize(w, h, false);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x88aacc);

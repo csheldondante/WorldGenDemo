@@ -34,18 +34,28 @@ export async function startWorld(opts: WorldOptions) {
 
   const canvas = document.createElement("canvas");
   canvas.style.position = "absolute";
-  canvas.style.inset = "0";
+  canvas.style.top = "0";
+  canvas.style.left = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.display = "block";
   opts.panelEl.insertBefore(canvas, opts.panelEl.firstChild);
 
   const { scene, renderer } = createSceneBundle(canvas);
   const cam = createFlyCam();
   cam.setAttached(canvas, opts.hintEl);
 
-  window.addEventListener("resize", () => {
-    cam.camera.aspect = innerWidth / innerHeight;
+  function resize() {
+    const w = opts.panelEl.clientWidth || innerWidth;
+    const h = opts.panelEl.clientHeight || innerHeight;
+    cam.camera.aspect = w / h;
     cam.camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight, false);
-  });
+    renderer.setSize(w, h, false);
+  }
+  resize();
+  window.addEventListener("resize", resize);
+  const ro = new ResizeObserver(resize);
+  ro.observe(opts.panelEl);
 
   const url = new URL(location.href);
   const sceneName = url.searchParams.get("map") ?? "canyon-desert";
