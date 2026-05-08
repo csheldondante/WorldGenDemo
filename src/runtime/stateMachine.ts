@@ -14,7 +14,10 @@ import type { GraphId, SystemDescriptor } from "./system";
  * to bootstrap initial scene load — no separate "Loading" state.
  */
 
-export type RuntimeState = "Startup" | "Loading" | "Rebuilding" | "Running";
+export type RuntimeState = "Startup" | "Loading" | "Rebuilding" | "Running" | "Builder";
+
+/** Mode payload — extend if more modes ship. */
+export type RuntimeMode = "world" | "builder";
 
 export interface RebuildPayload {
   /** Display name for the HUD; not used by the pipeline. */
@@ -30,7 +33,8 @@ export interface RebuildPayload {
 export type RuntimeEvent =
   | { type: "LoadRequested"; payload: { sceneName: string } }
   | { type: "RebuildRequested"; payload: RebuildPayload }
-  | { type: "WorldReady" };
+  | { type: "WorldReady" }
+  | { type: "ModeRequested"; payload: { mode: RuntimeMode } };
 
 export interface StateMachineBufferData {
   state: RuntimeState;
@@ -84,6 +88,21 @@ export function buildRuntimeFsm(initial: RuntimeState = "Startup"): Fsm<RuntimeS
   fsm.addTransition({ from: "Running", on: "LoadRequested", to: "Loading" });
   // Re-build while running (e.g. painter sends edits)
   fsm.addTransition({ from: "Running", on: "RebuildRequested", to: "Rebuilding" });
+  // Mode swap to/from Builder
+  fsm.addTransition({
+    from: "Running",
+    on: "ModeRequested",
+    to: "Builder",
+    guard: (ev) => ev.type === "ModeRequested" && ev.payload.mode === "builder",
+  });
+  fsm.addTransition({
+    from: "Builder",
+    on: "ModeRequested",
+    to: "Running",
+    guard: (ev) => ev.type === "ModeRequested" && ev.payload.mode === "world",
+  });
+  // Builder can request a rebuild (Send-to-World)
+  fsm.addTransition({ from: "Builder", on: "RebuildRequested", to: "Rebuilding" });
   return fsm;
 }
 
@@ -97,6 +116,7 @@ const STATE_TO_GRAPH: Record<RuntimeState, GraphId> = {
   Loading: "Loading",
   Running: "Running",
   Rebuilding: "Rebuilding",
+  Builder: "Builder",
 };
 
 export function createStateMachineSystem(): SystemDescriptor {

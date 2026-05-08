@@ -8,6 +8,8 @@ import { createStateMachineSystem } from "../runtime/stateMachine";
 import { createAccumulator, createInputSystem, type InputAccumulator } from "./input";
 import { createCameraMovementSystem } from "./cameraMovement";
 import { createLoadSceneSystem } from "./loadScene";
+import { createBuilderAccumulator, createBuilderInputSystem, type BuilderInputAccumulator } from "./builderInput";
+import { createBuilderSystem } from "./builder";
 import { createRenderSystem } from "./render";
 import { createMinimapSystem } from "./minimap";
 import { createHudSystem } from "./hud";
@@ -20,6 +22,7 @@ import { createAssetPlacementSystem } from "./pipeline/assetPlacement";
 
 export interface CoreSystems {
   inputAccumulator: InputAccumulator;
+  builderAccumulator: BuilderInputAccumulator;
 }
 
 /**
@@ -28,6 +31,7 @@ export interface CoreSystems {
  */
 export function registerCoreSystems(reg: Registry): CoreSystems {
   const inputAccumulator = createAccumulator();
+  const builderAccumulator = createBuilderAccumulator();
   reg.registerSystem(createStateMachineSystem());
   reg.registerSystem(createInputSystem(inputAccumulator));
   reg.registerSystem(createCameraMovementSystem());
@@ -41,7 +45,9 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createHeightmapSystem());
   reg.registerSystem(createTerrainMeshSystem());
   reg.registerSystem(createAssetPlacementSystem());
-  return { inputAccumulator };
+  reg.registerSystem(createBuilderInputSystem(builderAccumulator));
+  reg.registerSystem(createBuilderSystem(builderAccumulator));
+  return { inputAccumulator, builderAccumulator };
 }
 
 export * from "./input";
@@ -50,6 +56,8 @@ export * from "./loadScene";
 export * from "./render";
 export * from "./minimap";
 export * from "./hud";
+export * from "./builderInput";
+export * from "./builder";
 export * from "./pipeline/parseBitmap";
 export * from "./pipeline/splitLayers";
 export * from "./pipeline/jfa";

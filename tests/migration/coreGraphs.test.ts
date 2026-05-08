@@ -24,8 +24,8 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
-    const { loading, running, rebuilding } = buildAndRegisterCoreGraphs(reg);
-    for (const g of [loading, running, rebuilding]) {
+    const { loading, running, rebuilding, builder } = buildAndRegisterCoreGraphs(reg);
+    for (const g of [loading, running, rebuilding, builder]) {
       expect(g.order.length).toBe(g.nodes.length);
       // Ordering: every edge respected
       const pos = new Map(g.order.map((id, i) => [id, i] as const));

@@ -15,6 +15,7 @@ import { JFA_SYSTEM_ID } from "./pipeline/jfa";
 import { HEIGHTMAP_SYSTEM_ID } from "./pipeline/heightmap";
 import { TERRAIN_MESH_SYSTEM_ID } from "./pipeline/terrainMesh";
 import { ASSET_PLACEMENT_SYSTEM_ID } from "./pipeline/assetPlacement";
+import { BUILDER_SYSTEM_ID } from "./builder";
 
 export const HUD_SYSTEM_ID = "hudSystem";
 
@@ -68,6 +69,7 @@ export function createHudSystem(): SystemDescriptor {
       HEIGHTMAP_SYSTEM_ID,
       TERRAIN_MESH_SYSTEM_ID,
       ASSET_PLACEMENT_SYSTEM_ID,
+      BUILDER_SYSTEM_ID,
     ],
     execute: ({ buffer }) => {
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
