@@ -1,14 +1,16 @@
+import * as THREE from "three";
+import { createRegistry } from "../runtime/registry";
+import { writeBuffer } from "../runtime/buffer";
+import { startLoop } from "../runtime/loop";
+import { registerCoreBuffers, type RuntimeEvent } from "../buffers";
+import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
+import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
+import { EVENT_BUFFER_ID } from "../buffers/event";
+import { registerCoreSystems } from "../systems";
+import { attachInputListeners } from "../systems/input";
+import { buildAndRegisterCoreGraphs } from "./graphs";
 import { createSceneBundle } from "../render/scene";
-import { createFlyCam } from "../render/camera";
-import { createMinimap, type MinimapHandle } from "../render/minimap";
 import { loadScene } from "../map/loadScene";
-import { splitLayers } from "../map/splitLayers";
-import { buildHeightmap } from "../map/heightmap";
-import { runJFA } from "../map/jfa";
-import { buildTerrainMesh } from "../map/terrainMesh";
-import { placeAssets } from "../map/placeAssets";
-import { buildProceduralTextures } from "../terrain/textures";
-import { registerBuiltinAssets } from "../assets/register";
 
 export interface WorldOptions {
   hudEl: HTMLElement;
@@ -16,170 +18,83 @@ export interface WorldOptions {
   panelEl: HTMLElement;
 }
 
-interface Timings {
-  load: number;
-  parse: number;
-  split: number;
-  jfa: number;
-  height: number;
-  terrain: number;
-  components: number;
-  total: number;
-  warnings: number;
-  scene: string;
-}
-
 export async function startWorld(opts: WorldOptions) {
-  registerBuiltinAssets();
-
   const canvas = document.createElement("canvas");
-  canvas.style.position = "absolute";
-  canvas.style.top = "0";
-  canvas.style.left = "0";
-  canvas.style.width = "100%";
-  canvas.style.height = "100%";
-  canvas.style.display = "block";
+  canvas.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; display:block;";
   opts.panelEl.insertBefore(canvas, opts.panelEl.firstChild);
 
   const { scene, renderer } = createSceneBundle(canvas);
-  const cam = createFlyCam();
-  cam.setAttached(canvas, opts.hintEl);
 
-  function resize() {
+  // 1. Registry + core buffers + core systems + graphs
+  const reg = createRegistry();
+  registerCoreBuffers(reg);
+  const { inputAccumulator } = registerCoreSystems(reg);
+  buildAndRegisterCoreGraphs(reg); // validates: throws if any contract is violated
+
+  // 2. Wire RenderRefsBuffer with concrete Three.js handles + DOM refs
+  const refs = reg.getBuffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID);
+  writeBuffer(refs, (d) => {
+    d.renderer = renderer;
+    d.scene = scene;
+    // We use a fresh PerspectiveCamera owned by the runtime; RenderSystem mirrors the buffer into it.
+    d.threeCamera = new THREE.PerspectiveCamera(70, 1, 0.1, 800);
+    d.canvas = canvas;
+    d.panelEl = opts.panelEl;
+    d.hudEl = opts.hudEl;
+    d.hintEl = opts.hintEl;
+  });
+
+  // 3. Sync camera aspect to viewport, observe panel resize
+  const cam = reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID);
+  function applyResize() {
     const w = opts.panelEl.clientWidth || innerWidth;
     const h = opts.panelEl.clientHeight || innerHeight;
-    cam.camera.aspect = w / h;
-    cam.camera.updateProjectionMatrix();
+    writeBuffer(cam, (d) => { d.aspect = w / h; });
     renderer.setSize(w, h, false);
   }
-  resize();
-  window.addEventListener("resize", resize);
-  const ro = new ResizeObserver(resize);
-  ro.observe(opts.panelEl);
+  applyResize();
+  window.addEventListener("resize", applyResize);
+  new ResizeObserver(applyResize).observe(opts.panelEl);
 
+  // 4. DOM input listeners feed the accumulator (handles click → pointer-lock)
+  attachInputListeners(inputAccumulator, { pointerLockTarget: canvas });
+  document.addEventListener("pointerlockchange", () => {
+    opts.hintEl.classList.toggle("hidden", !!document.pointerLockElement);
+  });
+
+  // 5. Bootstrap initial scene: fetch + emit RebuildRequested
   const url = new URL(location.href);
   const sceneName = url.searchParams.get("map") ?? "canyon-desert";
-
-  function setHud(t: Partial<Timings>) {
-    const lines = [
-      `scene: ${t.scene ?? sceneName}`,
-      `load:        ${(t.load ?? 0).toFixed(1).padStart(6)} ms`,
-      `parse:       ${(t.parse ?? 0).toFixed(1).padStart(6)} ms`,
-      `split:       ${(t.split ?? 0).toFixed(1).padStart(6)} ms`,
-      `jfa:         ${(t.jfa ?? 0).toFixed(1).padStart(6)} ms`,
-      `heightmap:   ${(t.height ?? 0).toFixed(1).padStart(6)} ms`,
-      `terrainMesh: ${(t.terrain ?? 0).toFixed(1).padStart(6)} ms`,
-      `assets:      ${(t.components ?? 0).toFixed(1).padStart(6)} ms`,
-      `total:       ${(t.total ?? 0).toFixed(1).padStart(6)} ms`,
-      `warnings:    ${t.warnings ?? 0}`,
-    ];
-    opts.hudEl.textContent = lines.join("\n");
-  }
-
-  setHud({ scene: sceneName });
-
-  const tStart = performance.now();
-  let tLoad = 0, tParse = 0, tSplit = 0, tJfa = 0, tHeight = 0, tTerrain = 0, tComponents = 0;
-  let warnCount = 0;
-  let minimap: MinimapHandle | null = null;
-
   try {
-    const t0 = performance.now();
     const loaded = await loadScene(sceneName);
-    tLoad = performance.now() - t0;
-    tParse = 0; // parseBitmap runs inside loadScene already; we don't separate here
-
-    const t1 = performance.now();
-    const { terrainMap, assetMap } = splitLayers(loaded.labelMap);
-    tSplit = performance.now() - t1;
-
-    const t2 = performance.now();
-    const jfa = runJFA(renderer, terrainMap);
-    tJfa = performance.now() - t2;
-
-    const t3 = performance.now();
-    const heightmap = buildHeightmap(terrainMap, { blurPasses: 2, jitter: 0.04, seed: 1 });
-    tHeight = performance.now() - t3;
-
-    const t4 = performance.now();
-    const textures = buildProceduralTextures();
-    const terrainMesh = buildTerrainMesh(heightmap, {
-      distance: jfa.distance,
-      gradient: jfa.gradient,
-      channelTerrains: jfa.channelTerrains,
-      textures,
+    const events = reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID);
+    writeBuffer(events, (d) => {
+      d.push({
+        type: "RebuildRequested",
+        payload: {
+          sceneName,
+          pixels: extractPixels(loaded.image, loaded.labelMap.width, loaded.labelMap.height),
+          width: loaded.labelMap.width,
+          height: loaded.labelMap.height,
+          scene: loaded.scene,
+          image: loaded.image,
+        },
+      });
     });
-    scene.add(terrainMesh);
-    tTerrain = performance.now() - t4;
-
-    // Position camera at the south edge looking north along +Z is wrong; we look down -Z by default.
-    // So place at +Z edge looking toward origin (yaw=0 = looking down -Z = "north").
-    const worldDepth = heightmap.height * heightmap.tileSize;
-    const startZ = worldDepth * 0.5 + 6;
-    cam.setStart([0, 8, startZ], 0, -0.18);
-
-    // Minimap shows the original bitmap with the camera's position + facing wedge.
-    minimap = createMinimap({
-      image: loaded.image,
-      mapWidthPixels: loaded.labelMap.width,
-      mapHeightPixels: loaded.labelMap.height,
-      tileSize: loaded.labelMap.tileSize,
-      camera: cam.camera,
-    });
-    opts.panelEl.appendChild(minimap.el);
-
-    const t5 = performance.now();
-    const placement = placeAssets({ assetMap, terrainMap, heightmap, seed: 0xa5b1 });
-    for (const m of placement.meshes) scene.add(m);
-    tComponents = performance.now() - t5;
-    warnCount = placement.warnings.length;
-    if (placement.warnings.length) {
-      // eslint-disable-next-line no-console
-      console.warn("placement warnings:", placement.warnings);
-    }
   } catch (err) {
-    console.error(err);
+    console.error("initial scene load failed", err);
     opts.hudEl.textContent = `error: ${(err as Error).message}\n(see console)`;
   }
 
-  const tTotal = performance.now() - tStart;
-  setHud({
-    scene: sceneName,
-    load: tLoad,
-    parse: tParse,
-    split: tSplit,
-    jfa: tJfa,
-    height: tHeight,
-    terrain: tTerrain,
-    components: tComponents,
-    total: tTotal,
-    warnings: warnCount,
-  });
+  // 6. Start the runtime loop. It picks the activeGraph from StateMachineBuffer each tick.
+  startLoop(reg);
+}
 
-  let last = performance.now();
-  let frameCount = 0;
-  const tick = () => {
-    const now = performance.now();
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    cam.update(dt);
-    renderer.render(scene, cam.camera);
-    if (minimap) minimap.update();
-
-    // Debug: every 30 frames, append camera state to HUD so the user can see exactly
-    // what direction "forward" is in world space when they press W.
-    frameCount++;
-    if (frameCount % 30 === 0) {
-      const dbg = cam.debug();
-      const yawDeg = (dbg.yaw * 180 / Math.PI).toFixed(0);
-      const lines = (opts.hudEl.textContent ?? "").split("\n");
-      const dbgLine = `cam: x=${dbg.pos[0].toFixed(1)} z=${dbg.pos[2].toFixed(1)} yaw=${yawDeg}° fwd=(${dbg.fwdXZ[0].toFixed(2)},${dbg.fwdXZ[1].toFixed(2)})`;
-      // Replace or append the debug line
-      const idx = lines.findIndex((l) => l.startsWith("cam:"));
-      if (idx >= 0) lines[idx] = dbgLine; else lines.push(dbgLine);
-      opts.hudEl.textContent = lines.join("\n");
-    }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+function extractPixels(image: HTMLImageElement, w: number, h: number): Uint8ClampedArray {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(image, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h).data;
 }

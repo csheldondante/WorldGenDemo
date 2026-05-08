@@ -12,14 +12,12 @@
  * Runtime-agnostic.
  */
 export class SpatialHash2D<T> {
-  private readonly cellSize: number;
   private readonly invCell: number;
   private readonly buckets = new Map<string, Map<T, [number, number]>>();
   private readonly itemCell = new Map<T, string>();
 
   constructor(cellSize: number) {
     if (cellSize <= 0) throw new Error("cellSize must be positive");
-    this.cellSize = cellSize;
     this.invCell = 1 / cellSize;
   }
 

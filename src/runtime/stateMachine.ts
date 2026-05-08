@@ -15,26 +15,40 @@ import type { GraphId, SystemDescriptor } from "./system";
 
 export type RuntimeState = "Running" | "Rebuilding";
 
+export interface RebuildPayload {
+  /** Display name for the HUD; not used by the pipeline. */
+  sceneName: string;
+  pixels: Uint8ClampedArray;
+  width: number;
+  height: number;
+  scene: import("../core/types").SceneFile;
+  /** The original PNG, kept so the minimap can render it. */
+  image: HTMLImageElement;
+}
+
 export type RuntimeEvent =
-  | {
-      type: "RebuildRequested";
-      payload:
-        | { kind: "byName"; name: string }
-        | {
-            kind: "fromBitmap";
-            pixels: Uint8ClampedArray;
-            width: number;
-            height: number;
-            scene: import("../core/types").SceneFile;
-          };
-    }
+  | { type: "RebuildRequested"; payload: RebuildPayload }
   | { type: "WorldReady" };
 
 export interface StateMachineBufferData {
   state: RuntimeState;
   activeGraph: GraphId;
-  /** Events that triggered the current tick's transitions. Read-only for downstream systems. */
+  /**
+   * Events that triggered the current tick's transitions. Read-only for
+   * downstream systems within the same tick.
+   */
   pendingEvents: RuntimeEvent[];
+  /**
+   * Rebuild payload that survives across ticks until the rebuild completes.
+   * Set when entering Rebuilding; read by pipeline stages; cleared when
+   * returning to Running.
+   */
+  pendingRebuild: RebuildPayload | null;
+  /**
+   * Monotonically-increasing counter, bumped each time SM enters Rebuilding.
+   * Pipeline systems use this to fire exactly once per rebuild via a closure.
+   */
+  rebuildGeneration: number;
 }
 
 export const STATE_MACHINE_SYSTEM_ID = "stateMachineSystem";
@@ -81,14 +95,30 @@ export function createStateMachineSystem(): SystemDescriptor {
       writeBuffer(sm, (d) => {
         d.pendingEvents = drained;
       });
+      const startState = fsm.state;
+      let newPendingRebuild: RebuildPayload | null = readBuffer(sm).pendingRebuild;
+      let bumpGeneration = false;
       for (const ev of drained) {
-        fsm.dispatch(ev);
+        const prev = fsm.state;
+        const r = fsm.dispatch(ev);
+        if (!r.transitioned) continue;
+        if (prev !== "Rebuilding" && fsm.state === "Rebuilding" && ev.type === "RebuildRequested") {
+          newPendingRebuild = ev.payload;
+          bumpGeneration = true;
+        }
+        if (prev === "Rebuilding" && fsm.state !== "Rebuilding") {
+          newPendingRebuild = null;
+        }
       }
       const newState = fsm.state;
       writeBuffer(sm, (d) => {
         d.state = newState;
         d.activeGraph = STATE_TO_GRAPH[newState];
+        d.pendingRebuild = newPendingRebuild;
+        if (bumpGeneration) d.rebuildGeneration += 1;
       });
+      // Reference startState so eslint/ts won't complain (kept for future debug hooks).
+      void startState;
     },
   };
 }
