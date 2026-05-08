@@ -130,6 +130,33 @@ describe("Fsm", () => {
     expect(m.history().length).toBeLessThanOrEqual(3);
   });
 
+  it("onUnhandled fires with reason='unmatched' when no rule matches", () => {
+    const seen: any[] = [];
+    const m = new Fsm<S, E>("Idle", { onUnhandled: (info) => seen.push(info) });
+    m.addTransition({ from: "Idle", on: "start", to: "Running" });
+    m.dispatch({ type: "pause" }); // no rule
+    expect(seen.length).toBe(1);
+    expect(seen[0].reason).toBe("unmatched");
+    expect(seen[0].state).toBe("Idle");
+  });
+
+  it("onUnhandled fires with reason='self-transition' when to===from", () => {
+    const seen: any[] = [];
+    const m = new Fsm<S, E>("Idle", { onUnhandled: (info) => seen.push(info) });
+    m.addTransition({ from: "*", on: "start", to: "Idle" }); // Idle->Idle
+    m.dispatch({ type: "start" });
+    expect(seen.length).toBe(1);
+    expect(seen[0].reason).toBe("self-transition");
+  });
+
+  it("onUnhandled does not fire on a real transition", () => {
+    const seen: any[] = [];
+    const m = new Fsm<S, E>("Idle", { onUnhandled: (info) => seen.push(info) });
+    m.addTransition({ from: "Idle", on: "start", to: "Running" });
+    m.dispatch({ type: "start" });
+    expect(seen.length).toBe(0);
+  });
+
   it("effect runs on transition", () => {
     const m = fresh();
     const effect = vi.fn();

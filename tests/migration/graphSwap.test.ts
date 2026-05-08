@@ -25,6 +25,10 @@ describe("Graph swap via state machine", () => {
     registerCoreBuffers(reg);
     reg.registerSystem(createStateMachineSystem());
 
+    // Put SM into Running first (default initial state is Startup).
+    const smBuf = reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID);
+    writeBuffer(smBuf, (d) => { d.state = "Running"; d.activeGraph = "Running"; });
+
     const events = reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID);
     writeBuffer(events, (d) => { d.push({ type: "RebuildRequested", payload: synthRebuild() }); });
 

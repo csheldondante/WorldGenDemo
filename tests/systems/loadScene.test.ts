@@ -43,15 +43,19 @@ describe("LoadSceneSystem", () => {
   });
 
   it("does nothing when pendingLoad is null", async () => {
-    const { reg, events } = setupReg();
-    // sm state defaults to Loading; pendingLoad is null
+    const { reg, sm, events } = setupReg();
+    writeBuffer(sm, (d) => { d.state = "Loading"; d.activeGraph = "Loading"; d.pendingLoad = null; });
     runGraphOnce(reg);
     expect(readBuffer(events).length).toBe(0);
   });
 
   it("emits RebuildRequested when fetch resolves successfully", async () => {
     const { reg, sm, events } = setupReg();
-    writeBuffer(sm, (d) => { d.pendingLoad = { sceneName: "tiny" }; });
+    writeBuffer(sm, (d) => {
+      d.state = "Loading";
+      d.activeGraph = "Loading";
+      d.pendingLoad = { sceneName: "tiny" };
+    });
 
     // Mock fetch + Image. The system uses loadScene() which uses fetch + new Image()
     const sceneJson = JSON.stringify({
@@ -101,7 +105,11 @@ describe("LoadSceneSystem", () => {
 
   it("records error to TimingBuffer when fetch fails", async () => {
     const { reg, sm, timing } = setupReg();
-    writeBuffer(sm, (d) => { d.pendingLoad = { sceneName: "missing" }; });
+    writeBuffer(sm, (d) => {
+      d.state = "Loading";
+      d.activeGraph = "Loading";
+      d.pendingLoad = { sceneName: "missing" };
+    });
 
     const _fetchMock = vi.fn(async () => ({ ok: false } as unknown as Response));
     vi.stubGlobal("fetch", _fetchMock);

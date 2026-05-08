@@ -11,6 +11,6 @@ export function createStateMachineBuffer(): Buffer<StateMachineBufferData> {
   return createBuffer<StateMachineBufferData>({
     id: STATE_MACHINE_BUFFER_ID,
     description: "Active runtime state + the graph id the scheduler should run this tick.",
-    initial: { state: "Loading", activeGraph: "Loading", pendingEvents: [], pendingLoad: null, pendingRebuild: null, rebuildGeneration: 0 },
+    initial: { state: "Startup", activeGraph: "Loading", pendingEvents: [], pendingLoad: null, pendingRebuild: null, rebuildGeneration: 0 },
   });
 }

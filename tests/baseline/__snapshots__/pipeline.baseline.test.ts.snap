@@ -1,0 +1,173 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Baseline: buildHeightmap (approx for FP noise) > snaps heightmap with 4-decimal tolerance 1`] = `
+{
+  "heightmap.5x5": {
+    "data": [
+      3.475,
+      2.45,
+      1.0833,
+      0.4,
+      0.4,
+      2.45,
+      1.7667,
+      0.8556,
+      0.4,
+      0.4,
+      1.0833,
+      0.8556,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+      0.4,
+    ],
+    "kind": "Float32Array",
+    "length": 25,
+  },
+}
+`;
+
+exports[`Baseline: connectedComponents > snaps component groupings for the canonical 5x5 1`] = `
+{
+  "components.5x5": [
+    {
+      "assetIdInterned": 2,
+      "id": 1,
+      "pixels": [
+        8,
+      ],
+    },
+    {
+      "assetIdInterned": 1,
+      "id": 2,
+      "pixels": [
+        17,
+      ],
+    },
+  ],
+}
+`;
+
+exports[`Baseline: parseBitmap > snaps the canonical 5x5 fixture 1`] = `
+{
+  "parseBitmap.5x5": {
+    "data": {
+      "data": [
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+      ],
+      "kind": "Int32Array",
+      "length": 25,
+    },
+    "height": 5,
+    "tileSize": 1,
+    "width": 5,
+  },
+}
+`;
+
+exports[`Baseline: splitLayers > snaps terrainMap (with majority-fill) and assetMap for the canonical 5x5 1`] = `
+{
+  "splitLayers.5x5": {
+    "asset": {
+      "data": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+      ],
+      "kind": "Int32Array",
+      "length": 25,
+    },
+    "assetIds": [
+      "",
+      "cactus",
+      "shanty",
+    ],
+    "terrain": {
+      "data": [
+        4,
+        4,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+      ],
+      "kind": "Int32Array",
+      "length": 25,
+    },
+  },
+}
+`;

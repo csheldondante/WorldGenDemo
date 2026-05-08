@@ -22,9 +22,25 @@ export interface FsmHistoryEntry<S extends string, T extends string> {
   via: T;
 }
 
-export interface FsmOptions {
+export interface UnhandledInfo<S, E> {
+  /** "unmatched": no transition rule applied for this event in this state.
+   *  "self-transition": a rule matched but it would have transitioned to the
+   *  current state — treated as a no-op, but worth logging because it's
+   *  often a sign of a missing distinct target. */
+  reason: "unmatched" | "self-transition";
+  event: E;
+  state: S;
+}
+
+export interface FsmOptions<S = string, E = { type: string }> {
   /** Maximum number of history entries kept; older entries are dropped. */
   historyLimit?: number;
+  /**
+   * Fired when `dispatch()` does not produce a transition. Use to surface
+   * illegal-event or self-transition smells in dev (the runtime wires this
+   * to a dev-only console.warn).
+   */
+  onUnhandled?: (info: UnhandledInfo<S, E>) => void;
 }
 
 export class Fsm<S extends string, E extends { type: string }> {
@@ -34,10 +50,12 @@ export class Fsm<S extends string, E extends { type: string }> {
   private readonly leaveHooks = new Map<S, Array<(to: S) => void>>();
   private readonly _history: FsmHistoryEntry<S, E["type"]>[] = [];
   private readonly historyLimit: number;
+  private readonly onUnhandled?: (info: UnhandledInfo<S, E>) => void;
 
-  constructor(initial: S, options: FsmOptions = {}) {
+  constructor(initial: S, options: FsmOptions<S, E> = {}) {
     this.state = initial;
     this.historyLimit = options.historyLimit ?? 64;
+    this.onUnhandled = options.onUnhandled;
   }
 
   addTransition(t: Transition<S, E>): void {
@@ -91,7 +109,12 @@ export class Fsm<S extends string, E extends { type: string }> {
   dispatch(event: E): { transitioned: boolean; from: S; to: S } {
     const from = this.state;
     const t = this.match(event, from);
-    if (!t || t.to === from) {
+    if (!t) {
+      this.onUnhandled?.({ reason: "unmatched", event, state: from });
+      return { transitioned: false, from, to: from };
+    }
+    if (t.to === from) {
+      this.onUnhandled?.({ reason: "self-transition", event, state: from });
       return { transitioned: false, from, to: from };
     }
     const to = t.to;
