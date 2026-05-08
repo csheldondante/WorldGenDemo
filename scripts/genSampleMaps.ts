@@ -3,23 +3,18 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { deflateSync } from "node:zlib";
+import { DEFAULT_COLORS } from "../src/builder/defaults";
 
 type RGB = [number, number, number];
 
-const COLORS: Record<string, RGB> = {
-  desert:      [0xd4, 0xa3, 0x73],
-  canyon_wall: [0x7c, 0x3a, 0x1d],
-  path:        [0xa8, 0x90, 0x70],
-  water:       [0x3b, 0x6e, 0x8f],
-  forest:      [0x3a, 0x5a, 0x40],
-  plains:      [0x9b, 0xb5, 0x6b],
-  // assets
-  cactus:      [0x5e, 0x82, 0x4a],
-  shanty:      [0x7d, 0x6b, 0x5d],
-  bridge:      [0xb5, 0x88, 0x57],
-  pine:        [0x21, 0x47, 0x2e],
-  boulder:     [0x6b, 0x67, 0x60],
-};
+function hexToRGB(hex: string): RGB {
+  const v = parseInt(hex.replace(/^#/, ""), 16);
+  return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
+}
+
+const COLORS: Record<string, RGB> = Object.fromEntries(
+  Object.entries(DEFAULT_COLORS).map(([k, v]) => [k, hexToRGB(v)]),
+);
 
 function crc32(buf: Buffer): number {
   let table = (crc32 as any).table as number[] | undefined;

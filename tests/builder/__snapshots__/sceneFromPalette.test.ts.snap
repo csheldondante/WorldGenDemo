@@ -1,0 +1,37 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`sceneFromPalette > baselines the canyon-desert-ish fixture 1`] = `
+{
+  "sceneFromPalette.fixture": {
+    "labels": [
+      {
+        "color": "#d4a373",
+        "kind": "terrain",
+        "terrain": "desert",
+      },
+      {
+        "color": "#7c3a1d",
+        "kind": "terrain",
+        "terrain": "canyon_wall",
+      },
+      {
+        "color": "#3b6e8f",
+        "kind": "terrain",
+        "terrain": "water",
+      },
+      {
+        "asset": "cactus",
+        "color": "#5e824a",
+        "kind": "asset",
+      },
+      {
+        "asset": "shanty",
+        "color": "#7d6b5d",
+        "kind": "asset",
+      },
+    ],
+    "name": "fixture",
+    "tileSize": 1,
+  },
+}
+`;
