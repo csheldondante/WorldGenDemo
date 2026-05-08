@@ -147,6 +147,7 @@ export async function startWorld(opts: WorldOptions) {
   });
 
   let last = performance.now();
+  let frameCount = 0;
   const tick = () => {
     const now = performance.now();
     const dt = Math.min(0.05, (now - last) / 1000);
@@ -154,6 +155,20 @@ export async function startWorld(opts: WorldOptions) {
     cam.update(dt);
     renderer.render(scene, cam.camera);
     if (minimap) minimap.update();
+
+    // Debug: every 30 frames, append camera state to HUD so the user can see exactly
+    // what direction "forward" is in world space when they press W.
+    frameCount++;
+    if (frameCount % 30 === 0) {
+      const dbg = cam.debug();
+      const yawDeg = (dbg.yaw * 180 / Math.PI).toFixed(0);
+      const lines = (opts.hudEl.textContent ?? "").split("\n");
+      const dbgLine = `cam: x=${dbg.pos[0].toFixed(1)} z=${dbg.pos[2].toFixed(1)} yaw=${yawDeg}° fwd=(${dbg.fwdXZ[0].toFixed(2)},${dbg.fwdXZ[1].toFixed(2)})`;
+      // Replace or append the debug line
+      const idx = lines.findIndex((l) => l.startsWith("cam:"));
+      if (idx >= 0) lines[idx] = dbgLine; else lines.push(dbgLine);
+      opts.hudEl.textContent = lines.join("\n");
+    }
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

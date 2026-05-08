@@ -44,6 +44,20 @@ export function createMinimap(input: MinimapInput): MinimapHandle {
     ctx.fillRect(0, 0, size, size);
     ctx.drawImage(input.image, 0, 0, size, size);
 
+    // Compass: N at top, S at bottom, E at right, W at left.
+    // Using fillText with shadow so it's readable against any bitmap.
+    ctx.font = "bold 12px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#000";
+    ctx.shadowColor = "rgba(255,255,255,0.85)";
+    ctx.shadowBlur = 3;
+    ctx.fillText("N", size * 0.5, 8);
+    ctx.fillText("S", size * 0.5, size - 8);
+    ctx.fillText("W", 8, size * 0.5);
+    ctx.fillText("E", size - 8, size * 0.5);
+    ctx.shadowBlur = 0;
+
     // Camera position in pixel space (note: world Z increases downward in our minimap,
     // because the bitmap row 0 is the top; we draw rows top-to-bottom)
     const cam = input.camera as THREE.PerspectiveCamera;
