@@ -7,6 +7,7 @@ import type { Registry } from "../runtime/registry";
 import { createStateMachineSystem } from "../runtime/stateMachine";
 import { createAccumulator, createInputSystem, type InputAccumulator } from "./input";
 import { createCameraMovementSystem } from "./cameraMovement";
+import { createLoadSceneSystem } from "./loadScene";
 import { createRenderSystem } from "./render";
 import { createMinimapSystem } from "./minimap";
 import { createHudSystem } from "./hud";
@@ -30,6 +31,7 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createStateMachineSystem());
   reg.registerSystem(createInputSystem(inputAccumulator));
   reg.registerSystem(createCameraMovementSystem());
+  reg.registerSystem(createLoadSceneSystem());
   reg.registerSystem(createRenderSystem());
   reg.registerSystem(createMinimapSystem());
   reg.registerSystem(createHudSystem());
@@ -44,6 +46,7 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
 
 export * from "./input";
 export * from "./cameraMovement";
+export * from "./loadScene";
 export * from "./render";
 export * from "./minimap";
 export * from "./hud";

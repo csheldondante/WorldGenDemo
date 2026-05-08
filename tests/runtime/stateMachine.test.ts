@@ -26,7 +26,7 @@ function setup() {
   const sm = createBuffer<StateMachineBufferData>({
     id: "stateMachine",
     description: "FSM state",
-    initial: { state: "Running", activeGraph: "Running", pendingEvents: [], pendingRebuild: null, rebuildGeneration: 0 },
+    initial: { state: "Running", activeGraph: "Running", pendingEvents: [], pendingLoad: null, pendingRebuild: null, rebuildGeneration: 0 },
   });
   const events = createBuffer<RuntimeEvent[]>({
     id: "events",

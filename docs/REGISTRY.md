@@ -11,11 +11,11 @@
 | --- | --- | --- | --- |
 | `input` | Held keys, accumulated mouse deltas, pointer-lock state. Cleared each tick by InputSystem. | `inputSystem`, `cameraMovementSystem` | `inputSystem`, `cameraMovementSystem` |
 | `camera` | Source-of-truth camera state. RenderSystem mirrors this into THREE.PerspectiveCamera each frame. | `cameraMovementSystem`, `assetPlacementSystem` | `cameraMovementSystem`, `renderSystem`, `minimapSystem`, `hudSystem`, `assetPlacementSystem` |
-| `events` | FIFO event queue drained each tick by StateMachineSystem. | `stateMachineSystem`, `assetPlacementSystem` | `stateMachineSystem`, `assetPlacementSystem` |
-| `stateMachine` | Active runtime state + the graph id the scheduler should run this tick. | `stateMachineSystem` | `stateMachineSystem`, `hudSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
+| `events` | FIFO event queue drained each tick by StateMachineSystem. | `stateMachineSystem`, `loadSceneSystem`, `assetPlacementSystem` | `stateMachineSystem`, `loadSceneSystem`, `assetPlacementSystem` |
+| `stateMachine` | Active runtime state + the graph id the scheduler should run this tick. | `stateMachineSystem` | `stateMachineSystem`, `loadSceneSystem`, `hudSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
 | `renderRefs` | Three.js handles + DOM refs. Three.js is a render backend; gameplay state lives in other buffers. | `minimapSystem`, `terrainMeshSystem`, `assetPlacementSystem` | `renderSystem`, `minimapSystem`, `hudSystem`, `jfaSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
 | `worldData` | Per-scene data: source bitmap, parsed maps, heightmap, JFA outputs. Each pipeline stage writes its slice. | `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem` | `minimapSystem`, `hudSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
-| `timing` | Per-stage timing metrics + warnings. Read by HudSystem; written by every system that times itself. | `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` | `hudSystem` |
+| `timing` | Per-stage timing metrics + warnings. Read by HudSystem; written by every system that times itself. | `loadSceneSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` | `hudSystem` |
 
 ## Systems
 
@@ -24,6 +24,7 @@
 | `stateMachineSystem` | Runtime state machine: drives activeGraph from EventBuffer. | `events`, `stateMachine` | `events`, `stateMachine` | — |
 | `inputSystem` | Drains accumulated keyboard + mouse + pointer-lock state into InputBuffer each tick. | `input` | `input` | — |
 | `cameraMovementSystem` | Reads InputBuffer; updates CameraBuffer pos/yaw/pitch. WASD strictly horizontal; Space/Ctrl vertical. | `input`, `camera` | `input`, `camera` | after: `inputSystem` |
+| `loadSceneSystem` | Async-fetches the scene PNG + JSON when state=Loading; emits RebuildRequested when the bytes arrive. | `stateMachine`, `events` | `events`, `timing` | after: `stateMachineSystem` |
 | `renderSystem` | Mirrors CameraBuffer into THREE.PerspectiveCamera and calls renderer.render(scene, camera). | `camera`, `renderRefs` | — | after: `cameraMovementSystem` |
 | `minimapSystem` | Draws the source bitmap with camera position + FOV wedge into an overlay canvas. | `camera`, `worldData`, `renderRefs` | `renderRefs` | after: `cameraMovementSystem`, `renderSystem` |
 | `hudSystem` | Renders timings, scene name, FSM state, and camera pos into the HUD overlay. | `camera`, `timing`, `stateMachine`, `worldData`, `renderRefs` | — | after: `stateMachineSystem`, `cameraMovementSystem`, `minimapSystem` |
