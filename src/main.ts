@@ -1,5 +1,4 @@
 import { startWorld } from "./app/world";
-import { startBuilder } from "./app/builder";
 
 const tabs = document.querySelectorAll<HTMLButtonElement>(".tab");
 const panels: Record<string, HTMLElement> = {
@@ -7,6 +6,11 @@ const panels: Record<string, HTMLElement> = {
   builder: document.getElementById("panel-builder")!,
 };
 
+/**
+ * Tab clicks emit ModeRequested events into the runtime EventBuffer. The DOM
+ * styling (active class on tab + panel) is updated immediately for responsive
+ * feel; the SM transitions on the next tick.
+ */
 function activate(name: string) {
   tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   for (const [k, el] of Object.entries(panels)) {
@@ -14,23 +18,17 @@ function activate(name: string) {
   }
 }
 
-tabs.forEach((t) => t.addEventListener("click", () => activate(t.dataset.tab!)));
-
-void startWorld({
+const world = startWorld({
   hudEl: document.getElementById("hud") as HTMLElement,
   hintEl: document.getElementById("hint") as HTMLElement,
   panelEl: panels.world,
+  builderPanelEl: panels.builder,
 });
 
-startBuilder({
-  fileInput: document.getElementById("builder-file") as HTMLInputElement,
-  nameInput: document.getElementById("builder-name") as HTMLInputElement,
-  tileInput: document.getElementById("builder-tile") as HTMLInputElement,
-  preview: document.getElementById("builder-preview") as HTMLCanvasElement,
-  summaryEl: document.getElementById("builder-summary") as HTMLElement,
-  tableWrap: document.getElementById("builder-table-wrap") as HTMLElement,
-  output: document.getElementById("builder-output") as HTMLTextAreaElement,
-  generateBtn: document.getElementById("builder-generate") as HTMLButtonElement,
-  downloadBtn: document.getElementById("builder-download") as HTMLButtonElement,
-  downloadPngBtn: document.getElementById("builder-download-png") as HTMLButtonElement,
-});
+tabs.forEach((t) =>
+  t.addEventListener("click", () => {
+    const name = t.dataset.tab!;
+    activate(name);
+    world.requestMode(name === "builder" ? "builder" : "world");
+  }),
+);

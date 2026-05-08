@@ -8,9 +8,12 @@ import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/ren
 import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
 import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
+import { BUILDER_BUFFER_ID, type BuilderBufferData } from "../buffers/builder";
 import { EVENT_BUFFER_ID } from "../buffers/event";
 import { registerCoreSystems } from "../systems";
 import { attachInputListeners } from "../systems/input";
+import { attachBuilderListeners } from "../systems/builderInput";
+import type { RuntimeMode } from "../runtime/stateMachine";
 import { buildAndRegisterCoreGraphs } from "./graphs";
 import { createSceneBundle } from "../render/scene";
 
@@ -18,9 +21,16 @@ export interface WorldOptions {
   hudEl: HTMLElement;
   hintEl: HTMLElement;
   panelEl: HTMLElement;
+  /** Optional builder panel — wired up if present so tab clicks can switch modes. */
+  builderPanelEl?: HTMLElement;
 }
 
-export function startWorld(opts: WorldOptions): void {
+export interface WorldHandle {
+  /** Emit a ModeRequested event into the runtime. SM transitions on next tick. */
+  requestMode(mode: RuntimeMode): void;
+}
+
+export function startWorld(opts: WorldOptions): WorldHandle {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; display:block;";
   opts.panelEl.insertBefore(canvas, opts.panelEl.firstChild);
@@ -30,7 +40,7 @@ export function startWorld(opts: WorldOptions): void {
   // 1. Registry + core buffers + core systems + graphs
   const reg = createRegistry();
   registerCoreBuffers(reg);
-  const { inputAccumulator } = registerCoreSystems(reg);
+  const { inputAccumulator, builderAccumulator, builderDom } = registerCoreSystems(reg);
   buildAndRegisterCoreGraphs(reg); // validates: throws if any contract is violated
 
   // 2. Wire RenderRefsBuffer with concrete Three.js handles + DOM refs
@@ -63,10 +73,16 @@ export function startWorld(opts: WorldOptions): void {
     opts.hintEl.classList.toggle("hidden", !!document.pointerLockElement);
   });
 
+  // 4b. Builder DOM listeners (paint canvas, palette, asset menu, toolbar).
+  if (opts.builderPanelEl) {
+    attachBuilderListeners({
+      panel: opts.builderPanelEl,
+      acc: builderAccumulator,
+      dom: builderDom,
+    });
+  }
+
   // 5. Kick off the initial scene load by emitting a LoadRequested event.
-  //    The SM is initially in "Loading" state; LoadSceneSystem owns the fetch
-  //    and emits RebuildRequested when the bytes arrive. The runtime loop runs
-  //    immediately so the HUD updates from tick 1.
   const url = new URL(location.href);
   const sceneName = url.searchParams.get("map") ?? "canyon-desert";
   const events = reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID);
@@ -74,16 +90,16 @@ export function startWorld(opts: WorldOptions): void {
     d.push({ type: "LoadRequested", payload: { sceneName } });
   });
 
-  // 6. Start the runtime loop — picks activeGraph from StateMachineBuffer each tick.
+  // 6. Start the runtime loop.
   startLoop(reg);
 
-  // 7. Expose a tiny debug snapshot for headless smoke tests + devtools probing.
-  //    Read-only; safe to leave in production for inspection.
+  // 7. Debug snapshot.
   (window as unknown as { __runtimeDebug?: () => unknown }).__runtimeDebug = () => {
     const sm = readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
     const refsData = readBuffer(reg.getBuffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID));
     const timing = readBuffer(reg.getBuffer<TimingBufferData>(TIMING_BUFFER_ID));
     const world = readBuffer(reg.getBuffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
+    const builder = readBuffer(reg.getBuffer<BuilderBufferData>(BUILDER_BUFFER_ID));
     return {
       smState: sm.state,
       activeGraph: sm.activeGraph,
@@ -100,9 +116,27 @@ export function startWorld(opts: WorldOptions): void {
       assetMeshCount: refsData.assetMeshes.length,
       stages: timing.stages,
       warnings: timing.warnings.slice(),
+      builder: {
+        bootstrapped: builder.bootstrapped,
+        paletteSize: builder.palette.length,
+        thumbnailCount: builder.thumbnails.size,
+        bitmapSize: [builder.width, builder.height],
+        activeId: builder.activeId,
+        brushTool: builder.brushTool,
+        historyDepth: builder.history.length,
+        historyIndex: builder.historyIndex,
+      },
       buffers: reg.listBuffers().map((b) => ({ id: b.id, version: b.version })),
       systems: reg.listSystems().map((s) => s.id),
       graphs: reg.listGraphs().map((g) => ({ id: g.id, order: g.order })),
     };
+  };
+
+  return {
+    requestMode(mode: RuntimeMode) {
+      writeBuffer(events, (d) => {
+        d.push({ type: "ModeRequested", payload: { mode } });
+      });
+    },
   };
 }

@@ -8,7 +8,7 @@ import { createStateMachineSystem } from "../runtime/stateMachine";
 import { createAccumulator, createInputSystem, type InputAccumulator } from "./input";
 import { createCameraMovementSystem } from "./cameraMovement";
 import { createLoadSceneSystem } from "./loadScene";
-import { createBuilderAccumulator, createBuilderInputSystem, type BuilderInputAccumulator } from "./builderInput";
+import { createBuilderAccumulator, createBuilderInputSystem, createBuilderDom, type BuilderInputAccumulator, type BuilderDom } from "./builderInput";
 import { createBuilderSystem } from "./builder";
 import { createRenderSystem } from "./render";
 import { createMinimapSystem } from "./minimap";
@@ -23,6 +23,7 @@ import { createAssetPlacementSystem } from "./pipeline/assetPlacement";
 export interface CoreSystems {
   inputAccumulator: InputAccumulator;
   builderAccumulator: BuilderInputAccumulator;
+  builderDom: BuilderDom;
 }
 
 /**
@@ -32,6 +33,7 @@ export interface CoreSystems {
 export function registerCoreSystems(reg: Registry): CoreSystems {
   const inputAccumulator = createAccumulator();
   const builderAccumulator = createBuilderAccumulator();
+  const builderDom = createBuilderDom();
   reg.registerSystem(createStateMachineSystem());
   reg.registerSystem(createInputSystem(inputAccumulator));
   reg.registerSystem(createCameraMovementSystem());
@@ -46,8 +48,8 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createTerrainMeshSystem());
   reg.registerSystem(createAssetPlacementSystem());
   reg.registerSystem(createBuilderInputSystem(builderAccumulator));
-  reg.registerSystem(createBuilderSystem(builderAccumulator));
-  return { inputAccumulator, builderAccumulator };
+  reg.registerSystem(createBuilderSystem(builderAccumulator, builderDom));
+  return { inputAccumulator, builderAccumulator, builderDom };
 }
 
 export * from "./input";

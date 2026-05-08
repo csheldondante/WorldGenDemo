@@ -20,8 +20,8 @@
 
       .panel { position: absolute; inset: 0; pointer-events: none; }
       .panel.world > * { pointer-events: auto; }
-      .panel.builder { display: none; background: rgba(10,12,16,0.92); padding: 56px 16px 16px; overflow: auto; }
-      .panel.builder.active { display: block; pointer-events: auto; }
+      .panel.builder { display: none; background: rgba(10,12,16,0.97); }
+      .panel.builder.active { display: flex; pointer-events: auto; }
 
       #hud {
         position: absolute; bottom: 8px; left: 8px;
@@ -34,26 +34,75 @@
       }
       #hint.hidden { display: none; }
 
-      .builder h2 { margin: 0 0 12px; font-size: 16px; }
-      .builder .row { display: flex; gap: 12px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-      .builder input[type=file] { color: #ddd; }
-      .builder button {
+      /* Editor layout: left palette · center canvas · right asset menu */
+      .panel.builder { padding-top: 50px; flex-direction: row; gap: 12px; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
+      .editor-pane { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+      .editor-pane.center { flex: 1 1 auto; align-items: center; justify-content: flex-start; }
+      .editor-pane.left, .editor-pane.right { width: 240px; flex: 0 0 auto; overflow-y: auto; }
+
+      .editor-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .editor-toolbar button, .editor-toolbar select {
         background: #2a3142; color: #ddd; border: 1px solid #444;
-        padding: 6px 10px; cursor: pointer; font: inherit; border-radius: 4px;
+        padding: 5px 10px; cursor: pointer; font: inherit; border-radius: 4px; font-size: 12px;
       }
-      .builder button:hover { background: #3a4257; }
-      .builder canvas.preview { image-rendering: pixelated; max-width: 256px; max-height: 256px;
-        border: 1px solid #333; background: #111; }
-      .builder table { width: 100%; max-width: 720px; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-      .builder th, .builder td { border-bottom: 1px solid #2a2a2a; padding: 6px 8px; text-align: left; }
-      .builder .swatch { width: 22px; height: 22px; border: 1px solid #333; display: inline-block; vertical-align: middle; }
-      .builder select, .builder input[type=text] {
-        background: #181c24; color: #ddd; border: 1px solid #333; padding: 4px 6px; font: inherit; border-radius: 3px;
+      .editor-toolbar button:hover { background: #3a4257; }
+      .editor-toolbar button[disabled] { opacity: 0.4; cursor: not-allowed; }
+      .editor-toolbar button.primary { background: #2f6ea2; border-color: #4a8cc8; }
+      .editor-toolbar button.primary:hover { background: #3f80b5; }
+      .editor-toolbar button.active { background: #4a6090; border-color: #6e8fc8; }
+
+      .paint-canvas-wrap {
+        flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+        background: #06080c; border: 1px solid #222; border-radius: 4px; overflow: hidden;
+        min-height: 0; min-width: 0;
       }
-      .builder textarea {
-        width: 100%; max-width: 720px; min-height: 160px;
-        background: #0e1118; color: #cfd6e0; border: 1px solid #2a2a2a; padding: 8px; font: inherit; border-radius: 4px;
+      #paint-canvas {
+        image-rendering: pixelated;
+        max-width: 100%; max-height: 100%;
+        cursor: crosshair;
       }
+
+      .editor-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+        color: #889; margin: 6px 0 4px; }
+
+      .palette-list { display: flex; flex-direction: column; gap: 3px; }
+      .palette-row { display: flex; align-items: center; gap: 6px; padding: 4px;
+        border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+        background: rgba(20,24,32,0.5); }
+      .palette-row:hover { background: rgba(40,48,64,0.6); }
+      .palette-row.active { background: rgba(80,120,200,0.25); border-color: #6789ce; }
+      .palette-thumb { width: 28px; height: 28px; border-radius: 3px; flex: 0 0 auto;
+        background-size: cover; background-position: center; border: 1px solid #333; }
+      .palette-info { flex: 1 1 auto; min-width: 0; font-size: 12px; }
+      .palette-info .id-line { font-weight: 600; }
+      .palette-info .meta-line { font-size: 10px; color: #889; }
+      .palette-color {
+        width: 22px; height: 22px; flex: 0 0 auto;
+        border: 1px solid #333; cursor: pointer; padding: 0;
+      }
+      .palette-remove {
+        background: transparent; color: #889; border: none;
+        cursor: pointer; padding: 2px 6px; font-size: 14px;
+      }
+      .palette-remove:hover { color: #d44; }
+
+      .asset-menu { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+      .asset-tile {
+        background: rgba(20,24,32,0.5); border: 1px solid #333; border-radius: 3px;
+        cursor: pointer; padding: 4px;
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+      }
+      .asset-tile:hover { background: rgba(40,48,64,0.7); border-color: #555; }
+      .asset-tile-thumb { width: 56px; height: 56px; border-radius: 2px;
+        background-size: cover; background-position: center; }
+      .asset-tile-name { font-size: 9px; color: #aab; text-align: center; word-break: break-all; }
+
+      #builder-error {
+        font-size: 12px; color: #f88; padding: 4px 8px;
+        background: rgba(80,20,20,0.4); border: 1px solid #944; border-radius: 3px;
+        display: none;
+      }
+      #builder-error.shown { display: block; }
     </style>
   </head>
   <body>
@@ -63,29 +112,44 @@
         <button class="tab" data-tab="builder">Scene Builder</button>
       </div>
 
-      <div class="panel world" id="panel-world">
+      <div class="panel world active" id="panel-world">
         <div id="hint">click to fly · WASD = move · Space/Ctrl = up/down · Shift = boost · esc to release</div>
         <div id="hud">loading…</div>
       </div>
 
       <div class="panel builder" id="panel-builder">
-        <h2>Scene Builder · bitmap → scene.json</h2>
-        <div class="row">
-          <input type="file" id="builder-file" accept="image/png,image/jpeg" />
-          <input type="text" id="builder-name" placeholder="scene name" value="my-scene" />
-          <label>tileSize <input type="text" id="builder-tile" value="1.0" style="width:60px"></label>
+        <!-- LEFT: palette -->
+        <div class="editor-pane left">
+          <div class="editor-section-title">Palette · click to paint</div>
+          <div id="palette-list" class="palette-list"></div>
+          <div id="builder-error"></div>
         </div>
-        <div class="row">
-          <canvas class="preview" id="builder-preview" width="256" height="256"></canvas>
-          <div id="builder-summary" style="font-size:12px; line-height:1.5;"></div>
+
+        <!-- CENTER: paint canvas + toolbar -->
+        <div class="editor-pane center">
+          <div class="editor-toolbar">
+            <button id="tool-paint" class="active">Paint</button>
+            <button id="tool-fill">Fill</button>
+            <select id="brush-size">
+              <option value="1">brush 1×</option>
+              <option value="3" selected>brush 3×</option>
+              <option value="7">brush 7×</option>
+            </select>
+            <button id="tool-undo" disabled>Undo</button>
+            <button id="tool-redo" disabled>Redo</button>
+            <span style="flex: 1 1 auto"></span>
+            <button id="send-to-world" class="primary">Send to World ▶</button>
+          </div>
+          <div class="paint-canvas-wrap">
+            <canvas id="paint-canvas"></canvas>
+          </div>
         </div>
-        <div id="builder-table-wrap"></div>
-        <div class="row">
-          <button id="builder-generate">Generate scene.json</button>
-          <button id="builder-download">Download scene.json</button>
-          <button id="builder-download-png">Download map.png</button>
+
+        <!-- RIGHT: asset menu -->
+        <div class="editor-pane right">
+          <div class="editor-section-title">Add to palette</div>
+          <div id="asset-menu" class="asset-menu"></div>
         </div>
-        <textarea id="builder-output" placeholder="scene.json will appear here…" spellcheck="false"></textarea>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -136,6 +136,30 @@ async function main(): Promise<void> {
     await page.waitForTimeout(DWELL_MS);
 
     await page.screenshot({ path: resolve(outDir, "page.png"), fullPage: true });
+
+    // Optional: MODE=builder runs a builder-tab round-trip and captures a second screenshot.
+    if (process.env.MODE === "builder") {
+      console.log("[smoke] clicking Scene Builder tab…");
+      await page.click('button[data-tab="builder"]');
+      await page.waitForTimeout(2000); // let bootstrap + thumbnails resolve
+      await page.screenshot({ path: resolve(outDir, "page-builder.png"), fullPage: true });
+
+      console.log("[smoke] testing flood-fill + send-to-world…");
+      // Switch to fill tool
+      await page.click("#tool-fill");
+      await page.waitForTimeout(100);
+      // Click somewhere on the canvas to fill
+      const canvasBox = await page.locator("#paint-canvas").boundingBox();
+      if (canvasBox) {
+        await page.mouse.click(canvasBox.x + canvasBox.width * 0.3, canvasBox.y + canvasBox.height * 0.3);
+        await page.waitForTimeout(200);
+      }
+      // Send to world
+      await page.click("#send-to-world");
+      await page.waitForTimeout(2500);
+      await page.screenshot({ path: resolve(outDir, "page-after-send.png"), fullPage: true });
+    }
+
     const dbg = await page.evaluate(() => {
       const fn = (window as unknown as { __runtimeDebug?: () => unknown }).__runtimeDebug;
       return fn ? fn() : null;

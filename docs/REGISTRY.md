@@ -11,11 +11,12 @@
 | --- | --- | --- | --- |
 | `input` | Held keys, accumulated mouse deltas, pointer-lock state. Cleared each tick by InputSystem. | `inputSystem`, `cameraMovementSystem` | `inputSystem`, `cameraMovementSystem` |
 | `camera` | Source-of-truth camera state. RenderSystem mirrors this into THREE.PerspectiveCamera each frame. | `cameraMovementSystem`, `assetPlacementSystem` | `cameraMovementSystem`, `renderSystem`, `minimapSystem`, `hudSystem`, `assetPlacementSystem` |
-| `events` | FIFO event queue drained each tick by StateMachineSystem. | `stateMachineSystem`, `loadSceneSystem`, `assetPlacementSystem` | `stateMachineSystem`, `loadSceneSystem`, `assetPlacementSystem` |
-| `stateMachine` | Active runtime state + the graph id the scheduler should run this tick. | `stateMachineSystem` | `stateMachineSystem`, `loadSceneSystem`, `hudSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
+| `events` | FIFO event queue drained each tick by StateMachineSystem. | `stateMachineSystem`, `loadSceneSystem`, `assetPlacementSystem`, `builderSystem` | `stateMachineSystem`, `loadSceneSystem`, `assetPlacementSystem`, `builderSystem` |
+| `stateMachine` | Active runtime state + the graph id the scheduler should run this tick. | `stateMachineSystem` | `stateMachineSystem`, `loadSceneSystem`, `hudSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem`, `builderSystem` |
 | `renderRefs` | Three.js handles + DOM refs. Three.js is a render backend; gameplay state lives in other buffers. | `minimapSystem`, `terrainMeshSystem`, `assetPlacementSystem` | `renderSystem`, `minimapSystem`, `hudSystem`, `jfaSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
-| `worldData` | Per-scene data: source bitmap, parsed maps, heightmap, JFA outputs. Each pipeline stage writes its slice. | `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem` | `minimapSystem`, `hudSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
-| `timing` | Per-stage timing metrics + warnings. Read by HudSystem; written by every system that times itself. | `loadSceneSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem` | `hudSystem` |
+| `worldData` | Per-scene data: source bitmap, parsed maps, heightmap, JFA outputs. Each pipeline stage writes its slice. | `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem` | `minimapSystem`, `hudSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem`, `builderSystem` |
+| `timing` | Per-stage timing metrics + warnings. Read by HudSystem; written by every system that times itself. | `loadSceneSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem`, `builderSystem` | `hudSystem` |
+| `builder` | Mode-bounded editor state: bitmap, palette of {kind,id,color} entries, active brush, undo history, thumbnails. Lifetime is the editor session, not per-scene. | `builderSystem` | `builderSystem` |
 
 ## Systems
 
@@ -25,15 +26,17 @@
 | `inputSystem` | Drains accumulated keyboard + mouse + pointer-lock state into InputBuffer each tick. | `input` | `input` | — |
 | `cameraMovementSystem` | Reads InputBuffer; updates CameraBuffer pos/yaw/pitch. WASD strictly horizontal; Space/Ctrl vertical. | `input`, `camera` | `input`, `camera` | after: `inputSystem` |
 | `loadSceneSystem` | Async-fetches the scene PNG + JSON when state=Loading; emits RebuildRequested when the bytes arrive. | `stateMachine`, `events` | `events`, `timing` | after: `stateMachineSystem` |
-| `renderSystem` | Mirrors CameraBuffer into THREE.PerspectiveCamera and calls renderer.render(scene, camera). | `camera`, `renderRefs` | — | after: `cameraMovementSystem` |
+| `renderSystem` | Mirrors CameraBuffer into THREE.PerspectiveCamera and calls renderer.render(scene, camera). | `camera`, `renderRefs` | — | after: `cameraMovementSystem`, `terrainMeshSystem`, `assetPlacementSystem` |
 | `minimapSystem` | Draws the source bitmap with camera position + FOV wedge into an overlay canvas. | `camera`, `worldData`, `renderRefs` | `renderRefs` | after: `cameraMovementSystem`, `renderSystem` |
-| `hudSystem` | Renders timings, scene name, FSM state, and camera pos into the HUD overlay. | `camera`, `timing`, `stateMachine`, `worldData`, `renderRefs` | — | after: `stateMachineSystem`, `cameraMovementSystem`, `minimapSystem` |
+| `hudSystem` | Renders timings, scene name, FSM state, and camera pos into the HUD overlay. | `camera`, `timing`, `stateMachine`, `worldData`, `renderRefs` | — | after: `stateMachineSystem`, `cameraMovementSystem`, `minimapSystem`, `loadSceneSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem`, `builderSystem` |
 | `parseBitmapSystem` | Parses the rebuild bitmap into a LabelMap; writes WorldDataBuffer.{labelMap, image, sceneName}. | `stateMachine` | `worldData`, `timing` | after: `stateMachineSystem` |
 | `splitLayersSystem` | Splits LabelMap into terrainMap + assetMap; majority-fills terrain under asset pixels. | `stateMachine`, `worldData` | `worldData`, `timing` | after: `parseBitmapSystem`, `stateMachineSystem` |
 | `jfaSystem` | GPU jump-flood per terrain → distance field + boundary gradient. Disposes prior result. | `stateMachine`, `worldData`, `renderRefs` | `worldData`, `timing` | after: `splitLayersSystem`, `heightmapSystem`, `stateMachineSystem` |
 | `heightmapSystem` | Builds a Float32 heightmap from terrainMap (per-pixel elevation + small blur + jitter). | `stateMachine`, `worldData` | `worldData`, `timing` | after: `splitLayersSystem`, `stateMachineSystem` |
 | `terrainMeshSystem` | Builds the terrain mesh from heightmap + JFA splat inputs; replaces the prior mesh. | `stateMachine`, `worldData`, `renderRefs` | `renderRefs`, `timing` | after: `heightmapSystem`, `jfaSystem`, `stateMachineSystem` |
 | `assetPlacementSystem` | Connected components → footprints → InstancedMesh placements. Disposes prior meshes; emits WorldReady; sets initial camera spawn on first rebuild. | `stateMachine`, `worldData`, `renderRefs`, `camera`, `events` | `renderRefs`, `camera`, `timing`, `events` | after: `terrainMeshSystem`, `stateMachineSystem` |
+| `builderInputSystem` | Placeholder for the DOM-event pump that feeds BuilderSystem. No buffer access. | — | — | after: `stateMachineSystem` |
+| `builderSystem` | Mutates BuilderBuffer in response to BuilderEvent[] from the DOM. Bootstraps the buffer on first activation. Rebuilds palette/asset-menu DOM when state changes. Emits RebuildRequested on Send-to-World. | `stateMachine`, `builder`, `worldData`, `events` | `builder`, `events`, `timing` | after: `stateMachineSystem`, `builderInputSystem` |
 
 ## How to use this index
 
