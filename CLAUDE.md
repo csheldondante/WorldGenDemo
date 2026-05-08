@@ -1,90 +1,14 @@
-# WorldGenDemo — agent guidance
+# CLAUDE.md
 
-This file is loaded automatically by Claude Code into every conversation in
-this repo. Read it before doing significant work; update it when invariants
-change.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ---
 
-## Architecture in one screen
+## What this project is
 
-```
-┌─────────────────────────────────────────────┐
-│ src/app/        thin shell — wires runtime  │
-├─────────────────────────────────────────────┤
-│ src/systems/    feature systems             │
-│ src/buffers/    runtime buffers             │
-├─────────────────────────────────────────────┤
-│ src/runtime/    scheduler, registry, graph  │
-│                 (consumes lib/dag, lib/fsm) │
-├─────────────────────────────────────────────┤
-│ src/lib/        shared, generic utilities:  │
-│   dag.ts        Dag<NodeId>                 │
-│   stateMachine.ts  Fsm<S, E>                │
-│   spatial/      spatial indexes             │
-└─────────────────────────────────────────────┘
-```
+Browser prototype: a labeled top-down PNG → a textured, populated 3D world you fly through. Each colour in `public/maps/<name>/map.png` is a semantic region; `scene.json` next to it maps colours to a fixed terrain vocabulary (`desert`, `tundra`, `forest`, `plains`, `canyon_wall`, `water`, `path`) and to procedural asset ids (`cactus`, `pine`, `boulder`, `shanty`, `bridge`).
 
-Layer rules — **enforced socially, not by tooling, so respect them**:
-
-- `src/lib/` — runtime-agnostic. **Must not import** from `src/runtime/`,
-  `src/buffers/`, `src/systems/`, `src/app/`, or `three`. Pure data structures
-  + algorithms with their own tests.
-- `src/runtime/` — consumes `src/lib/`. Defines the runtime model
-  (`Buffer<T>`, `SystemDescriptor`, `ExecutionGraph`, `Scheduler`,
-  `StateMachineSystem`). Does NOT know about specific buffers or features.
-- `src/buffers/` and `src/systems/` — features of this prototype expressed
-  against the runtime. Free to import from `three` and from the other
-  feature modules they need.
-- `src/app/` — thin shell that builds the registry, validates graphs, and
-  starts the loop.
-
-Pre-existing pure modules (`src/core/`, `src/map/parseBitmap.ts`,
-`src/map/splitLayers.ts`, `src/map/components.ts`, `src/map/footprint.ts`,
-`src/map/heightmap.ts`, `src/map/jfa.ts`, etc.) stay as the *implementation*
-that pipeline systems call. Those modules' tests (in `tests/`) are
-authoritative for behavior — never delete or weaken them during refactors.
-
----
-
-## Registry workflow — **do this every time you touch a buffer or system**
-
-The registry is the single searchable index of every buffer, system, and
-graph in the runtime. Future agents (and you) reuse what already exists by
-searching it; redundant additions get caught here. The TS code is the source
-of truth; `docs/REGISTRY.md` is a generated mirror.
-
-**Before adding** a new `Buffer`, `SystemDescriptor`, or graph:
-
-1. Run `npm run registry` to refresh `docs/REGISTRY.md`.
-2. Search `docs/REGISTRY.md` (and `src/buffers/`, `src/systems/`) for an
-   existing entry that already covers your need. If something close exists,
-   extend or read it instead of creating a parallel one.
-3. If you must add a new entry:
-   - Give it a clear `description` field. It will be rendered in the doc.
-   - Declare every buffer it reads or writes. Hazards are validated at
-     `buildExecutionGraph` time, but only if you declare them honestly.
-   - Add a test in `tests/buffers/` or `tests/systems/` (TDD: write the test
-     first).
-4. Run `npm run registry` again so the doc reflects the new entry.
-
-**Updating an existing entry**: change the `description`, `buffers`, or
-ordering metadata in the TS file, then run `npm run registry`. Don't edit
-`docs/REGISTRY.md` by hand — the next regen will overwrite it.
-
----
-
-## TDD expectation
-
-Every system, every buffer, every utility ships with tests. No exceptions.
-The runtime + lib already cover topo-sort, cycle detection, hazard
-validation, FSM transitions/guards/hooks, spatial-hash queries, registry
-uniqueness, and scheduler execution order. Maintain that bar.
-
-For systems specifically: drive them with synthetic buffer state in tests,
-not with the real Three.js render path. Three.js coupling lives in
-`src/render/scene.ts` and the `RenderSystem`; everything else should be
-testable headless.
+The runtime is buffer/system/scheduler/state-machine architecture (see *Runtime in 30 seconds* below). The map → world transformation is a pipeline of pure functions wrapped as systems.
 
 ---
 
@@ -92,32 +16,124 @@ testable headless.
 
 ```bash
 npm run dev          # vite dev server at http://127.0.0.1:5173
-npm test             # vitest run (everything)
+npm test             # vitest run (everything; ~134 tests)
+npx vitest run path/to/test.ts          # run a single test file
+npx vitest run --update                 # accept new baseline-snapshot output
+npm run smoke        # headless boot smoke (see "Smoke harness" below)
 npm run registry     # regenerate docs/REGISTRY.md from TS code
+npm run gen-maps     # regenerate public/maps/*/map.png from scripts/genSampleMaps.ts
 npx tsc --noEmit     # type check
 npx vite build       # production bundle
 ```
 
+`?map=forest-clearing` (or any other folder name in `public/maps/`) switches scenes without code changes.
+
 ---
 
-## Out of scope (don't add without explicit ask)
+## Smoke harness — primary debugging tool
 
-- YAML registries — TS is authoritative; the `npm run registry` script dumps
-  YAML/Markdown if needed.
-- Multiple modes (2D dungeon, RTS, etc.) — the architecture allows graph
-  swapping via the SM, but only `Running` and `Rebuilding` graphs exist
-  today.
-- Vectorized/SIMD buffer layouts — `Buffer<T>` doesn't preclude them; switch
-  the offending `T` when the data sizes warrant it.
-- Auto-generated DAGs / metaprogramming — explicit data only.
+`npm run smoke` boots Vite + headless Chromium, waits ~4 s, and writes:
+
+- `smoke-out/console.log` — every `console.*`, `pageerror`, `requestfailed`
+- `smoke-out/network.log` — every HTTP response with status code
+- `smoke-out/page.png` — full-page screenshot
+- `smoke-out/state.json` — `window.__runtimeDebug()` snapshot (SM state, active graph, pipeline flags, stage timings, buffer versions, full graph orderings)
+
+Use this before asking the user for a screenshot — it tells you exactly what the page sees. It caught the original silent boot failure (graph validation throw uncaught in `world.ts`) on the first run.
+
+Notes: Playwright pulls ~120 MB of Chromium on first install. The script kills any leftover Vite holding port 5180 before starting (Windows uses `taskkill /T /F`). `smoke-out/` is gitignored.
+
+---
+
+## Runtime in 30 seconds
+
+State machine boots `Startup → Loading → Rebuilding → Running`. Tab/mode events drive subsequent transitions (`Running + RebuildRequested → Rebuilding`, etc.).
+
+Each tick:
+1. Scheduler reads `StateMachineBuffer.activeGraph`.
+2. Executes that graph in topo order via the registered systems.
+3. Systems mutate buffers (which bump `version`).
+
+Three graphs live in `src/app/graphs.ts`:
+- **Loading**: `SM → Input → CameraMovement → LoadScene → Render → Hud`
+- **Running**: `SM → Input → CameraMovement → Render → Minimap → Hud`
+- **Rebuilding**: `SM → Parse → Split → Heightmap → JFA → TerrainMesh → AssetPlacement → Render → Hud`
+
+Events: `LoadRequested { sceneName }`, `RebuildRequested { payload }`, `WorldReady`. The SM owns `pendingLoad` and `pendingRebuild` payloads across ticks (since the graph swap takes effect *next* tick).
+
+---
+
+## Layered architecture
+
+```
+src/app/        thin shell — wires runtime, exposes window.__runtimeDebug
+src/systems/    feature systems (input, camera, render, minimap, hud, loadScene, pipeline/*)
+src/buffers/    runtime buffers (input, camera, event, stateMachine, renderRefs, worldData, timing)
+src/runtime/    Buffer, SystemDescriptor, ExecutionGraph, Scheduler, StateMachineSystem, registry, loop, dev
+src/lib/        runtime-agnostic utilities — Dag<NodeId>, Fsm<S, E>, spatial/SpatialHash2D, testing/baseline
+src/map/, src/core/, src/terrain/, src/assets/, src/render/
+                pure transformation modules called by pipeline systems
+                (parseBitmap, splitLayers, components, footprint, heightmap, jfa, terrainMesh, placeAssets, ...)
+```
+
+**Layer rules — enforced socially, not by tooling:**
+
+- `src/lib/` is runtime-agnostic. It must not import from `src/runtime/`, `src/buffers/`, `src/systems/`, `src/app/`, or `three`.
+- `src/runtime/` consumes `src/lib/`; defines the runtime model only. It does NOT know about specific buffers or features.
+- `src/buffers/` and `src/systems/` are features expressed against the runtime. May import `three`.
+- `src/app/` is a thin shell that builds the registry, validates graphs, and starts the loop.
+- The pure pipeline modules (`src/map/*`, `src/core/*`) are the *implementation* the pipeline systems call. Their tests in `tests/{rng,geom,parseBitmap,splitLayers,components,footprint}.test.ts` are the contract — never delete or weaken them during refactors.
+
+---
+
+## Registry workflow — do this every time you touch a buffer or system
+
+The registry is the single searchable index of every buffer, system, and graph. The TS code in `src/buffers/index.ts` and `src/systems/index.ts` is the source of truth; `docs/REGISTRY.md` is a generated mirror.
+
+Before adding a new `Buffer`, `SystemDescriptor`, or graph:
+
+1. Run `npm run registry` to refresh `docs/REGISTRY.md`.
+2. Search it for an existing entry that already covers your need. Prefer extending the existing one.
+3. If you must add new:
+   - Give it a clear `description` field — it renders in the doc.
+   - Declare every buffer it reads or writes honestly. Hazards are validated at `buildExecutionGraph` time, but only if the declaration is accurate.
+   - Add a test in `tests/buffers/` or `tests/systems/`.
+4. Run `npm run registry` again so the doc reflects the new entry.
+
+`tests/migration/coreGraphs.test.ts` registers all real buffers + systems + graphs and asserts validation passes. **It is the canary** — if you add a system with hazardous declarations or missing `runsAfter`, this test fails before the runtime ever boots. The original black-screen bug was a hazard that slipped past the smaller per-system tests; this catches them.
+
+---
+
+## TDD expectation
+
+Every system, every buffer, every utility ships with tests. Drive systems with synthetic buffer state, not the real Three.js render path — Three.js coupling lives in `src/render/scene.ts` and `RenderSystem`; everything else should be testable headless.
+
+For pure transformations (`parseBitmap`, `splitLayers`, etc.), prefer the **baseline-snapshot pattern** in `src/lib/testing/baseline.ts`:
+
+```ts
+import { expectBaselined, expectBaselinedApprox } from "../../src/lib/testing/baseline";
+expectBaselined("parseBitmap.5x5", labelMap);     // exact match
+expectBaselinedApprox("heightmap.5x5", hm.data, 4); // 4-decimal tolerance for FP
+```
+
+The serializer handles typed arrays, Maps, and Sets. Snapshots live at `tests/**/__snapshots__/*.snap` (committed). On intentional behavior changes, run `npx vitest run --update`.
+
+---
+
+## Dev vs prod error handling
+
+`src/runtime/dev.ts` exports `IS_DEV` (from `import.meta.env.DEV`), `assertDev`, and `warnDev`.
+
+- **Dev / vitest**: `assertDev` throws; the scheduler re-throws system errors so devtools / vitest catches the stack; `warnDev` logs to console.
+- **Production**: `assertDev` logs and continues; the scheduler swallows system errors after writing to `TimingBuffer.warnings` (rendered by HUD).
+
+The runtime FSM's `onUnhandled` callback wires to `warnDev` for unmatched + self-transition events — when you add a transition or wonder why an event "did nothing," the dev console tells you exactly what was rejected.
 
 ---
 
 ## Don't break
 
-- The 35 pre-V0 tests in `tests/{rng,geom,parseBitmap,splitLayers,components,footprint}.test.ts`.
-  They're the contract for the existing pipeline.
-- Functional parity for the canyon-desert and forest-clearing scenes during
-  migration. If a refactor would change the rendered output, stop and ask.
-- The shared-lib layer rules. If you find yourself wanting to import
-  `three` into `src/lib/`, stop — it belongs in `src/render/` or a system.
+- The pre-runtime pure-function tests in `tests/{rng,geom,parseBitmap,splitLayers,components,footprint}.test.ts`. They're the behavioral contract.
+- `tests/migration/coreGraphs.test.ts` — keeps the runtime bootable.
+- Functional parity for the canyon-desert and forest-clearing scenes during refactors. If a change would alter rendered output, run `npm run smoke` and inspect the screenshot before/after.
+- The `src/lib/` layer rules — if you reach for `three` inside `src/lib/`, stop and put it in `src/render/` or a system.
