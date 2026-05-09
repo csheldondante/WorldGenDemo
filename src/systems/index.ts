@@ -19,6 +19,8 @@ import { createJfaSystem } from "./pipeline/jfa";
 import { createHeightmapSystem } from "./pipeline/heightmap";
 import { createTerrainMeshSystem } from "./pipeline/terrainMesh";
 import { createAssetPlacementSystem } from "./pipeline/assetPlacement";
+import { createSurfaceProviderSystem } from "./pipeline/surfaceProvider";
+import { createPlayerSpawnSystem } from "./pipeline/playerSpawn";
 
 export interface CoreSystems {
   inputAccumulator: InputAccumulator;
@@ -47,6 +49,8 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createHeightmapSystem());
   reg.registerSystem(createTerrainMeshSystem());
   reg.registerSystem(createAssetPlacementSystem());
+  reg.registerSystem(createSurfaceProviderSystem());
+  reg.registerSystem(createPlayerSpawnSystem());
   reg.registerSystem(createBuilderInputSystem(builderAccumulator));
   reg.registerSystem(createBuilderSystem(builderAccumulator, builderDom));
   return { inputAccumulator, builderAccumulator, builderDom };
@@ -66,3 +70,5 @@ export * from "./pipeline/jfa";
 export * from "./pipeline/heightmap";
 export * from "./pipeline/terrainMesh";
 export * from "./pipeline/assetPlacement";
+export * from "./pipeline/surfaceProvider";
+export * from "./pipeline/playerSpawn";

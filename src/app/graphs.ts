@@ -14,6 +14,8 @@ import { JFA_SYSTEM_ID } from "../systems/pipeline/jfa";
 import { HEIGHTMAP_SYSTEM_ID } from "../systems/pipeline/heightmap";
 import { TERRAIN_MESH_SYSTEM_ID } from "../systems/pipeline/terrainMesh";
 import { ASSET_PLACEMENT_SYSTEM_ID } from "../systems/pipeline/assetPlacement";
+import { SURFACE_PROVIDER_SYSTEM_ID } from "../systems/pipeline/surfaceProvider";
+import { PLAYER_SPAWN_SYSTEM_ID } from "../systems/pipeline/playerSpawn";
 import { BUILDER_INPUT_SYSTEM_ID } from "../systems/builderInput";
 import { BUILDER_SYSTEM_ID } from "../systems/builder";
 
@@ -69,6 +71,8 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       HEIGHTMAP_SYSTEM_ID,
       TERRAIN_MESH_SYSTEM_ID,
       ASSET_PLACEMENT_SYSTEM_ID,
+      SURFACE_PROVIDER_SYSTEM_ID,
+      PLAYER_SPAWN_SYSTEM_ID,
       RENDER_SYSTEM_ID,
       HUD_SYSTEM_ID,
       // MinimapSystem is in Running graph only — minimap is a per-frame overlay.
