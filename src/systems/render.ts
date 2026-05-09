@@ -3,7 +3,8 @@ import { readBuffer } from "../runtime/buffer";
 import type { SystemDescriptor } from "../runtime/system";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
-import { CAMERA_MOVEMENT_SYSTEM_ID } from "./cameraMovement";
+import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
+import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "./characterRenderSync";
 import { TERRAIN_MESH_SYSTEM_ID } from "./pipeline/terrainMesh";
 import { ASSET_PLACEMENT_SYSTEM_ID } from "./pipeline/assetPlacement";
 
@@ -26,7 +27,7 @@ export function createRenderSystem(): SystemDescriptor {
     // Renders LAST among per-frame systems; LATEST among Rebuilding pipeline
     // writers of renderRefs. Pipeline IDs that aren't in a graph are silently
     // dropped by the graph builder.
-    runsAfter: [CAMERA_MOVEMENT_SYSTEM_ID, TERRAIN_MESH_SYSTEM_ID, ASSET_PLACEMENT_SYSTEM_ID],
+    runsAfter: [CAMERA_FOLLOW_SYSTEM_ID, CHARACTER_RENDER_SYNC_SYSTEM_ID, TERRAIN_MESH_SYSTEM_ID, ASSET_PLACEMENT_SYSTEM_ID],
     execute: ({ buffer }) => {
       const camData = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
       const refs = readBuffer(buffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID));

@@ -7,7 +7,7 @@ import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/world
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
 import { MINIMAP_SYSTEM_ID } from "./minimap";
-import { CAMERA_MOVEMENT_SYSTEM_ID } from "./cameraMovement";
+import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
 import { LOAD_SCENE_SYSTEM_ID } from "./loadScene";
 import { PARSE_BITMAP_SYSTEM_ID } from "./pipeline/parseBitmap";
 import { SPLIT_LAYERS_SYSTEM_ID } from "./pipeline/splitLayers";
@@ -62,7 +62,7 @@ export function createHudSystem(): SystemDescriptor {
     // not be in every graph — graph builder silently drops out-of-graph edges.)
     runsAfter: [
       STATE_MACHINE_SYSTEM_ID,
-      CAMERA_MOVEMENT_SYSTEM_ID,
+      CAMERA_FOLLOW_SYSTEM_ID,
       MINIMAP_SYSTEM_ID,
       LOAD_SCENE_SYSTEM_ID,
       PARSE_BITMAP_SYSTEM_ID,

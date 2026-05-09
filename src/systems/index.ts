@@ -6,7 +6,6 @@
 import type { Registry } from "../runtime/registry";
 import { createStateMachineSystem } from "../runtime/stateMachine";
 import { createAccumulator, createInputSystem, type InputAccumulator } from "./input";
-import { createCameraMovementSystem } from "./cameraMovement";
 import { createLoadSceneSystem } from "./loadScene";
 import { createBuilderAccumulator, createBuilderInputSystem, createBuilderDom, type BuilderInputAccumulator, type BuilderDom } from "./builderInput";
 import { createBuilderSystem } from "./builder";
@@ -21,6 +20,14 @@ import { createTerrainMeshSystem } from "./pipeline/terrainMesh";
 import { createAssetPlacementSystem } from "./pipeline/assetPlacement";
 import { createSurfaceProviderSystem } from "./pipeline/surfaceProvider";
 import { createPlayerSpawnSystem } from "./pipeline/playerSpawn";
+// V1 character systems
+import { createCharacterInputSystem } from "./characterInput";
+import { createForceFieldSystem } from "./forceField";
+import { createCharacterControllerSystem } from "./characterController";
+import { createVelocityIntegrationSystem } from "./velocityIntegration";
+import { createSurfaceConstraintSystem } from "./surfaceConstraint";
+import { createCameraFollowSystem } from "./cameraFollow";
+import { createCharacterRenderSyncSystem } from "./characterRenderSync";
 
 export interface CoreSystems {
   inputAccumulator: InputAccumulator;
@@ -38,7 +45,6 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   const builderDom = createBuilderDom();
   reg.registerSystem(createStateMachineSystem());
   reg.registerSystem(createInputSystem(inputAccumulator));
-  reg.registerSystem(createCameraMovementSystem());
   reg.registerSystem(createLoadSceneSystem());
   reg.registerSystem(createRenderSystem());
   reg.registerSystem(createMinimapSystem());
@@ -53,11 +59,18 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createPlayerSpawnSystem());
   reg.registerSystem(createBuilderInputSystem(builderAccumulator));
   reg.registerSystem(createBuilderSystem(builderAccumulator, builderDom));
+  // V1 character systems (Running graph)
+  reg.registerSystem(createCharacterInputSystem());
+  reg.registerSystem(createForceFieldSystem());
+  reg.registerSystem(createCharacterControllerSystem());
+  reg.registerSystem(createVelocityIntegrationSystem());
+  reg.registerSystem(createSurfaceConstraintSystem());
+  reg.registerSystem(createCameraFollowSystem());
+  reg.registerSystem(createCharacterRenderSyncSystem());
   return { inputAccumulator, builderAccumulator, builderDom };
 }
 
 export * from "./input";
-export * from "./cameraMovement";
 export * from "./loadScene";
 export * from "./render";
 export * from "./minimap";
@@ -72,3 +85,10 @@ export * from "./pipeline/terrainMesh";
 export * from "./pipeline/assetPlacement";
 export * from "./pipeline/surfaceProvider";
 export * from "./pipeline/playerSpawn";
+export * from "./characterInput";
+export * from "./forceField";
+export * from "./characterController";
+export * from "./velocityIntegration";
+export * from "./surfaceConstraint";
+export * from "./cameraFollow";
+export * from "./characterRenderSync";

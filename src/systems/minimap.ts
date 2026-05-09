@@ -4,7 +4,7 @@ import type { SystemDescriptor } from "../runtime/system";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
-import { CAMERA_MOVEMENT_SYSTEM_ID } from "./cameraMovement";
+import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
 import { RENDER_SYSTEM_ID } from "./render";
 
 export const MINIMAP_SYSTEM_ID = "minimapSystem";
@@ -28,7 +28,7 @@ export function createMinimapSystem(): SystemDescriptor {
       { id: WORLD_DATA_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "readwrite" },
     ],
-    runsAfter: [CAMERA_MOVEMENT_SYSTEM_ID, RENDER_SYSTEM_ID],
+    runsAfter: [CAMERA_FOLLOW_SYSTEM_ID, RENDER_SYSTEM_ID],
     execute: ({ buffer }) => {
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
       const world = readBuffer(buffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
