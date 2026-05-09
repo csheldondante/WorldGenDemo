@@ -453,6 +453,7 @@ function renderToolbar(b: BuilderBufferData, dom: BuilderDom): void {
   if (dom.brushSizeSel && dom.brushSizeSel.value !== String(b.brushSize)) {
     dom.brushSizeSel.value = String(b.brushSize);
   }
+  if (dom.brushSizeValueEl) dom.brushSizeValueEl.textContent = String(b.brushSize);
   if (dom.undoBtn) dom.undoBtn.disabled = b.historyIndex <= 0;
   if (dom.redoBtn) dom.redoBtn.disabled = b.historyIndex >= b.history.length - 1;
 }

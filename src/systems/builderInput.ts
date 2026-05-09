@@ -19,7 +19,7 @@ export type BuilderEvent =
   | { type: "PaletteAdd"; id: string; kind: "terrain" | "asset" }
   | { type: "PaletteRemove"; id: string }
   | { type: "PaletteRecolor"; id: string; color: string }
-  | { type: "BrushSizeSet"; size: 1 | 3 | 7 }
+  | { type: "BrushSizeSet"; size: number }
   | { type: "BrushToolSet"; tool: "paint" | "fill" }
   | { type: "SendToWorld" };
 
@@ -43,7 +43,8 @@ export interface BuilderDom {
   paletteListEl: HTMLElement | null;
   assetMenuEl: HTMLElement | null;
   errorEl: HTMLElement | null;
-  brushSizeSel: HTMLSelectElement | null;
+  brushSizeSel: HTMLInputElement | null;
+  brushSizeValueEl: HTMLElement | null;
   paintBtn: HTMLButtonElement | null;
   fillBtn: HTMLButtonElement | null;
   undoBtn: HTMLButtonElement | null;
@@ -58,6 +59,7 @@ export function createBuilderDom(): BuilderDom {
     assetMenuEl: null,
     errorEl: null,
     brushSizeSel: null,
+    brushSizeValueEl: null,
     paintBtn: null,
     fillBtn: null,
     undoBtn: null,
@@ -87,7 +89,8 @@ export function attachBuilderListeners(opts: AttachBuilderOptions): void {
   dom.paletteListEl = panel.querySelector<HTMLElement>("#palette-list");
   dom.assetMenuEl = panel.querySelector<HTMLElement>("#asset-menu");
   dom.errorEl = panel.querySelector<HTMLElement>("#builder-error");
-  dom.brushSizeSel = panel.querySelector<HTMLSelectElement>("#brush-size");
+  dom.brushSizeSel = panel.querySelector<HTMLInputElement>("#brush-size");
+  dom.brushSizeValueEl = panel.querySelector<HTMLElement>("#brush-size-value");
   dom.paintBtn = panel.querySelector<HTMLButtonElement>("#tool-paint");
   dom.fillBtn = panel.querySelector<HTMLButtonElement>("#tool-fill");
   dom.undoBtn = panel.querySelector<HTMLButtonElement>("#tool-undo");
@@ -134,9 +137,10 @@ export function attachBuilderListeners(opts: AttachBuilderOptions): void {
   if (dom.redoBtn) dom.redoBtn.addEventListener("click", () => acc.events.push({ type: "Redo" }));
   if (dom.sendBtn) dom.sendBtn.addEventListener("click", () => acc.events.push({ type: "SendToWorld" }));
   if (dom.brushSizeSel) {
-    dom.brushSizeSel.addEventListener("change", () => {
-      const v = parseInt(dom.brushSizeSel!.value, 10) as 1 | 3 | 7;
-      acc.events.push({ type: "BrushSizeSet", size: v });
+    // Slider: emit on every input event so dragging updates live.
+    dom.brushSizeSel.addEventListener("input", () => {
+      const v = parseInt(dom.brushSizeSel!.value, 10);
+      if (Number.isFinite(v)) acc.events.push({ type: "BrushSizeSet", size: v });
     });
   }
 }

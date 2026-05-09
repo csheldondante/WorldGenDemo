@@ -95,7 +95,10 @@ Per-directory `CLAUDE.md` files auto-load when working in that subtree. Read the
 
 Cross-cutting rules (apply across non-nested folders) live in `.claude/rules/`:
 
+- `.claude/rules/coding_practices.md` — data-oriented design, FSM/spatial-index reuse, separate-compute-from-rendering, dev-loud error handling. **Read this before writing systems.**
 - `.claude/rules/registry.md` — how to add a new buffer, system, or graph (applies whether the work is in `src/buffers/`, `src/systems/`, or `src/app/graphs.ts`)
+
+@import .claude/rules/coding_practices.md
 
 ---
 

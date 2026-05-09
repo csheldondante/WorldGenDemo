@@ -18,13 +18,15 @@ export function generateThumbnails(): Map<string, string> {
   if (_cache) return _cache;
   const out = new Map<string, string>();
 
-  // Terrains: sample a 64×64 region of each procedural texture.
+  // Terrains: sample a 64×64 region of each procedural texture, then apply the
+  // terrain's tint so the thumbnail matches the rendered world (the splat
+  // shader applies the same tint at runtime).
   const textures = buildProceduralTextures();
   for (const t of ALL_TERRAINS) {
-    const baseKey = TerrainCatalog.get(t as TerrainId).baseTextureKey;
-    const tex = textures[baseKey as keyof typeof textures];
+    const spec = TerrainCatalog.get(t as TerrainId);
+    const tex = textures[spec.baseTextureKey as keyof typeof textures];
     if (!tex) continue;
-    const url = sampleTextureToDataURL(tex);
+    const url = sampleTintedTextureToDataURL(tex, spec.tint);
     if (url) out.set(t, url);
   }
 
@@ -48,9 +50,7 @@ export function resetThumbnailCache(): void {
   _cache = null;
 }
 
-function sampleTextureToDataURL(tex: THREE.Texture): string | null {
-  // tex.image is a HTMLCanvasElement (from buildProceduralTextures). We sample
-  // the top-left THUMB_SIZE×THUMB_SIZE region — close enough for a thumbnail.
+function sampleTintedTextureToDataURL(tex: THREE.Texture, tint: [number, number, number]): string | null {
   const src = tex.image as HTMLCanvasElement | undefined;
   if (!src) return null;
   const dst = document.createElement("canvas");
@@ -60,6 +60,15 @@ function sampleTextureToDataURL(tex: THREE.Texture): string | null {
   if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(src, 0, 0, THUMB_SIZE, THUMB_SIZE);
+  // Apply tint by multiplying — same as the splat shader at runtime.
+  // Read pixels, multiply by tint, write back.
+  const data = ctx.getImageData(0, 0, THUMB_SIZE, THUMB_SIZE);
+  for (let i = 0; i < data.data.length; i += 4) {
+    data.data[i]     = Math.round(data.data[i]     * tint[0]);
+    data.data[i + 1] = Math.round(data.data[i + 1] * tint[1]);
+    data.data[i + 2] = Math.round(data.data[i + 2] * tint[2]);
+  }
+  ctx.putImageData(data, 0, 0);
   return dst.toDataURL("image/png");
 }
 

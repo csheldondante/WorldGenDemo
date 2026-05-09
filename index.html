@@ -50,6 +50,10 @@
       .editor-toolbar button.primary { background: #2f6ea2; border-color: #4a8cc8; }
       .editor-toolbar button.primary:hover { background: #3f80b5; }
       .editor-toolbar button.active { background: #4a6090; border-color: #6e8fc8; }
+      .brush-size-label { display: flex; align-items: center; gap: 6px; font-size: 12px;
+        background: #2a3142; padding: 4px 10px; border: 1px solid #444; border-radius: 4px; }
+      .brush-size-label input[type=range] { width: 110px; accent-color: #4a8cc8; }
+      .brush-size-label #brush-size-value { font-weight: 600; min-width: 18px; text-align: right; }
 
       .paint-canvas-wrap {
         flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
@@ -130,11 +134,10 @@
           <div class="editor-toolbar">
             <button id="tool-paint" class="active">Paint</button>
             <button id="tool-fill">Fill</button>
-            <select id="brush-size">
-              <option value="1">brush 1×</option>
-              <option value="3" selected>brush 3×</option>
-              <option value="7">brush 7×</option>
-            </select>
+            <label class="brush-size-label">
+              brush <span id="brush-size-value">3</span>px
+              <input type="range" id="brush-size" min="1" max="25" step="1" value="3">
+            </label>
             <button id="tool-undo" disabled>Undo</button>
             <button id="tool-redo" disabled>Redo</button>
             <span style="flex: 1 1 auto"></span>

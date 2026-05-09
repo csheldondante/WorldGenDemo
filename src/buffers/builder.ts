@@ -24,8 +24,8 @@ export interface BuilderBufferData {
   palette: PaletteEntry[];
   /** Currently selected catalog id for paint. null on first activation, before user picks. */
   activeId: string | null;
-  /** Brush extent in pixels. */
-  brushSize: 1 | 3 | 7;
+  /** Brush extent in pixels (1-25, odd values render symmetric). */
+  brushSize: number;
   /** Current tool. paint = drag-to-paint; fill = single-click flood-fill 4-connected. */
   brushTool: "paint" | "fill";
   /**
