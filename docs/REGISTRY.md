@@ -17,6 +17,17 @@
 | `worldData` | Per-scene data: source bitmap, parsed maps, heightmap, JFA outputs. Each pipeline stage writes its slice. | `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem` | `minimapSystem`, `hudSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem`, `builderSystem` |
 | `timing` | Per-stage timing metrics + warnings. Read by HudSystem; written by every system that times itself. | `loadSceneSystem`, `parseBitmapSystem`, `splitLayersSystem`, `jfaSystem`, `heightmapSystem`, `terrainMeshSystem`, `assetPlacementSystem`, `builderSystem` | `hudSystem` |
 | `builder` | Mode-bounded editor state: bitmap, palette of {kind,id,color} entries, active brush, undo history, thumbnails. Lifetime is the editor session, not per-scene. | `builderSystem` | `builderSystem` |
+| `entity` | Lightweight ECS: entities are integer IDs in `alive`; components live in keyed buffers (transform, velocity, characterController, etc). | — | — |
+| `transform` | Per-entity world position, yaw, scale. Source of truth for character + asset placement. | — | — |
+| `velocity` | Per-entity world-space linear velocity (m/s). VelocityIntegrationSystem updates Transform from this each tick. | — | — |
+| `forceAccumulator` | Per-entity acceleration accumulator. Force fields + controllers add into it; VelocityIntegrationSystem applies and clears each tick. | — | — |
+| `sphereBody` | Sphere collision/visual primitive. The character is a sphere; future bodies (capsule etc) get their own buffers. | — | — |
+| `characterInput` | Per-character input state: normalized move axes, jump edges + hold duration, camera yaw frame. Filled by CharacterInputSystem from InputBuffer + CameraBuffer; read by CharacterControllerSystem. | — | — |
+| `characterController` | Per-character FSM state (surfaceRun/airborne/jump/etc), locomotion mode, profile reference, and the last transition reason for the debug HUD. | — | — |
+| `characterControllerProfile` | Tunable movement parameters by profile id. Edit values here to retune feel without touching code; multiple profiles can coexist for different character classes. | — | — |
+| `surfaceAttachment` | Per-entity surface-constraint state: which surface, UV on it, offset along normal, cached sample. Maintained by SurfaceConstraintSystem when CharacterController.locomotionMode is surfaceConstrained. | — | — |
+| `surfaceProvider` | Active SurfaceProvider instances. V1 has one slot (the per-scene heightmap surface); HeightmapSystem populates it during Rebuilding. | — | — |
+| `volumeField` | Force fields acting on volume-constrained entities. V1 has just one constant-downward gravity vector. Future: arrays of localized fields (wind, low-G zones, etc). | — | — |
 
 ## Systems
 
