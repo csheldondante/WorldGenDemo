@@ -41,6 +41,7 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
       lastTransitionReason: "spawn",
       timeInState: 0,
       jumpHeldLastTick: false,
+      orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });
   writeBuffer(ci, (d) => { d.byEntity.set(id, emptyInput(0)); });

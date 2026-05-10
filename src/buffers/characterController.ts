@@ -23,6 +23,16 @@ export interface CharacterControllerComponent {
   timeInState: number;
   /** True iff the jump button was held last tick (used to detect short release). */
   jumpHeldLastTick: boolean;
+  /**
+   * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
+   * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`
+   * slerps toward target at orientationSlerpRate × dt. RenderSync reads `current`; the linear
+   * solver does not. Stored as quaternions [x, y, z, w]; initialized to identity [0,0,0,1].
+   */
+  orientation: {
+    current: [number, number, number, number];
+    target: [number, number, number, number];
+  };
 }
 
 export interface CharacterControllerBufferData {
