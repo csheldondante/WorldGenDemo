@@ -4,6 +4,22 @@
 
 The runtime is **data-oriented**. Behavior should fall out of pure transformations over named buffers. Reach for the shared lib (`src/lib/`) before hand-rolling local state.
 
+## 0. Always use data-oriented design — non-negotiable
+
+**ALWAYS USE DATA-ORIENTED DESIGN unless there is a specific reason not to. If there is, discuss that reason with the user. DO NOT silently choose to take shortcuts.**
+
+The smaller, "pragmatic" diff that papers over an architectural seam is the wrong answer in this codebase. If you notice yourself reaching for any of these:
+
+- a one-off branch on raw device state inside a gameplay consumer (e.g. `keys.X || gamepadButtons.has(Y)`) instead of normalizing upstream
+- a closure flag (`let lastVersion = -1`) instead of a buffer field
+- a class with methods instead of a buffer of plain data
+- a direct method call between systems instead of an event/buffer hand-off
+- reading raw input semantics in two systems instead of one mapper that produces the semantic vocabulary
+
+...stop. That's a shortcut. Surface the architectural choice to the user with pros/cons and let them weigh in. Never make that choice silently — the user reads "default" in rule #1 below as "always, unless you've justified the exception to me."
+
+If you find an existing place in the codebase that violated this rule (e.g., a consumer reading raw input directly when it should consume a semantic layer), call it out — it's debt worth fixing.
+
 ## 1. Data-oriented design (default)
 
 State lives in **buffers**, mutated by **systems**, with explicit declared read/write access. Prefer:

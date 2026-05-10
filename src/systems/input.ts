@@ -1,17 +1,19 @@
 import { readBuffer, writeBuffer } from "../runtime/buffer";
 import type { SystemDescriptor } from "../runtime/system";
 import { INPUT_BUFFER_ID, type InputBufferData } from "../buffers/input";
+import { readPrimaryGamepad } from "../lib/input/gamepad";
 
 export const INPUT_SYSTEM_ID = "inputSystem";
 
 /**
- * Owns DOM event listeners (keydown/up, mousemove, pointerlock-change).
+ * Owns raw input device collection: DOM event listeners (keydown/up,
+ * mousemove, pointerlock-change) feed a private accumulator; gamepad state is
+ * polled per tick via `readPrimaryGamepad`. `execute()` copies both into
+ * InputBuffer each tick. InputMapperSystem drains the mouse deltas downstream;
+ * held keys + gamepad button names persist until release.
  *
- * Listeners write into a private accumulator. `execute()` copies the
- * accumulator into InputBuffer each tick. CameraMovementSystem drains the
- * mouse deltas after reading; held keys persist until keyup.
- *
- * Call `attachInputListeners(domTarget)` once at app startup.
+ * Call `attachInputListeners(acc, opts)` once at app startup for keyboard +
+ * mouse. Gamepad needs no attachment — `navigator.getGamepads()` is poll-only.
  */
 
 export interface InputAccumulator {
@@ -67,16 +69,27 @@ export function attachInputListeners(acc: InputAccumulator, opts: InputAttachOpt
 export function createInputSystem(acc: InputAccumulator): SystemDescriptor {
   return {
     id: INPUT_SYSTEM_ID,
-    description: "Drains accumulated keyboard + mouse + pointer-lock state into InputBuffer each tick.",
+    description:
+      "Drains accumulated keyboard + mouse + pointer-lock state into InputBuffer each tick, and polls navigator.getGamepads() for the primary Standard-mapping gamepad.",
     buffers: [{ id: INPUT_BUFFER_ID, access: "readwrite" }],
     execute: ({ buffer }) => {
       const input = buffer<InputBufferData>(INPUT_BUFFER_ID);
       const prev = readBuffer(input);
+      const pad = readPrimaryGamepad();
       writeBuffer(input, (d) => {
         d.keys = new Set(acc.keys);
         d.mouseDx = prev.mouseDx + acc.mouseDx;
         d.mouseDy = prev.mouseDy + acc.mouseDy;
         d.pointerLocked = acc.pointerLocked;
+        if (pad) {
+          d.gamepadConnected = true;
+          d.gamepadAxes = pad.axes;
+          d.gamepadButtons = pad.buttons;
+        } else {
+          d.gamepadConnected = false;
+          d.gamepadAxes = { leftX: 0, leftY: 0, rightX: 0, rightY: 0 };
+          d.gamepadButtons = new Set();
+        }
       });
       acc.mouseDx = 0;
       acc.mouseDy = 0;

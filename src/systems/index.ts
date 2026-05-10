@@ -6,6 +6,7 @@
 import type { Registry } from "../runtime/registry";
 import { createStateMachineSystem } from "../runtime/stateMachine";
 import { createAccumulator, createInputSystem, type InputAccumulator } from "./input";
+import { createInputMapperSystem } from "./inputMapper";
 import { createLoadSceneSystem } from "./loadScene";
 import { createBuilderAccumulator, createBuilderInputSystem, createBuilderDom, type BuilderInputAccumulator, type BuilderDom } from "./builderInput";
 import { createBuilderSystem } from "./builder";
@@ -45,6 +46,7 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   const builderDom = createBuilderDom();
   reg.registerSystem(createStateMachineSystem());
   reg.registerSystem(createInputSystem(inputAccumulator));
+  reg.registerSystem(createInputMapperSystem());
   reg.registerSystem(createLoadSceneSystem());
   reg.registerSystem(createRenderSystem());
   reg.registerSystem(createMinimapSystem());
@@ -71,6 +73,7 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
 }
 
 export * from "./input";
+export * from "./inputMapper";
 export * from "./loadScene";
 export * from "./render";
 export * from "./minimap";

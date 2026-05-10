@@ -5,6 +5,7 @@
 
 import type { Registry } from "../runtime/registry";
 import { createInputBuffer } from "./input";
+import { createInputMapBuffer } from "./inputMap";
 import { createCameraBuffer } from "./camera";
 import { createEventBuffer } from "./event";
 import { createStateMachineBuffer } from "./stateMachine";
@@ -27,6 +28,7 @@ import { createVolumeFieldBuffer } from "./volumeField";
 export function registerCoreBuffers(reg: Registry): void {
   // Runtime
   reg.registerBuffer(createInputBuffer());
+  reg.registerBuffer(createInputMapBuffer());
   reg.registerBuffer(createCameraBuffer());
   reg.registerBuffer(createEventBuffer());
   reg.registerBuffer(createStateMachineBuffer());
@@ -50,6 +52,7 @@ export function registerCoreBuffers(reg: Registry): void {
 }
 
 export * from "./input";
+export * from "./inputMap";
 export * from "./camera";
 export * from "./event";
 export * from "./stateMachine";

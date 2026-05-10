@@ -21,8 +21,6 @@ export interface CharacterControllerComponent {
   lastTransitionReason: string;
   /** Time spent in the current state, seconds; reset on transition. */
   timeInState: number;
-  /** True iff the jump button was held last tick (used to detect short release). */
-  jumpHeldLastTick: boolean;
   /**
    * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
    * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`

@@ -3,6 +3,7 @@ import type { Registry } from "../runtime/registry";
 
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
 import { INPUT_SYSTEM_ID } from "../systems/input";
+import { INPUT_MAPPER_SYSTEM_ID } from "../systems/inputMapper";
 import { LOAD_SCENE_SYSTEM_ID } from "../systems/loadScene";
 import { RENDER_SYSTEM_ID } from "../systems/render";
 import { MINIMAP_SYSTEM_ID } from "../systems/minimap";
@@ -62,6 +63,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
       INPUT_SYSTEM_ID,
+      INPUT_MAPPER_SYSTEM_ID,
       CHARACTER_INPUT_SYSTEM_ID,
       FORCE_FIELD_SYSTEM_ID,
       CHARACTER_CONTROLLER_SYSTEM_ID,
