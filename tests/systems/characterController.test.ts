@@ -39,7 +39,7 @@ function setup() {
   writeBuffer(sa, (d) => {
     d.byEntity.set(id, {
       surfaceId: "test", uv: [0.5, 0.5], offsetAlongNormal: 0.5,
-      sample: { position: [0, 0, 0], normal: [0, 1, 0], tangentU: [1, 0, 0], tangentV: [0, 0, 1], slopeRad: 0, friction: 1, traversable: true },
+      sample: { position: [0, 0, 0], normal: [0, 1, 0], tangentU: [1, 0, 0], tangentV: [0, 0, 1], slopeRad: 0, friction: 1, normalInMax: 800, normalOutMax: 200, traversable: true },
     });
   });
   const g = buildExecutionGraph({ id: "g", nodes: ["characterControllerSystem"], registry: reg });

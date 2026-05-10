@@ -23,8 +23,12 @@ export interface SurfaceSample {
   tangentV: [number, number, number];
   /** Slope (radians) between surface normal and world up. */
   slopeRad: number;
-  /** Friction coefficient [0..1]; defaults to 1 for V1. */
+  /** Kinetic friction coefficient (rock 1.0, sand 0.6, ice 0.2). Caps tangent force = μ × |normal force|. */
   friction: number;
+  /** Max into-surface acceleration the surface can absorb before the character ragdolls (m/s²). */
+  normalInMax: number;
+  /** Max away-from-surface acceleration the surface can hold against before the character detaches (m/s²). */
+  normalOutMax: number;
   /** True if a character can stand here (slope reasonable, terrain not water). */
   traversable: boolean;
 }
@@ -40,6 +44,12 @@ export interface SurfaceProvider {
   uvToWorld(u: number, v: number): [number, number, number];
   /** True if the UV is inside [0,1]² and the sample is traversable. */
   canAttachAt(u: number, v: number): boolean;
+  /**
+   * World-space velocity of the surface anchor at this UV (m/s). For static surfaces returns
+   * [0,0,0]. The character solver subtracts this before computing tangent-frame velocity, so
+   * moving platforms work seamlessly without controller changes.
+   */
+  sampleVelocityAt(u: number, v: number): [number, number, number];
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +131,8 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
       tangentV,
       slopeRad,
       friction: 1,
+      normalInMax: 800,
+      normalOutMax: 200,
       traversable: u >= 0 && u <= 1 && v >= 0 && v <= 1,
     };
   }
@@ -128,5 +140,10 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
   canAttachAt(u: number, v: number): boolean {
     if (u < 0 || u > 1 || v < 0 || v > 1) return false;
     return this.sampleAtUV(u, v).traversable;
+  }
+
+  sampleVelocityAt(_u: number, _v: number): [number, number, number] {
+    // Heightmap is a static surface; future moving providers (platforms, vehicles) override.
+    return [0, 0, 0];
   }
 }
