@@ -155,4 +155,39 @@ describe("CharacterControllerSystem (FSM core)", () => {
     const speed = Math.hypot(lin[0], lin[1], lin[2]);
     expect(speed).toBeLessThan(0.5);
   });
+
+  it("icy surface (low friction) under hard input → state transitions to surfaceSlide", () => {
+    const { reg, ci, cc, g, id } = setup({ sample: { friction: 0.05 } });
+    // Strong forward input — desired tangent accel exceeds (μ × |g_N|) = 0.05 × 9.81 ≈ 0.49.
+    // The state-transition slip check fires when required tangent accel > grip × slideGripScale.
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1 }); });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("surfaceSlide");
+    expect(after.lastTransitionReason).toContain("grip");
+  });
+
+  it("low normalOutMax → required suction exceeds cap → detach to airborne", () => {
+    // Pre-load v with strong upward velocity. Pinning v_N to 0 requires a large negative
+    // normal accel; surface can't pull that hard → detach.
+    const { reg, v, cc, g, id } = setup({ sample: { normalOutMax: 1 } });
+    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 50, 0] }); });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("airborne");
+    expect(after.locomotionMode).toBe("volumeConstrained");
+    expect(after.lastTransitionReason).toContain("detach");
+  });
+
+  it("low normalInMax → required reaction exceeds cap → ragdoll → airborne (V1)", () => {
+    // Pre-load v with strong downward velocity. Pinning v_N to 0 requires a large positive
+    // normal accel; surface stiffness exceeded → ragdoll. V1 redirects to airborne.
+    const { reg, v, cc, g, id } = setup({ sample: { normalInMax: 1 } });
+    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, -50, 0] }); });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("airborne");
+    expect(after.locomotionMode).toBe("volumeConstrained");
+    expect(after.lastTransitionReason).toContain("smack");
+  });
 });
