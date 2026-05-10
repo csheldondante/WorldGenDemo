@@ -93,17 +93,17 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   setState(ctrl, "surfaceRun", `slope eased to ${slopeRad.toFixed(2)}`);
                 }
 
-                // Acceleration in horizontal velocity space
-                const targetSpeed = ctrl.state === "surfaceRun" ? profile.runSpeed : profile.runSpeed * 1.2;
+                // PLACEHOLDER until C3 ships the surface-frame solver. Behavior matches the
+                // legacy implementation, just sourcing magnitudes from the new profile fields.
+                const targetSpeed = ctrl.state === "surfaceRun" ? profile.desiredRunSpeed : profile.desiredRunSpeed * 1.2;
                 const desiredVX = desiredX * targetSpeed;
                 const desiredVZ = desiredZ * targetSpeed;
-                const accelLimit = ctrl.state === "surfaceRun" ? profile.runAccel : profile.runAccel * 0.4;
+                const accelLimit = ctrl.state === "surfaceRun" ? profile.forwardAccelMax : profile.forwardAccelMax * 0.4;
                 v.linear[0] = approach(v.linear[0], desiredVX, accelLimit, dt);
                 v.linear[2] = approach(v.linear[2], desiredVZ, accelLimit, dt);
-                // Brake when no input on the ground
                 if (moveLen === 0 && ctrl.state === "surfaceRun") {
-                  v.linear[0] = approach(v.linear[0], 0, profile.runBrake, dt);
-                  v.linear[2] = approach(v.linear[2], 0, profile.runBrake, dt);
+                  v.linear[0] = approach(v.linear[0], 0, profile.forwardAccelMax, dt);
+                  v.linear[2] = approach(v.linear[2], 0, profile.forwardAccelMax, dt);
                 }
                 v.linear[1] = 0;
 
