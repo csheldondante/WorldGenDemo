@@ -10,6 +10,8 @@ Browser prototype: a labeled top-down PNG → a textured, populated 3D world you
 
 The runtime is buffer/system/scheduler/state-machine architecture; the map → world transformation is a pipeline of pure functions wrapped as systems.
 
+> **First-time orientation:** read [`docs/INDEX.md`](docs/INDEX.md) — a topic-keyed map of "I'm working on X → read these files."
+
 ---
 
 ## Common commands
