@@ -16,9 +16,12 @@ import { CHARACTER_INPUT_SYSTEM_ID } from "./characterInput";
 export const FORCE_FIELD_SYSTEM_ID = "forceFieldSystem";
 
 /**
- * Adds gravity into ForceAccumulatorBuffer for entities whose locomotion mode
- * is `volumeConstrained`. Surface-constrained entities are pinned to the
- * surface by SurfaceConstraintSystem — gravity doesn't apply to them in V1.
+ * Adds gravity into ForceAccumulatorBuffer for ALL character entities.
+ * Surface-attached characters get gravity too — the CharacterControllerSystem's
+ * surface-frame solver decomposes the accumulator's existing accel and absorbs
+ * the normal component via the surface reaction. Treating gravity as just
+ * another force keeps the model uniform and lets future weird-gravity
+ * mechanics (low-grav zones, anti-grav fields) compose naturally.
  *
  * Gliders get a reduced gravity multiplier from their profile.
  */
@@ -26,7 +29,7 @@ export function createForceFieldSystem(): SystemDescriptor {
   return {
     id: FORCE_FIELD_SYSTEM_ID,
     description:
-      "Reads VolumeFieldBuffer.gravity, writes accelerations into ForceAccumulatorBuffer for volume-constrained entities (with glide multiplier when state==glide).",
+      "Reads VolumeFieldBuffer.gravity, accumulates gravity into ForceAccumulatorBuffer for every character entity (glide multiplier when state==glide). Surface-attached characters absorb the normal component via their controller; gravity-tangent remains and influences uphill/downhill behavior.",
     buffers: [
       { id: VOLUME_FIELD_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
@@ -42,7 +45,6 @@ export function createForceFieldSystem(): SystemDescriptor {
 
       writeBuffer(fa, (d) => {
         for (const [id, ctrl] of cc.byEntity) {
-          if (ctrl.locomotionMode !== "volumeConstrained") continue;
           const profile = profiles.byId.get(ctrl.profileId);
           const mul = ctrl.state === "glide" && profile ? profile.glideGravityMul : 1;
           const accel = d.byEntity.get(id) ?? { accel: [0, 0, 0] as [number, number, number] };
