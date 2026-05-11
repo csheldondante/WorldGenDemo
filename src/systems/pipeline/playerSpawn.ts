@@ -13,6 +13,9 @@ import { CHARACTER_CONTROLLER_BUFFER_ID } from "../../buffers/characterControlle
 import { CHARACTER_INPUT_BUFFER_ID, emptyInput } from "../../buffers/characterInput";
 import { CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, type CharacterControllerProfileBufferData, DEFAULT_PLAYER_PROFILE } from "../../buffers/characterControllerProfile";
 import { SURFACE_ATTACHMENT_BUFFER_ID } from "../../buffers/surfaceAttachment";
+import { RIG_DEFINITION_BUFFER_ID, type RigDefinitionBufferData } from "../../buffers/rigDefinition";
+import { SKELETON_BUFFER_ID, initSkeletonFromRig } from "../../buffers/skeleton";
+import { assertDev } from "../../runtime/dev";
 import { STATE_MACHINE_SYSTEM_ID } from "../../runtime/stateMachine";
 import { SURFACE_PROVIDER_SYSTEM_ID } from "./surfaceProvider";
 import { runOncePerRebuild } from "./common";
@@ -45,6 +48,8 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
       { id: CHARACTER_INPUT_BUFFER_ID, access: "readwrite" },
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "readwrite" },
+      { id: RIG_DEFINITION_BUFFER_ID, access: "read" },
+      { id: SKELETON_BUFFER_ID, access: "readwrite" },
       { id: TIMING_BUFFER_ID, access: "write" },
     ],
     runsAfter: [SURFACE_PROVIDER_SYSTEM_ID, STATE_MACHINE_SYSTEM_ID],
@@ -106,6 +111,10 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
             offsetAlongNormal: profile.bodyRadius,
             sample,
           });
+
+          const bipedRig = readBuffer(ctx.buffer<RigDefinitionBufferData>(RIG_DEFINITION_BUFFER_ID)).byId.get("biped");
+          assertDev(!!bipedRig, "playerSpawn: default 'biped' rig missing from RigDefinitionBuffer");
+          if (bipedRig) setComponent(SKELETON_BUFFER_ID, initSkeletonFromRig(bipedRig));
 
           // Mark warning so HUD knows the player spawned
           // (lighter than emitting an event).

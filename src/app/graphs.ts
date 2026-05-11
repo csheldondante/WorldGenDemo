@@ -26,6 +26,9 @@ import { VELOCITY_INTEGRATION_SYSTEM_ID } from "../systems/velocityIntegration";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
 import { CAMERA_FOLLOW_SYSTEM_ID } from "../systems/cameraFollow";
 import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
+import { CHAIN_DYNAMICS_SYSTEM_ID } from "../systems/chainDynamics";
+import { SKELETON_WORLD_SYSTEM_ID } from "../systems/skeletonWorld";
+import { SKELETON_DEBUG_RENDER_SYSTEM_ID } from "../systems/skeletonDebugRender";
 
 export const LOADING_GRAPH_ID = "Loading";
 export const RUNNING_GRAPH_ID = "Running";
@@ -71,6 +74,9 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       SURFACE_CONSTRAINT_SYSTEM_ID,
       CAMERA_FOLLOW_SYSTEM_ID,
       CHARACTER_RENDER_SYNC_SYSTEM_ID,
+      CHAIN_DYNAMICS_SYSTEM_ID,
+      SKELETON_WORLD_SYSTEM_ID,
+      SKELETON_DEBUG_RENDER_SYSTEM_ID,
       RENDER_SYSTEM_ID,
       MINIMAP_SYSTEM_ID,
       HUD_SYSTEM_ID,

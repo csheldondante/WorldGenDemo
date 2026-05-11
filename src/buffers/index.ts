@@ -24,6 +24,8 @@ import { createCharacterControllerProfileBuffer } from "./characterControllerPro
 import { createSurfaceAttachmentBuffer } from "./surfaceAttachment";
 import { createSurfaceProviderBuffer } from "./surfaceProvider";
 import { createVolumeFieldBuffer } from "./volumeField";
+import { createRigDefinitionBuffer } from "./rigDefinition";
+import { createSkeletonBuffer } from "./skeleton";
 
 export function registerCoreBuffers(reg: Registry): void {
   // Runtime
@@ -49,6 +51,8 @@ export function registerCoreBuffers(reg: Registry): void {
   reg.registerBuffer(createSurfaceAttachmentBuffer());
   reg.registerBuffer(createSurfaceProviderBuffer());
   reg.registerBuffer(createVolumeFieldBuffer());
+  reg.registerBuffer(createRigDefinitionBuffer());
+  reg.registerBuffer(createSkeletonBuffer());
 }
 
 export * from "./input";
@@ -71,3 +75,5 @@ export * from "./characterControllerProfile";
 export * from "./surfaceAttachment";
 export * from "./surfaceProvider";
 export * from "./volumeField";
+export * from "./rigDefinition";
+export * from "./skeleton";
