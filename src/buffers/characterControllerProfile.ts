@@ -122,6 +122,13 @@ export interface CharacterControllerProfile {
    *  pitch a real biped carries off a forward jump so feet land in front of
    *  CoM. Spring dynamics naturally ease it in/out at takeoff and landing. */
   airborneForwardPitch: number;
+
+  // --- Hip height (posture vs. speed) ---------------------------------------
+  /** Maximum drop of the pelvis Y from its bind position (m), reached at
+   *  `desiredRunSpeed`. Real bipeds run with bent knees at a lower hip than
+   *  standing height; scaling drop by speed naturally produces a tall idle
+   *  pose and a crouched run with the legs bending to absorb each stride. */
+  hipDropAtFullSpeed: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -172,6 +179,7 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   footBrakeLeadGain: 0.008,   // 0.008 s extra lead per (m/s²) of decel; at 20 m/s² → +0.16s, but…
   footBrakeLeadMax: 0.05,     // …capped to 0.05 s additional lookahead so plants don't fly off.
   airborneForwardPitch: 0.28, // ~16° forward tilt in air at full speed; scaled by speed factor.
+  hipDropAtFullSpeed: 0.18,   // pelvis drops up to 18 cm at full run; smooth ramp from idle.
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {

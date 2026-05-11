@@ -97,20 +97,31 @@ export function createChainDynamicsSystem(): SystemDescriptor {
           ];
           const localAccel = rotate(invYaw, worldAccel);
 
-          // Airborne forward-pitch term: approximates the angular momentum
-          // a real biped carries off a forward push-off. Scaled by current
-          // horizontal speed so standing-still jumps don't tilt and full-
-          // speed leaps land with feet visibly in front of CoM. Spring
-          // dynamics naturally ease it in/out at takeoff and landing.
           const ctrl = cc.byEntity.get(id);
           const profile = ctrl ? profiles.byId.get(ctrl.profileId) : undefined;
+          const speed = Math.hypot(v.linear[0], v.linear[2]);
+          const speedFactor = profile && profile.desiredRunSpeed > 0
+            ? Math.min(1, speed / profile.desiredRunSpeed)
+            : 0;
+
+          // Airborne forward-pitch term: approximates the angular momentum
+          // a real biped carries off a forward push-off. Spring dynamics
+          // naturally ease it in/out at takeoff and landing.
           let airborneForwardPitch = 0;
           if (ctrl && profile && ctrl.locomotionMode === "volumeConstrained") {
-            const speed = Math.hypot(v.linear[0], v.linear[2]);
-            const speedFactor = profile.desiredRunSpeed > 0 ? Math.min(1, speed / profile.desiredRunSpeed) : 0;
             // Negative because forward-tilt about +X axis is a negative rawX
             // (see applyChain sign comment). Speed-scaled.
             airborneForwardPitch = -profile.airborneForwardPitch * speedFactor;
+          }
+
+          // Speed-driven hip drop: real bipeds run with bent knees at a
+          // lower hip than standing height. Pelvis localPos.Y interpolates
+          // from bind (standing tall) to bind − hipDropAtFullSpeed (crouched
+          // at full run). The IK keeps feet on the ground, so this drop
+          // bends the knees rather than burying the body.
+          const rig0 = rig.bones[0]; // pelvis (root)
+          if (profile) {
+            comp.bones[0].localPos[1] = rig0.bindLocalPos[1] - profile.hipDropAtFullSpeed * speedFactor;
           }
 
           for (const chain of rig.chains) {

@@ -218,6 +218,27 @@ describe("ChainDynamicsSystem", () => {
     expect(airTotal).toBeLessThan(groundTotal);
   });
 
+  it("speed-driven hip drop: pelvis Y lowers as speed rises; restores at idle", () => {
+    const { reg, g, skel, vel } = setup();
+    // At rest: pelvis localPos.Y should equal bind (0 in SPINE_RIG).
+    tickN(reg, g, 2);
+    const restY = readBuffer(skel).byEntity.get(1)!.bones[0].localPos[1];
+    expect(restY).toBeCloseTo(0, 6);
+
+    // At full run: pelvis drops by hipDropAtFullSpeed (0.18 m).
+    setSteadyVelocity(vel, [0, 0, -8]); // matches DEFAULT_PLAYER_PROFILE.desiredRunSpeed
+    tickN(reg, g, 2);
+    const runY = readBuffer(skel).byEntity.get(1)!.bones[0].localPos[1];
+    expect(runY).toBeLessThan(-0.17);
+    expect(runY).toBeGreaterThan(-0.19);
+
+    // Decelerating to idle ramps pelvis back to bind.
+    setSteadyVelocity(vel, [0, 0, 0]);
+    tickN(reg, g, 2);
+    const stoppedY = readBuffer(skel).byEntity.get(1)!.bones[0].localPos[1];
+    expect(stoppedY).toBeCloseTo(0, 6);
+  });
+
   it("airborne with zero speed → no extra pitch contribution (speed-scaled)", () => {
     const { reg, g, skel, cc } = setup();
     writeBuffer(cc, (d) => {
