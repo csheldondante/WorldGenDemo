@@ -62,6 +62,15 @@ export interface SolveBodyUpInputs {
   gravity: Vec3;
   /** Implicit drag (1/s). Steady-state lean at velocity v: atan(dragCoeff·v / g). 0 = lean only on actual accel. */
   dragCoeff: number;
+  /**
+   * 0..1. How much of the static gravity-along-slope component the body
+   * "implicitly" accounts for via lean. At 1.0, the body leans uphill on a
+   * slope as if it were producing the force needed to stay there — captures
+   * the visible-force-balance the actual character controller does in
+   * physics but doesn't expose to the anim layer. On flat ground this term
+   * vanishes (gravity-along-tangent = 0). Default 1.0.
+   */
+  gravityCounterScale?: number;
 }
 
 export interface SolveBodyUpResult {
@@ -82,10 +91,18 @@ export interface SolveBodyUpResult {
  */
 export function solveBodyUpTarget(inputs: SolveBodyUpInputs): SolveBodyUpResult {
   const { velocity, accelReal, surfaceNormal, gravity, dragCoeff } = inputs;
+  const gravityCounterScale = inputs.gravityCounterScale ?? 1.0;
   const N = vnormalize(surfaceNormal, [0, 1, 0]);
 
-  // a_eff = a_real + dragCoeff · v (implicit drag captures steady-state lean).
-  const aEff = vadd(accelReal, vscale(velocity, dragCoeff));
+  // a_eff = a_real + dragCoeff · v + gravityCounterScale · (−gravity_tangent).
+  // The third term lets the body lean as if it were producing the force
+  // needed to overcome gravity-along-slope. On flat ground gravity_tangent
+  // = 0 so this vanishes; on a 30° slope it adds ~5 m/s² uphill, tipping
+  // the body further into the hill (which is what real climbers do).
+  const gDotN = vdot(gravity, N);
+  const gravityTangent = vsub(gravity, vscale(N, gDotN));
+  const climbCounter = vscale(gravityTangent, -gravityCounterScale);
+  const aEff = vadd(vadd(accelReal, vscale(velocity, dragCoeff)), climbCounter);
 
   // Project a_eff into the tangent plane defined by N: a_tangent = a − (a·N)N.
   const aDotN = vdot(aEff, N);

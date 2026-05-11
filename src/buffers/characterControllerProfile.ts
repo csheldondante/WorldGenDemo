@@ -135,6 +135,13 @@ export interface CharacterControllerProfile {
   leanCompressionScale: number;
   /** Extra pelvis drop from speed alone (m at `desiredRunSpeed`). Added on top of leanCompression. */
   pelvisSpeedCompression: number;
+  /**
+   * 0..1. How much of the static gravity-along-slope component the body
+   * leans into. At 1.0 the body tips uphill on a slope as if it were
+   * producing the force to hold itself there — visible "climber's lean."
+   * On flat ground this term vanishes (no gravity along the tangent plane).
+   */
+  leanGravityCounterScale: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -190,6 +197,7 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   maxLeanAngle: 0.6,          // ~34° hard ceiling.
   leanCompressionScale: 1.0,  // geometric hip drop = L·(1−cos θ) at scale 1.
   pelvisSpeedCompression: 0.08, // extra 8 cm drop at full run on top of geometric.
+  leanGravityCounterScale: 1.0,
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {

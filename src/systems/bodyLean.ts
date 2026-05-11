@@ -125,6 +125,8 @@ export function createBodyLeanSystem(): SystemDescriptor {
               surfaceNormal,
               gravity,
               dragCoeff: profile.leanDragCoeff,
+              gravityCounterScale:
+                ctrl.locomotionMode === "surfaceConstrained" ? profile.leanGravityCounterScale : 0,
             });
 
             // Clamp lean angle to profile.maxLeanAngle, preserving direction.

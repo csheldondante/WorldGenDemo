@@ -85,34 +85,48 @@ describe("solveBodyUpTarget — slope", () => {
   // 30° slope where +X is uphill: surface normal tilts toward −X.
   const slope30: Vec3 = [-Math.sin(Math.PI / 6), Math.cos(Math.PI / 6), 0];
 
-  it("standing still on a slope with no accel → body up = world up (vertical biped)", () => {
-    // Real bipeds on a slope keep their torso vertical (CoM over feet via leg
-    // adjustment), not parallel to the slope. The apparent-gravity model
-    // captures this: at rest, apparentG = gravity (a_tangent = 0), so bodyUp
-    // = world up regardless of the surface tilt.
+  it("standing still on a slope with gravityCounterScale=0 → body up = world up", () => {
+    // Without the gravity-counter term, apparentG = gravity at rest, so bodyUp
+    // = world up regardless of slope tilt.
     const { bodyUpTarget } = solveBodyUpTarget({
       velocity: [0, 0, 0],
       accelReal: [0, 0, 0],
       surfaceNormal: slope30,
       gravity: G,
       dragCoeff: 0,
+      gravityCounterScale: 0,
     });
     expect(bodyUpTarget[0]).toBeCloseTo(0, 4);
     expect(bodyUpTarget[1]).toBeCloseTo(1, 4);
     expect(bodyUpTarget[2]).toBeCloseTo(0, 4);
   });
 
-  it("accelerating uphill (+X on this slope) tips the body uphill (head forward of feet)", () => {
-    // Sprinter accelerating up a slope: CoM/head leans in the direction of
-    // motion so the feet can push back. With acceleration in +X (uphill on
-    // this slope), bodyUp's +X component goes positive.
-    const aMag = 9.81 * Math.sin(Math.PI / 6); // ~4.9 m/s²
+  it("standing on a slope with gravityCounterScale=1 → body tips uphill (climber's lean)", () => {
+    // With the full counter term, the body leans into the hill as if it
+    // were producing the static balance force itself. On a +X-uphill slope
+    // bodyUp gets a +X component.
+    const { bodyUpTarget } = solveBodyUpTarget({
+      velocity: [0, 0, 0],
+      accelReal: [0, 0, 0],
+      surfaceNormal: slope30,
+      gravity: G,
+      dragCoeff: 0,
+      gravityCounterScale: 1,
+    });
+    expect(bodyUpTarget[0]).toBeGreaterThan(0.2); // tipped uphill
+    expect(bodyUpTarget[1]).toBeGreaterThan(0.9);
+  });
+
+  it("accelerating uphill (+X) tips body uphill even without gravity-counter", () => {
+    // With gravityCounterScale=0, only the explicit a_real drives lean.
+    const aMag = 9.81 * Math.sin(Math.PI / 6);
     const { bodyUpTarget } = solveBodyUpTarget({
       velocity: [0, 0, 0],
       accelReal: [aMag, 0, 0],
       surfaceNormal: slope30,
       gravity: G,
       dragCoeff: 0,
+      gravityCounterScale: 0,
     });
     expect(bodyUpTarget[0]).toBeGreaterThan(0.1);
     expect(bodyUpTarget[1]).toBeGreaterThan(0.85);

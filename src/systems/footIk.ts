@@ -24,7 +24,12 @@ import {
   type FootLockBufferData,
   type FootLockState,
 } from "../buffers/footLock";
+import {
+  SURFACE_ATTACHMENT_BUFFER_ID,
+  type SurfaceAttachmentBufferData,
+} from "../buffers/surfaceAttachment";
 import { fromYaw, mul, rotate, type Vec3 } from "../lib/math/quat";
+import { quatFromTo, quatInv } from "../lib/math/ik";
 import { twoBoneIK } from "../lib/math/ik";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "./chainDynamics";
 import { FOOT_PLANNER_SYSTEM_ID } from "./footPlanner";
@@ -74,6 +79,7 @@ export function createFootIkSystem(): SystemDescriptor {
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: FOOT_LOCK_BUFFER_ID, access: "read" },
+      { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
       { id: SKELETON_BUFFER_ID, access: "readwrite" },
     ],
     runsAfter: [STATE_MACHINE_SYSTEM_ID, CHAIN_DYNAMICS_SYSTEM_ID, FOOT_PLANNER_SYSTEM_ID],
@@ -84,6 +90,7 @@ export function createFootIkSystem(): SystemDescriptor {
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
       const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       const locks = readBuffer(buffer<FootLockBufferData>(FOOT_LOCK_BUFFER_ID));
+      const surfaceAttach = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const skelBuf = buffer<SkeletonBufferData>(SKELETON_BUFFER_ID);
       const skel = readBuffer(skelBuf);
       if (skel.byEntity.size === 0) return;
@@ -107,8 +114,15 @@ export function createFootIkSystem(): SystemDescriptor {
           if (ctrl.locomotionMode === "surfaceConstrained") {
             const footStates = locks.byEntity.get(id);
             if (!footStates || footStates.length !== rig.legs.length) continue;
+            // Surface normal for foot-plant orientation (defaults to world up
+            // if no attachment yet). Same normal for both feet — fine on flat
+            // ground; per-foot sampling at plant points is a follow-up.
+            const att = surfaceAttach.byEntity.get(id);
+            const surfaceNormalWorld: Vec3 = att && att.sample
+              ? [att.sample.normal[0], att.sample.normal[1], att.sample.normal[2]]
+              : [0, 1, 0];
             for (let i = 0; i < rig.legs.length; i++) {
-              applyLegIK(rig.legs[i], rig, comp.bones, footStates[i], profile, pelvisWorldRot, pelvisWorldPos);
+              applyLegIK(rig.legs[i], rig, comp.bones, footStates[i], profile, pelvisWorldRot, pelvisWorldPos, surfaceNormalWorld);
             }
           } else {
             // Airborne / volume-constrained: targets are body-relative.
@@ -130,6 +144,7 @@ function applyLegIK(
   profile: CharacterControllerProfile,
   pelvisWorldRot: [number, number, number, number],
   pelvisWorldPos: Vec3,
+  surfaceNormalWorld: Vec3,
 ): void {
   if (!lock.initialized) return;
 
@@ -186,6 +201,17 @@ function applyLegIK(
   up[0] = upper[0]; up[1] = upper[1]; up[2] = upper[2]; up[3] = upper[3];
   const lo = bones[leg.kneeBone].localRot;
   lo[0] = lower[0]; lo[1] = lower[1]; lo[2] = lower[2]; lo[3] = lower[3];
+
+  // Foot orientation: align foot's local +Y to the surface normal so the
+  // sole sits flat. We need to express that target as a rotation in the
+  // foot's parent frame (lower leg). Build lowerLegWorldRot from the chain
+  // we just wrote: pelvisWorld · upper · lower. Then foot.localRot rotates
+  // the parent's local Y to point along surfaceNormal_in_lowerLeg_frame.
+  const lowerLegWorldRot = mul(mul(pelvisWorldRot, upper), lower);
+  const surfaceNormalInLowerLeg = rotate(quatInv(lowerLegWorldRot), surfaceNormalWorld);
+  const footAlign = quatFromTo([0, 1, 0], surfaceNormalInLowerLeg);
+  const fo = bones[leg.footBone].localRot;
+  fo[0] = footAlign[0]; fo[1] = footAlign[1]; fo[2] = footAlign[2]; fo[3] = footAlign[3];
 }
 
 /**
