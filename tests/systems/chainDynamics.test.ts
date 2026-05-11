@@ -26,6 +26,15 @@ import {
   type VelocityBufferData,
 } from "../../src/buffers/velocity";
 import {
+  createCharacterControllerBuffer,
+  CHARACTER_CONTROLLER_BUFFER_ID,
+  type CharacterControllerBufferData,
+} from "../../src/buffers/characterController";
+import {
+  createCharacterControllerProfileBuffer,
+  DEFAULT_PLAYER_PROFILE,
+} from "../../src/buffers/characterControllerProfile";
+import {
   createChainDynamicsSystem,
   CHAIN_DYNAMICS_SYSTEM_ID,
 } from "../../src/systems/chainDynamics";
@@ -61,6 +70,8 @@ function setup() {
   reg.registerBuffer(createSkeletonBuffer());
   reg.registerBuffer(createTransformBuffer());
   reg.registerBuffer(createVelocityBuffer());
+  reg.registerBuffer(createCharacterControllerBuffer());
+  reg.registerBuffer(createCharacterControllerProfileBuffer());
   reg.registerSystem(createChainDynamicsSystem());
 
   const rigBuf = reg.getBuffer<RigDefinitionBufferData>(RIG_DEFINITION_BUFFER_ID);
@@ -69,17 +80,30 @@ function setup() {
   const skel = reg.getBuffer<SkeletonBufferData>(SKELETON_BUFFER_ID);
   const tf = reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
   const vel = reg.getBuffer<VelocityBufferData>(VELOCITY_BUFFER_ID);
+  const cc = reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
 
   writeBuffer(skel, (d) => { d.byEntity.set(1, initSkeletonFromRig(SPINE_RIG)); });
   writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 0, 0], yaw: 0, scale: 1 }); });
   writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, 0], prevLinear: [0, 0, 0] }); });
+  writeBuffer(cc, (d) => {
+    d.byEntity.set(1, {
+      state: "surfaceRun",
+      locomotionMode: "surfaceConstrained",
+      profileId: DEFAULT_PLAYER_PROFILE.id,
+      lastTransitionReason: "spawn",
+      timeInState: 0,
+      yawVel: 0,
+      targetYaw: 0,
+      orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
+    });
+  });
 
   const g = buildExecutionGraph({
     id: "g",
     nodes: [CHAIN_DYNAMICS_SYSTEM_ID],
     registry: reg,
   });
-  return { reg, g, skel, tf, vel };
+  return { reg, g, skel, tf, vel, cc };
 }
 
 /** Set steady-state velocity (prev == current so derived accel = 0). */
@@ -171,6 +195,41 @@ describe("ChainDynamicsSystem", () => {
     const bones = readBuffer(skel).byEntity.get(1)!.bones;
     const total = Math.abs(bones[0].leanVec[0] + bones[1].leanVec[0] + bones[2].leanVec[0] + bones[3].leanVec[0]);
     expect(total).toBeLessThanOrEqual(0.6 + 1e-3);
+  });
+
+  it("airborne (volumeConstrained) + forward speed → extra forward pitch on the chain", () => {
+    const { reg, g, skel, vel, cc } = setup();
+    setSteadyVelocity(vel, [0, 0, -8]); // running forward at full speed
+    writeBuffer(cc, (d) => {
+      const c = d.byEntity.get(1)!;
+      c.locomotionMode = "volumeConstrained";
+      d.byEntity.set(1, c);
+    });
+    tickN(reg, g, 90);
+    const groundedReg = setup();
+    setSteadyVelocity(groundedReg.vel, [0, 0, -8]);
+    tickN(groundedReg.reg, groundedReg.g, 90);
+    const airBones = readBuffer(skel).byEntity.get(1)!.bones;
+    const groundBones = readBuffer(groundedReg.skel).byEntity.get(1)!.bones;
+    // Airborne should pitch further forward (more negative on the +X-axis
+    // rotation component) than grounded at the same velocity.
+    const airTotal = airBones[0].leanVec[0] + airBones[1].leanVec[0] + airBones[2].leanVec[0] + airBones[3].leanVec[0];
+    const groundTotal = groundBones[0].leanVec[0] + groundBones[1].leanVec[0] + groundBones[2].leanVec[0] + groundBones[3].leanVec[0];
+    expect(airTotal).toBeLessThan(groundTotal);
+  });
+
+  it("airborne with zero speed → no extra pitch contribution (speed-scaled)", () => {
+    const { reg, g, skel, cc } = setup();
+    writeBuffer(cc, (d) => {
+      const c = d.byEntity.get(1)!;
+      c.locomotionMode = "volumeConstrained";
+      d.byEntity.set(1, c);
+    });
+    tickN(reg, g, 30);
+    const bones = readBuffer(skel).byEntity.get(1)!.bones;
+    for (const b of bones) {
+      expect(Math.hypot(...b.leanVec)).toBeLessThan(1e-6);
+    }
   });
 
   it("writes a normalized localRot quaternion derived from leanVec", () => {

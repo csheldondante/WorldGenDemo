@@ -244,15 +244,22 @@ describe("FootPlannerSystem", () => {
     expect(closeToNew).toBe(true);
   });
 
-  it("skips entities not in surfaceConstrained locomotion mode", () => {
+  it("airborne (volumeConstrained) marks foot lock states uninitialized for lazy-init on landing", () => {
     const { reg, g, cc, locks } = setup();
+    // First tick on surface initializes the feet.
+    tick(reg, g);
+    expect(readBuffer(locks).byEntity.get(1)!.every((s) => s.initialized)).toBe(true);
+    // Now go airborne: planner should NOT advance plants, but should clear
+    // the initialized flag so the lazy-init path re-snaps to current hipUnder
+    // when the character lands.
     writeBuffer(cc, (d) => {
       const c = d.byEntity.get(1)!;
       c.locomotionMode = "volumeConstrained";
       d.byEntity.set(1, c);
     });
     tick(reg, g);
-    expect(readBuffer(locks).byEntity.has(1)).toBe(false);
+    const states = readBuffer(locks).byEntity.get(1)!;
+    expect(states.every((s) => s.initialized === false)).toBe(true);
   });
 
   it("body yaw drift past threshold triggers a step even without translation", () => {
@@ -279,6 +286,40 @@ describe("FootPlannerSystem", () => {
     // plantTarget.z should be ahead of body (more negative than entity's current z = -1.0)
     // by at least velocity * (swingDur + leadTime).
     expect(swinging.plantTarget[2]).toBeLessThan(-1.0 - 0.5);
+  });
+
+  it("brake-plant: deceleration along velocity extends plant target further forward", () => {
+    const { reg, g, tf, vel, locks } = setup();
+    tick(reg, g); // initialize
+
+    // Set up a swing-triggering drift with NO deceleration: velocity steady at -8z.
+    writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 1, -0.5], yaw: 0, scale: 1 }); });
+    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, -8], prevLinear: [0, 0, -8] }); });
+    tick(reg, g);
+    const steadyTarget = readBuffer(locks).byEntity.get(1)!.find((s) => s.state === "swinging")?.plantTarget[2];
+    expect(steadyTarget).toBeDefined();
+
+    // Reset and try with the same drift but with prevLinear faster (so accel
+    // is decelerating along velocity). Plant should land further forward.
+    const fresh = setup();
+    tick(fresh.reg, fresh.g);
+    writeBuffer(fresh.tf, (d) => { d.byEntity.set(1, { position: [0, 1, -0.5], yaw: 0, scale: 1 }); });
+    writeBuffer(fresh.vel, (d) => {
+      // Going -Z, but prev was even more negative (faster forward last tick),
+      // so accel along velocity is positive in -Z direction... wait, decel
+      // along velocity means accel projects to -velUnit. velUnit = (0,0,-1).
+      // accel = (linear - prevLinear)/dt. For decel, (linear - prev) should
+      // be along +Z (i.e., reducing the -Z magnitude). So prev = -10z, now
+      // = -8z → (linear - prev) = (0,0,2), in same dir as +z. Project onto
+      // velUnit=(0,0,-1) → -2. Negative projection = decel. Good.
+      d.byEntity.set(1, { linear: [0, 0, -8], prevLinear: [0, 0, -10] });
+    });
+    tick(fresh.reg, fresh.g);
+    const decelTarget = readBuffer(fresh.locks).byEntity.get(1)!.find((s) => s.state === "swinging")?.plantTarget[2];
+    expect(decelTarget).toBeDefined();
+    if (steadyTarget !== undefined && decelTarget !== undefined) {
+      expect(decelTarget).toBeLessThan(steadyTarget); // further negative z = further forward
+    }
   });
 
   it("flat surface (no-op worldToUV) still initializes feet to surface y=0", () => {

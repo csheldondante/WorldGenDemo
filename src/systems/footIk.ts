@@ -32,21 +32,42 @@ import { SKELETON_WORLD_SYSTEM_ID } from "./skeletonWorld";
 
 export const FOOT_IK_SYSTEM_ID = "footIkSystem";
 
+/** Airborne pose: each foot hangs `AIRBORNE_FOOT_DROP` below its hip in
+ *  pelvis-local frame, and `AIRBORNE_FOOT_FORWARD` ahead of it (along body
+ *  forward = -Z body-local). Distance to hip is ~0.56 m, comfortably under
+ *  the 0.8 m max leg reach, so knees bend visibly mid-air rather than
+ *  dangling straight down or stretching out behind. */
+const AIRBORNE_FOOT_DROP = 0.55;
+const AIRBORNE_FOOT_FORWARD = 0.10;
+
 /**
- * Solves 2-bone IK per leg so each foot lands at the world position chosen by
- * `FootPlannerSystem`. While the foot is `"swinging"`, an additional vertical
- * lift curve raises the foot above the lerped path so it clears the ground.
+ * Solves 2-bone IK per leg. Two paths depending on locomotion mode:
+ *
+ * - `surfaceConstrained` → reads `FootLockBuffer` for the planner-managed
+ *   world plant + swing progress; adds a vertical lift curve while swinging.
+ * - `volumeConstrained` (airborne / glide / etc.) → ignores the planner and
+ *   targets a body-relative resting pose (feet under-and-slightly-ahead of
+ *   each hip). Knees bend automatically into a tucked-but-reaching shape;
+ *   when the character lands, `FootPlannerSystem` lazy-inits the plants and
+ *   the surface path takes over.
  *
  * Why two systems instead of one: `FootPlannerSystem` owns plant logic + state
  * machine (when a foot lifts, where it lands). `FootIKSystem` owns the bone
- * math (given a world target, derive the upper/lower leg local rotations).
- * Splitting them keeps each test surface narrow.
+ * math (given a target, derive the upper/lower leg local rotations). Each
+ * test surface stays narrow.
+ *
+ * Future:
+ *  - Split the airborne pose into ascent/descent phases (read v.linear[1]):
+ *    tuck higher on the way up, reach further forward on the way down for
+ *    landing.
+ *  - When `surfaceSlide` state starts being produced, route it as a third
+ *    path: legs stay locked straight while plantPos drags along velocity.
  */
 export function createFootIkSystem(): SystemDescriptor {
   return {
     id: FOOT_IK_SYSTEM_ID,
     description:
-      "Per-leg 2-bone IK. Reads FootLockBuffer for each foot's target world position and swing progress, adds a vertical lift curve during swing, and solves twoBoneIK in pelvis-local frame to produce upperLeg + lowerLeg localRots.",
+      "Per-leg 2-bone IK. Surface-constrained: reads FootLockBuffer for plant + swing. Volume-constrained: body-relative airborne pose. Writes upperLeg/lowerLeg localRots.",
     buffers: [
       { id: RIG_DEFINITION_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
@@ -74,19 +95,26 @@ export function createFootIkSystem(): SystemDescriptor {
           const t = transforms.byEntity.get(id);
           if (!t) continue;
           const ctrl = cc.byEntity.get(id);
-          if (!ctrl || ctrl.locomotionMode !== "surfaceConstrained") continue;
+          if (!ctrl) continue;
           const profile = profiles.byId.get(ctrl.profileId);
           if (!profile) continue;
-          const footStates = locks.byEntity.get(id);
-          if (!footStates || footStates.length !== rig.legs.length) continue;
 
           const yawQ = fromYaw(t.yaw);
           const pelvisLocalRot = comp.bones[0].localRot;
           const pelvisWorldRot = mul(yawQ, pelvisLocalRot);
           const pelvisWorldPos: Vec3 = [t.position[0], t.position[1], t.position[2]];
 
-          for (let i = 0; i < rig.legs.length; i++) {
-            applyLegIK(rig.legs[i], rig, comp.bones, footStates[i], profile, pelvisWorldRot, pelvisWorldPos);
+          if (ctrl.locomotionMode === "surfaceConstrained") {
+            const footStates = locks.byEntity.get(id);
+            if (!footStates || footStates.length !== rig.legs.length) continue;
+            for (let i = 0; i < rig.legs.length; i++) {
+              applyLegIK(rig.legs[i], rig, comp.bones, footStates[i], profile, pelvisWorldRot, pelvisWorldPos);
+            }
+          } else {
+            // Airborne / volume-constrained: targets are body-relative.
+            for (const leg of rig.legs) {
+              applyAirborneLegIK(leg, rig, comp.bones);
+            }
           }
         }
       });
@@ -152,6 +180,39 @@ function applyLegIK(
     targetLocal[2] = rootLocal[2] + (targetLocal[2] - rootLocal[2]) * scale;
     targetLocal[1] = rootLocal[1] - dropMax;
   }
+
+  const { upper, lower } = twoBoneIK(rootLocal, targetLocal, leg.kneePoleDir, L1, L2, [0, -1, 0]);
+  const up = bones[leg.hipBone].localRot;
+  up[0] = upper[0]; up[1] = upper[1]; up[2] = upper[2]; up[3] = upper[3];
+  const lo = bones[leg.kneeBone].localRot;
+  lo[0] = lower[0]; lo[1] = lower[1]; lo[2] = lower[2]; lo[3] = lower[3];
+}
+
+/**
+ * Airborne pose: in pelvis-local frame, target = hip + (0, -drop, -forward).
+ * No surface query, no plant state. Knees fall into a natural tucked-but-
+ * reaching pose. The whole solve is local so it doesn't care about the
+ * character's world position or any planner state — when the character
+ * lands, FootPlannerSystem lazy-inits fresh plants and the surface path
+ * takes over with no transition seam to manage here.
+ */
+function applyAirborneLegIK(
+  leg: LegSpec,
+  rig: RigDefinition,
+  bones: BoneState[],
+): void {
+  const hipBone = rig.bones[leg.hipBone];
+  const kneeBone = rig.bones[leg.kneeBone];
+  const footBone = rig.bones[leg.footBone];
+  const L1 = Math.hypot(kneeBone.bindLocalPos[0], kneeBone.bindLocalPos[1], kneeBone.bindLocalPos[2]);
+  const L2 = Math.hypot(footBone.bindLocalPos[0], footBone.bindLocalPos[1], footBone.bindLocalPos[2]);
+
+  const rootLocal: Vec3 = [hipBone.bindLocalPos[0], hipBone.bindLocalPos[1], hipBone.bindLocalPos[2]];
+  const targetLocal: Vec3 = [
+    hipBone.bindLocalPos[0],
+    hipBone.bindLocalPos[1] - AIRBORNE_FOOT_DROP,
+    hipBone.bindLocalPos[2] - AIRBORNE_FOOT_FORWARD,
+  ];
 
   const { upper, lower } = twoBoneIK(rootLocal, targetLocal, leg.kneePoleDir, L1, L2, [0, -1, 0]);
   const up = bones[leg.hipBone].localRot;

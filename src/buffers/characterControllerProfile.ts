@@ -106,6 +106,22 @@ export interface CharacterControllerProfile {
   footStepHeight: number;
   /** Below this horizontal speed the foot planner returns plants to under-hip for balance, not ahead (m/s). */
   footStandingSpeed: number;
+  /**
+   * Brake-plant: when the body is decelerating along its direction of motion,
+   * extend the swing's plant lookahead by `decel · footBrakeLeadGain` seconds,
+   * clamped to `footBrakeLeadMax` seconds. Result: the foot lands further
+   * forward of the hip during deceleration, visually anchoring the stop.
+   */
+  footBrakeLeadGain: number;
+  /** Hard cap on the brake-lead extension (s). */
+  footBrakeLeadMax: number;
+
+  // --- Airborne anim --------------------------------------------------------
+  /** Forward-pitch bias (rad) added to the spine chain target while airborne,
+   *  scaled by horizontal speed factor. Approximates the angular-momentum
+   *  pitch a real biped carries off a forward jump so feet land in front of
+   *  CoM. Spring dynamics naturally ease it in/out at takeoff and landing. */
+  airborneForwardPitch: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -153,6 +169,9 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   footMaxReachStretch: 0.85,  // currently unused; reserved for a future "tuck under" emergency path.
   footStepHeight: 0.32,       // visible knee lift on stride — fast runners look bent, not stilted.
   footStandingSpeed: 0.15,
+  footBrakeLeadGain: 0.008,   // 0.008 s extra lead per (m/s²) of decel; at 20 m/s² → +0.16s, but…
+  footBrakeLeadMax: 0.05,     // …capped to 0.05 s additional lookahead so plants don't fly off.
+  airborneForwardPitch: 0.28, // ~16° forward tilt in air at full speed; scaled by speed factor.
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {

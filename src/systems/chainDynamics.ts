@@ -14,6 +14,14 @@ import {
   type SkeletonBufferData,
   type BoneState,
 } from "../buffers/skeleton";
+import {
+  CHARACTER_CONTROLLER_BUFFER_ID,
+  type CharacterControllerBufferData,
+} from "../buffers/characterController";
+import {
+  CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
+  type CharacterControllerProfileBufferData,
+} from "../buffers/characterControllerProfile";
 import { fromRotationVector, fromYaw, rotate } from "../lib/math/quat";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
 import { SKELETON_WORLD_SYSTEM_ID } from "./skeletonWorld";
@@ -48,6 +56,8 @@ export function createChainDynamicsSystem(): SystemDescriptor {
       { id: RIG_DEFINITION_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
       { id: VELOCITY_BUFFER_ID, access: "read" },
+      { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
+      { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: SKELETON_BUFFER_ID, access: "readwrite" },
     ],
     runsAfter: [STATE_MACHINE_SYSTEM_ID, SURFACE_CONSTRAINT_SYSTEM_ID],
@@ -59,6 +69,8 @@ export function createChainDynamicsSystem(): SystemDescriptor {
       const rigs = readBuffer(buffer<RigDefinitionBufferData>(RIG_DEFINITION_BUFFER_ID));
       const transforms = readBuffer(buffer<TransformBufferData>(TRANSFORM_BUFFER_ID));
       const vels = readBuffer(buffer<VelocityBufferData>(VELOCITY_BUFFER_ID));
+      const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
+      const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       const skelBuf = buffer<SkeletonBufferData>(SKELETON_BUFFER_ID);
       const skel = readBuffer(skelBuf);
       if (skel.byEntity.size === 0) return;
@@ -85,8 +97,24 @@ export function createChainDynamicsSystem(): SystemDescriptor {
           ];
           const localAccel = rotate(invYaw, worldAccel);
 
+          // Airborne forward-pitch term: approximates the angular momentum
+          // a real biped carries off a forward push-off. Scaled by current
+          // horizontal speed so standing-still jumps don't tilt and full-
+          // speed leaps land with feet visibly in front of CoM. Spring
+          // dynamics naturally ease it in/out at takeoff and landing.
+          const ctrl = cc.byEntity.get(id);
+          const profile = ctrl ? profiles.byId.get(ctrl.profileId) : undefined;
+          let airborneForwardPitch = 0;
+          if (ctrl && profile && ctrl.locomotionMode === "volumeConstrained") {
+            const speed = Math.hypot(v.linear[0], v.linear[2]);
+            const speedFactor = profile.desiredRunSpeed > 0 ? Math.min(1, speed / profile.desiredRunSpeed) : 0;
+            // Negative because forward-tilt about +X axis is a negative rawX
+            // (see applyChain sign comment). Speed-scaled.
+            airborneForwardPitch = -profile.airborneForwardPitch * speedFactor;
+          }
+
           for (const chain of rig.chains) {
-            applyChain(chain, comp.bones, localVel, localAccel, dt);
+            applyChain(chain, comp.bones, localVel, localAccel, airborneForwardPitch, dt);
           }
         }
       });
@@ -107,6 +135,7 @@ function applyChain(
   bones: BoneState[],
   localVel: [number, number, number],
   localAccel: [number, number, number],
+  airborneForwardPitch: number,
   dt: number,
 ): void {
   const N = chain.segments.length;
@@ -117,7 +146,10 @@ function applyChain(
   // by a *negative* angle (moves +Y toward -Z). Forward acceleration adds to
   // the same direction. Rightward motion (localVel.x > 0) tilts right, which
   // is rotation about +Z by a *negative* angle (moves +Y toward +X).
-  const rawX = chain.leanScaleVel * localVel[2] + chain.leanScaleAccel * localAccel[2];
+  // airborneForwardPitch is a phenomenological angular-momentum term that
+  // only fires in volume-constrained locomotion (the caller passes 0 when
+  // grounded). Sign is already negative (forward) per the caller.
+  const rawX = chain.leanScaleVel * localVel[2] + chain.leanScaleAccel * localAccel[2] + airborneForwardPitch;
   const rawZ = -chain.leanScaleVel * localVel[0] - chain.leanScaleAccel * localAccel[0];
 
   // Clamp total magnitude to maxLean.

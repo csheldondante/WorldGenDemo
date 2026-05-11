@@ -94,21 +94,32 @@ export function createFootPlannerSystem(): SystemDescriptor {
 
       writeBuffer(lockBuf, (locks) => {
         for (const [id, ctrl] of cc.byEntity) {
-          if (ctrl.locomotionMode !== "surfaceConstrained") continue;
           const comp = skel.byEntity.get(id);
           if (!comp) continue;
           const rig = rigs.byId.get(comp.rigId);
           if (!rig || rig.legs.length === 0) continue;
-          const t = transforms.byEntity.get(id);
-          if (!t) continue;
-          const profile = profiles.byId.get(ctrl.profileId);
-          if (!profile) continue;
 
           let footStates = locks.byEntity.get(id);
           if (!footStates || footStates.length !== rig.legs.length) {
             footStates = makeUninitializedFootLockStates(rig.legs.length);
             locks.byEntity.set(id, footStates);
           }
+
+          // Airborne / volume-constrained: planter doesn't drive plants — the
+          // IK system computes a body-relative airborne pose directly. We
+          // still touch the foot states though: marking them uninitialized
+          // means that as soon as locomotion returns to surface-constrained
+          // the lazy-init path re-snaps each plant to the current hipUnder,
+          // erasing any stale world position from before the jump.
+          if (ctrl.locomotionMode !== "surfaceConstrained") {
+            for (const lock of footStates) lock.initialized = false;
+            continue;
+          }
+
+          const t = transforms.byEntity.get(id);
+          if (!t) continue;
+          const profile = profiles.byId.get(ctrl.profileId);
+          if (!profile) continue;
 
           // Compose pelvis frame using yaw + chain-dynamics lean — same as IK.
           const yawQ = fromYaw(t.yaw);
@@ -120,6 +131,22 @@ export function createFootPlannerSystem(): SystemDescriptor {
           const vx = v ? v.linear[0] : 0;
           const vz = v ? v.linear[2] : 0;
           const speed = Math.hypot(vx, vz);
+          // Per-tick deceleration along the velocity direction, in m/s². Sign:
+          // positive = body slowing down (brake), negative = body speeding up
+          // (accel). Computed from VelocityComponent.prevLinear (snapshotted
+          // by VelocityIntegrationSystem at the start of the integration
+          // step). The brake-lead bias passes only the positive portion.
+          let brakeAlongVel = 0;
+          if (v && speed > 1e-3) {
+            const invSpeed = 1 / speed;
+            const vUnitX = vx * invSpeed;
+            const vUnitZ = vz * invSpeed;
+            const invDt = dt > 0 ? 1 / dt : 0;
+            const accelX = (v.linear[0] - v.prevLinear[0]) * invDt;
+            const accelZ = (v.linear[2] - v.prevLinear[2]) * invDt;
+            const projection = accelX * vUnitX + accelZ * vUnitZ;
+            brakeAlongVel = Math.max(0, -projection);
+          }
 
           for (let i = 0; i < rig.legs.length; i++) {
             const leg = rig.legs[i];
@@ -156,7 +183,7 @@ export function createFootPlannerSystem(): SystemDescriptor {
               // `swingDuration` at speed.
               const trigger = (distTrigger || yawTrigger) && !anyOtherSwinging(footStates, i);
               if (trigger) {
-                startSwing(lock, profile, leg, rig.bones[leg.hipBone].bindLocalPos, t.yaw, pelvisWorldPos, vx, vz, speed, horizDist, surface);
+                startSwing(lock, profile, leg, rig.bones[leg.hipBone].bindLocalPos, t.yaw, pelvisWorldPos, vx, vz, speed, horizDist, brakeAlongVel, surface);
               }
               // hipWorldY only used by the over-reach math previously; kept the var
               // to make a future over-reach branch easy to wire back in.
@@ -220,6 +247,7 @@ function startSwing(
   vz: number,
   speed: number,
   horizDist: number,
+  brakeAlongVel: number,
   surface: NonNullable<SurfaceProviderBufferData["heightmap"]>,
 ): void {
   // Swing duration shortens with speed so sprint cadence stays high enough
@@ -227,7 +255,12 @@ function startSwing(
   // bump per drift distance so long re-plants take a hair longer.
   const dynBase = profile.footSwingDuration / (1 + profile.footSwingSpeedFactor * speed);
   const swingDur = Math.max(profile.footMinSwingDuration, dynBase) + 0.02 * horizDist;
-  const lookahead = swingDur + profile.footPlantLeadTime;
+  // Brake-plant: when the body is decelerating, extend the lookahead so the
+  // foot lands further forward of the hip than usual — the visual brake.
+  // `brakeAlongVel` is the magnitude of decel along the velocity direction
+  // (only positive when the body is actively slowing down).
+  const brakeExtraLead = Math.min(profile.footBrakeLeadMax, brakeAlongVel * profile.footBrakeLeadGain);
+  const lookahead = swingDur + profile.footPlantLeadTime + brakeExtraLead;
 
   // Predict where the hip's XZ will be at swing-end + leadBuffer. Yaw held
   // constant for the prediction (good enough; a full yaw chase finishes

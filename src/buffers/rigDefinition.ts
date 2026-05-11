@@ -115,7 +115,12 @@ export const RIG_DEFINITION_BUFFER_ID = "rigDefinition";
 const BIPED: RigDefinition = {
   id: "biped",
   bones: [
-    { name: "pelvis",    parent: -1, bindLocalPos: [ 0,    0,    0], bindLocalRot: [0, 0, 0, 1] },
+    // Pelvis sits ~0.3 m above the entity transform so the feet's bind-pose
+    // Y lands at ground level (entity Y = bodyRadius = 0.5; pelvis Y = 0.8;
+    // foot Y = 0.8 − 0.8 = 0). Without this offset the bind pose would put
+    // feet 0.3 m underground and the IK clamp would force the knees into a
+    // permanent bent-at-idle pose.
+    { name: "pelvis",    parent: -1, bindLocalPos: [ 0,    0.3,  0], bindLocalRot: [0, 0, 0, 1] },
     { name: "spine1",    parent:  0, bindLocalPos: [ 0,    0.30, 0], bindLocalRot: [0, 0, 0, 1] },
     { name: "spine2",    parent:  1, bindLocalPos: [ 0,    0.30, 0], bindLocalRot: [0, 0, 0, 1] },
     { name: "head",      parent:  2, bindLocalPos: [ 0,    0.30, 0], bindLocalRot: [0, 0, 0, 1] },
