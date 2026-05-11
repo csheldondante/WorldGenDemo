@@ -70,7 +70,10 @@ export function createCharacterControllerSystem(): SystemDescriptor {
               if (!profile) continue;
               const input = ci.byEntity.get(id);
               if (!input) continue;
-              const v = vel.byEntity.get(id) ?? { linear: [0, 0, 0] as [number, number, number] };
+              const v = vel.byEntity.get(id) ?? {
+                linear: [0, 0, 0] as [number, number, number],
+                prevLinear: [0, 0, 0] as [number, number, number],
+              };
               const accelEntry = fa.byEntity.get(id) ?? { accel: [0, 0, 0] as [number, number, number] };
 
               ctrl.timeInState += dt;

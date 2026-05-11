@@ -71,12 +71,22 @@ export function createChainDynamicsSystem(): SystemDescriptor {
           const v = vels.byEntity.get(id);
           if (!t || !v) continue;
 
-          // Horizontal velocity, then into pelvis-local frame via inverse yaw.
-          // inv(yaw) = fromYaw(-yaw) since yaw is a Y-axis rotation.
-          const localVel = rotate(fromYaw(-t.yaw), [v.linear[0], 0, v.linear[2]]);
+          // Horizontal velocity and acceleration in pelvis-local frame.
+          // Acceleration is derived from this tick's velocity delta — captures
+          // both force-driven changes and surface-constraint adjustments
+          // without polluting the physics layer.
+          const invYaw = fromYaw(-t.yaw);
+          const localVel = rotate(invYaw, [v.linear[0], 0, v.linear[2]]);
+          const invDt = dt > 0 ? 1 / dt : 0;
+          const worldAccel: [number, number, number] = [
+            (v.linear[0] - v.prevLinear[0]) * invDt,
+            0,
+            (v.linear[2] - v.prevLinear[2]) * invDt,
+          ];
+          const localAccel = rotate(invYaw, worldAccel);
 
           for (const chain of rig.chains) {
-            applyChain(chain, comp.bones, localVel, dt);
+            applyChain(chain, comp.bones, localVel, localAccel, dt);
           }
         }
       });
@@ -85,28 +95,30 @@ export function createChainDynamicsSystem(): SystemDescriptor {
 }
 
 /**
- * Per-chain spring integrator. Lean target is computed once for the whole
- * chain and divided across segments; each segment's leanVec/leanVel update
- * independently. Final per-bone `localRot = fromRotationVector(leanVec)`.
+ * Per-chain spring integrator. Lean target combines velocity (steady-state
+ * bias) and acceleration (transient inverted-pendulum response); the total is
+ * divided evenly across the chain's `segments`. With pelvis included in
+ * segments, the head's *cumulative* world tilt at steady state = N × per-seg
+ * = total — so the rig tilts as one piece while the top has the most absolute
+ * tilt (graduated chain composition).
  */
 function applyChain(
   chain: ChainSpec,
   bones: BoneState[],
   localVel: [number, number, number],
+  localAccel: [number, number, number],
   dt: number,
 ): void {
   const N = chain.segments.length;
   if (N === 0) return;
 
   // Pelvis-local: +X is right, +Z is backward (forward is -Z). Forward motion
-  // (localVel.z < 0) should tilt the top of the chain forward (-Z direction in
-  // the rotated frame). Rotation about +X by negative angle moves +Y toward
-  // -Z. Hence forwardLeanAngleAboutX = leanScale * localVel.z (negative when
-  // moving forward → negative rotation about +X → top tips forward). Rightward
-  // motion (localVel.x > 0) should tilt right; rotation about +Z by negative
-  // angle moves +Y toward +X. Hence sideLeanAngleAboutZ = -leanScale * localVel.x.
-  const rawX = chain.leanScale * localVel[2];
-  const rawZ = -chain.leanScale * localVel[0];
+  // (localVel.z < 0) should tilt the chain forward, which is rotation about +X
+  // by a *negative* angle (moves +Y toward -Z). Forward acceleration adds to
+  // the same direction. Rightward motion (localVel.x > 0) tilts right, which
+  // is rotation about +Z by a *negative* angle (moves +Y toward +X).
+  const rawX = chain.leanScaleVel * localVel[2] + chain.leanScaleAccel * localAccel[2];
+  const rawZ = -chain.leanScaleVel * localVel[0] - chain.leanScaleAccel * localAccel[0];
 
   // Clamp total magnitude to maxLean.
   const mag = Math.hypot(rawX, rawZ);

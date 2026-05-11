@@ -30,6 +30,7 @@ import { createSurfaceConstraintSystem } from "./surfaceConstraint";
 import { createCameraFollowSystem } from "./cameraFollow";
 import { createCharacterRenderSyncSystem } from "./characterRenderSync";
 import { createChainDynamicsSystem } from "./chainDynamics";
+import { createFootIkSystem } from "./footIk";
 import { createSkeletonWorldSystem } from "./skeletonWorld";
 import { createSkeletonDebugRenderSystem } from "./skeletonDebugRender";
 
@@ -73,6 +74,7 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createCameraFollowSystem());
   reg.registerSystem(createCharacterRenderSyncSystem());
   reg.registerSystem(createChainDynamicsSystem());
+  reg.registerSystem(createFootIkSystem());
   reg.registerSystem(createSkeletonWorldSystem());
   reg.registerSystem(createSkeletonDebugRenderSystem());
   return { inputAccumulator, builderAccumulator, builderDom };
@@ -102,5 +104,6 @@ export * from "./surfaceConstraint";
 export * from "./cameraFollow";
 export * from "./characterRenderSync";
 export * from "./chainDynamics";
+export * from "./footIk";
 export * from "./skeletonWorld";
 export * from "./skeletonDebugRender";

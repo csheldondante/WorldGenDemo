@@ -59,6 +59,7 @@ const chainRig: RigDefinition = {
   ],
   slots: { root: 0, tip: 2 },
   chains: [],
+  legs: [],
 };
 
 describe("SkeletonWorldSystem — forward kinematics", () => {
@@ -88,6 +89,7 @@ describe("SkeletonWorldSystem — forward kinematics", () => {
       ],
       slots: {},
       chains: [],
+      legs: [],
     };
     const rigBuf = reg.getBuffer<RigDefinitionBufferData>(RIG_DEFINITION_BUFFER_ID);
     writeBuffer(rigBuf, (d) => { d.byId.set(zRig.id, zRig); });

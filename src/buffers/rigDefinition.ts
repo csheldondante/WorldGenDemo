@@ -23,10 +23,21 @@ export interface BoneTemplate {
  * iterates rig.chains generically — quadrupeds add a tail chain, snakes add
  * one long chain, no new system code required.
  *
- * `rootBone` is the chain's anchor (the "hip" for a spine, the rump for a
- * tail). It is *not* moved by the chain solver; it's the parent reference
- * frame the segments lean within. `segments` must be in parent-chain order
- * with the first segment parented to `rootBone`.
+ * `rootBone` is metadata: the bone the chain conceptually attaches to (the
+ * "hip" for a spine, the rump for a tail). Whether `rootBone` itself leans
+ * depends on whether it appears in `segments`. For the biped spine we want
+ * the whole rig to tilt, so the pelvis is included in `segments` — the user
+ * runs forward and gravity-vs-foot-thrust pitches the whole body forward,
+ * not just the upper torso.
+ *
+ * Lean target combines two terms (Wolfire-style + light pendulum physics):
+ *
+ *   target_lean = leanScaleVel * horizontalVelocity   (steady-state running posture)
+ *               + leanScaleAccel * horizontalAccel    (transient response, ≈ a/g pendulum tilt)
+ *
+ * Critical damping `damping = 2*sqrt(stiffness)` gives a smooth response with
+ * no oscillation. Spring lag automatically produces nice secondary motion on
+ * direction changes.
  */
 export interface ChainSpec {
   name: string;
@@ -37,13 +48,41 @@ export interface ChainSpec {
   /** rad/s per rad/s of angular velocity. */
   damping: number;
   /**
-   * Map horizontal velocity (m/s, pelvis-local frame) to total chain lean
-   * angle (radians). At full run speed (8 m/s) and leanScale=0.04, total
-   * lean ≈ 0.32 rad ≈ 18°, distributed evenly across segments.
+   * Steady-state lean per unit of horizontal velocity (rad / (m/s)). At full
+   * run (8 m/s) and leanScaleVel=0.03, total lean ≈ 0.24 rad ≈ 14°.
    */
-  leanScale: number;
-  /** Maximum total lean angle (radians) before clamping. Protects against extreme accelerations. */
+  leanScaleVel: number;
+  /**
+   * Transient lean per unit of horizontal acceleration (rad / (m/s²)).
+   * Mirrors the inverted-pendulum equilibrium `tan(θ) ≈ a/g`. With g≈10 the
+   * physical value is ~0.1; we use a slightly damped 0.05 to avoid overshoot
+   * during normal accel spikes.
+   */
+  leanScaleAccel: number;
+  /** Maximum total lean angle (radians) before clamping. Protects against extreme inputs. */
   maxLean: number;
+}
+
+/**
+ * A 2-bone IK chain (leg, arm). FootIKSystem iterates these generically; a
+ * quadruped declares four legs, a snake zero. Bone lengths are derived from
+ * `bindLocalPos` of `kneeBone` and `footBone` so the rig stays the single
+ * source of truth for geometry.
+ */
+export interface LegSpec {
+  name: string;
+  /** Upper bone (hip). */
+  hipBone: number;
+  /** Lower bone (knee). */
+  kneeBone: number;
+  /** End-effector (foot). */
+  footBone: number;
+  /**
+   * Direction the mid joint should bend toward, in the upper bone's parent
+   * frame. For a biped knee bending forward this is pelvis-local forward,
+   * i.e. `[0, 0, -1]`. Quadruped back legs flip the sign.
+   */
+  kneePoleDir: [number, number, number];
 }
 
 export interface RigDefinition {
@@ -53,6 +92,8 @@ export interface RigDefinition {
   slots: Record<string, number>;
   /** Spring-driven chains (spine, tail, etc.) iterated by ChainDynamicsSystem. */
   chains: ChainSpec[];
+  /** Two-bone IK chains (legs, arms) iterated by FootIKSystem / future ArmIKSystem. */
+  legs: LegSpec[];
 }
 
 export interface RigDefinitionBufferData {
@@ -85,20 +126,43 @@ const BIPED: RigDefinition = {
     { name: "lowerLegR", parent:  7, bindLocalPos: [ 0,   -0.40, 0], bindLocalRot: [0, 0, 0, 1] },
     { name: "footR",     parent:  8, bindLocalPos: [ 0,   -0.40, 0], bindLocalRot: [0, 0, 0, 1] },
   ],
-  slots: { pelvis: 0, head: 3, footL: 6, footR: 9 },
+  slots: {
+    pelvis: 0,
+    head: 3,
+    // Per-leg bone slots so FootIKSystem can address each chain generically.
+    // A quadruped will add foreUpperLegL/foreLowerLegL/foreFootL etc.; the IK
+    // system iterates rig.legChains (declared below) so naming here is purely
+    // documentation.
+    upperLegL: 4, lowerLegL: 5, footL: 6,
+    upperLegR: 7, lowerLegR: 8, footR: 9,
+  },
   chains: [
-    // Spine chain — pelvis is the anchor (rootBone), spine1/spine2/head lean.
-    // Critical damping: c = 2 * sqrt(k). k=80, c=18 → ~0.22s lean response.
-    // leanScale 0.04 rad/(m/s) gives ~18° total lean at full 8 m/s run.
+    // Spine chain — the whole rig tilts forward when running. Pelvis (bone 0)
+    // is in `segments` so its localRot leans relative to the entity transform;
+    // chain composition makes the head's cumulative world tilt = segment-count
+    // × per-segment lean. Hence "whole rig leans, top leans furthest."
+    //
+    // Tuning (subject to feel-testing in the browser):
+    //   stiffness=80, damping=18 ≈ 2√k → critically damped, ~0.22s response.
+    //   leanScaleVel=0.03 → 14° steady-state lean at full 8 m/s run.
+    //   leanScaleAccel=0.05 → +14° lean at 5 m/s² accel (≈ inverted-pendulum).
+    //   maxLean=0.6 rad ≈ 34° hard cap.
     {
       name: "spine",
       rootBone: 0,
-      segments: [1, 2, 3],
+      segments: [0, 1, 2, 3],
       stiffness: 80,
       damping: 18,
-      leanScale: 0.04,
-      maxLean: 0.5,
+      leanScaleVel: 0.03,
+      leanScaleAccel: 0.05,
+      maxLean: 0.6,
     },
+  ],
+  legs: [
+    // Knee bends forward in pelvis-local frame. Forward is -Z under three.js
+    // conventions used by the rest of the project.
+    { name: "legL", hipBone: 4, kneeBone: 5, footBone: 6, kneePoleDir: [0, 0, -1] },
+    { name: "legR", hipBone: 7, kneeBone: 8, footBone: 9, kneePoleDir: [0, 0, -1] },
   ],
 };
 

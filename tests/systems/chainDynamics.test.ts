@@ -30,6 +30,7 @@ import {
   CHAIN_DYNAMICS_SYSTEM_ID,
 } from "../../src/systems/chainDynamics";
 
+// 4-segment spine chain including pelvis (index 0). Matches the production biped.
 const SPINE_RIG: RigDefinition = {
   id: "spineOnly",
   bones: [
@@ -40,8 +41,18 @@ const SPINE_RIG: RigDefinition = {
   ],
   slots: { pelvis: 0 },
   chains: [
-    { name: "spine", rootBone: 0, segments: [1, 2, 3], stiffness: 80, damping: 18, leanScale: 0.04, maxLean: 0.5 },
+    {
+      name: "spine",
+      rootBone: 0,
+      segments: [0, 1, 2, 3],
+      stiffness: 80,
+      damping: 18,
+      leanScaleVel: 0.03,
+      leanScaleAccel: 0.05,
+      maxLean: 0.6,
+    },
   ],
+  legs: [],
 };
 
 function setup() {
@@ -61,7 +72,7 @@ function setup() {
 
   writeBuffer(skel, (d) => { d.byEntity.set(1, initSkeletonFromRig(SPINE_RIG)); });
   writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 0, 0], yaw: 0, scale: 1 }); });
-  writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, 0] }); });
+  writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, 0], prevLinear: [0, 0, 0] }); });
 
   const g = buildExecutionGraph({
     id: "g",
@@ -69,6 +80,14 @@ function setup() {
     registry: reg,
   });
   return { reg, g, skel, tf, vel };
+}
+
+/** Set steady-state velocity (prev == current so derived accel = 0). */
+function setSteadyVelocity(
+  vel: ReturnType<typeof setup>["vel"],
+  v: [number, number, number],
+) {
+  writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: v, prevLinear: v }); });
 }
 
 function tickN(
@@ -81,75 +100,86 @@ function tickN(
 }
 
 describe("ChainDynamicsSystem", () => {
-  it("zero velocity → no lean accumulates, segments stay at bind pose", () => {
+  it("zero velocity and zero accel → no lean accumulates anywhere", () => {
     const { reg, g, skel } = setup();
     tickN(reg, g, 30);
     const bones = readBuffer(skel).byEntity.get(1)!.bones;
-    for (const i of [1, 2, 3]) {
-      expect(Math.hypot(...bones[i].leanVec)).toBeLessThan(1e-6);
-      expect(Math.hypot(...bones[i].leanVel)).toBeLessThan(1e-6);
+    for (const b of bones) {
+      expect(Math.hypot(...b.leanVec)).toBeLessThan(1e-6);
+      expect(Math.hypot(...b.leanVel)).toBeLessThan(1e-6);
     }
   });
 
-  it("forward velocity (-Z) makes the chain lean forward (rotation about +X is negative)", () => {
+  it("forward velocity leans the whole rig forward (including pelvis)", () => {
     const { reg, g, skel, vel } = setup();
-    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, -8] }); });
-    tickN(reg, g, 60); // settle (~1s)
+    setSteadyVelocity(vel, [0, 0, -8]);
+    tickN(reg, g, 90); // ~1.4s, several settling time constants
     const bones = readBuffer(skel).byEntity.get(1)!.bones;
-    // Each segment should have a negative X-axis rotation component (forward lean).
-    for (const i of [1, 2, 3]) {
+    // All four segments share the lean — pelvis included.
+    for (const i of [0, 1, 2, 3]) {
       expect(bones[i].leanVec[0]).toBeLessThan(-0.01);
-      expect(Math.abs(bones[i].leanVec[2])).toBeLessThan(0.005);
     }
-    // Total accumulated lean should match leanScale × vel / segments.
-    const total = bones[1].leanVec[0] + bones[2].leanVec[0] + bones[3].leanVec[0];
-    // leanScale (0.04) × localVel.z (-8) = -0.32, distributed → sum ≈ -0.32.
-    expect(total).toBeCloseTo(-0.32, 2);
+    // Steady-state: total = leanScaleVel * 8 = 0.24 distributed across 4 → 0.06 per bone.
+    const total = bones[0].leanVec[0] + bones[1].leanVec[0] + bones[2].leanVec[0] + bones[3].leanVec[0];
+    expect(total).toBeCloseTo(-0.24, 2);
   });
 
-  it("rightward velocity (+X) leans the chain to the right (rotation about +Z is negative)", () => {
+  it("acceleration produces lean even with zero current velocity (transient response)", () => {
     const { reg, g, skel, vel } = setup();
-    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [5, 0, 0] }); });
-    tickN(reg, g, 60);
+    // Persistent +5 m/s² forward accel over dt: velocity stays small but accel signal is large.
+    // Simulate by setting prevLinear behind linear each tick.
+    const dt = 0.016;
+    writeBuffer(vel, (d) => {
+      d.byEntity.set(1, {
+        linear: [0, 0, -dt * 5],     // tiny velocity
+        prevLinear: [0, 0, 0],        // accel = -5 m/s² along Z (= forward)
+      });
+    });
+    // Single tick to see the spring start integrating toward the accel-driven target.
+    executeGraph(g, reg, { dt, now: 0 });
     const bones = readBuffer(skel).byEntity.get(1)!.bones;
-    for (const i of [1, 2, 3]) {
+    expect(bones[0].leanVec[0]).toBeLessThan(0);
+    expect(bones[1].leanVec[0]).toBeLessThan(0);
+  });
+
+  it("side velocity (+X right) leans the rig to the right", () => {
+    const { reg, g, skel, vel } = setup();
+    setSteadyVelocity(vel, [5, 0, 0]);
+    tickN(reg, g, 90);
+    const bones = readBuffer(skel).byEntity.get(1)!.bones;
+    for (const i of [0, 1, 2, 3]) {
       expect(bones[i].leanVec[2]).toBeLessThan(-0.005);
       expect(Math.abs(bones[i].leanVec[0])).toBeLessThan(0.005);
     }
   });
 
-  it("respects yaw: rotating the entity 90° re-orients velocity into pelvis-local frame", () => {
+  it("respects yaw: world velocity is re-expressed in pelvis-local frame", () => {
     const { reg, g, skel, vel, tf } = setup();
-    // Three.js convention: yaw=π/2 rotates the character's forward direction
-    // from -Z to -X. So world velocity (-8, 0, 0) is forward in pelvis-local.
     writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 0, 0], yaw: Math.PI / 2, scale: 1 }); });
-    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [-8, 0, 0] }); });
-    tickN(reg, g, 60);
+    // Three.js convention: yaw=π/2 makes character face -X; (-8, 0, 0) is then forward.
+    setSteadyVelocity(vel, [-8, 0, 0]);
+    tickN(reg, g, 90);
     const bones = readBuffer(skel).byEntity.get(1)!.bones;
-    // Should look like forward-lean in local frame (negative X-axis rotation), not side lean.
     expect(bones[1].leanVec[0]).toBeLessThan(-0.01);
     expect(Math.abs(bones[1].leanVec[2])).toBeLessThan(0.01);
   });
 
-  it("clamps to maxLean for extreme velocities", () => {
+  it("clamps to maxLean for extreme inputs", () => {
     const { reg, g, skel, vel } = setup();
-    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, -1000] }); }); // absurd speed
-    tickN(reg, g, 60);
+    setSteadyVelocity(vel, [0, 0, -1000]);
+    tickN(reg, g, 90);
     const bones = readBuffer(skel).byEntity.get(1)!.bones;
-    const total = Math.abs(bones[1].leanVec[0] + bones[2].leanVec[0] + bones[3].leanVec[0]);
-    // maxLean (0.5) should bound the total magnitude.
-    expect(total).toBeLessThanOrEqual(0.5 + 1e-3);
+    const total = Math.abs(bones[0].leanVec[0] + bones[1].leanVec[0] + bones[2].leanVec[0] + bones[3].leanVec[0]);
+    expect(total).toBeLessThanOrEqual(0.6 + 1e-3);
   });
 
-  it("writes a derived localRot quaternion from leanVec", () => {
+  it("writes a normalized localRot quaternion derived from leanVec", () => {
     const { reg, g, skel, vel } = setup();
-    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, -8] }); });
-    tickN(reg, g, 60);
+    setSteadyVelocity(vel, [0, 0, -8]);
+    tickN(reg, g, 90);
     const bone = readBuffer(skel).byEntity.get(1)!.bones[1];
-    // Quaternion should be normalized (|q| ≈ 1).
     const mag = Math.hypot(bone.localRot[0], bone.localRot[1], bone.localRot[2], bone.localRot[3]);
     expect(Math.abs(mag - 1)).toBeLessThan(1e-6);
-    // For a forward lean (negative X-axis rotation) the X component should be negative.
     expect(bone.localRot[0]).toBeLessThan(0);
   });
 });

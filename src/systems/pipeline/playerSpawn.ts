@@ -90,7 +90,10 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
           };
 
           setComponent(TRANSFORM_BUFFER_ID, { position: spawnPos, yaw: 0, scale: 1 });
-          setComponent(VELOCITY_BUFFER_ID, { linear: [0, 0, 0] as [number, number, number] });
+          setComponent(VELOCITY_BUFFER_ID, {
+            linear: [0, 0, 0] as [number, number, number],
+            prevLinear: [0, 0, 0] as [number, number, number],
+          });
           setComponent(FORCE_ACCUMULATOR_BUFFER_ID, { accel: [0, 0, 0] as [number, number, number] });
           setComponent(SPHERE_BODY_BUFFER_ID, { radius: profile.bodyRadius });
           setComponent(CHARACTER_CONTROLLER_BUFFER_ID, {

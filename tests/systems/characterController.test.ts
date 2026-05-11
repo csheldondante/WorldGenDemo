@@ -45,7 +45,7 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
   });
   writeBuffer(ci, (d) => { d.byEntity.set(id, emptyInput(0)); });
   writeBuffer(t, (d) => { d.byEntity.set(id, { position: [0, 1, 0], yaw: 0, scale: 1 }); });
-  writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 0, 0] }); });
+  writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 0, 0], prevLinear: [0, 0, 0] }); });
   const baseSample = {
     position: [0, 0, 0] as [number, number, number],
     normal: [0, 1, 0] as [number, number, number],
@@ -149,7 +149,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
 
   it("brake: no input on flat surface decays initial velocity to ~0 within ~1s", () => {
     const { reg, v, g, id } = setup();
-    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [5, 0, 0] }); });
+    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [5, 0, 0], prevLinear: [5, 0, 0] }); });
     for (let i = 0; i < 100; i++) tick(g, reg, 0.02);
     const lin = readBuffer(v).byEntity.get(id)!.linear;
     const speed = Math.hypot(lin[0], lin[1], lin[2]);
@@ -171,7 +171,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
     // Pre-load v with strong upward velocity. Pinning v_N to 0 requires a large negative
     // normal accel; surface can't pull that hard → detach.
     const { reg, v, cc, g, id } = setup({ sample: { normalOutMax: 1 } });
-    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 50, 0] }); });
+    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 50, 0], prevLinear: [0, 50, 0] }); });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(id)!;
     expect(after.state).toBe("airborne");
@@ -183,7 +183,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
     // Pre-load v with strong downward velocity. Pinning v_N to 0 requires a large positive
     // normal accel; surface stiffness exceeded → ragdoll. V1 redirects to airborne.
     const { reg, v, cc, g, id } = setup({ sample: { normalInMax: 1 } });
-    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, -50, 0] }); });
+    writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, -50, 0], prevLinear: [0, -50, 0] }); });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(id)!;
     expect(after.state).toBe("airborne");

@@ -32,6 +32,11 @@ export function createVelocityIntegrationSystem(): SystemDescriptor {
       writeBuffer(vBuf, (vels) => {
         writeBuffer(tBuf, (transforms) => {
           for (const [id, vel] of vels.byEntity) {
+            // Snapshot pre-integration velocity for downstream accel derivation
+            // (chain dynamics, hit reactions, future ragdoll triggers).
+            vel.prevLinear[0] = vel.linear[0];
+            vel.prevLinear[1] = vel.linear[1];
+            vel.prevLinear[2] = vel.linear[2];
             const a = accels.byEntity.get(id);
             if (a) {
               vel.linear[0] += a.accel[0] * dt;
