@@ -129,8 +129,20 @@ export interface CharacterControllerProfile {
   leanDragCoeff: number;
   /** Exponential smoothing rate for body-up chase (1/s). Time constant ≈ 1/this. */
   leanResponsiveness: number;
-  /** Hard ceiling on lean angle from surface normal (rad). */
+  /** Hard ceiling on lean angle from surface normal (rad). Used as the forward cap. */
   maxLeanAngle: number;
+  /**
+   * Tighter ceiling on backward lean (rad). Braking should look controlled,
+   * not like a stumble — most bipeds barely lean back when stopping.
+   */
+  maxBackwardLeanAngle: number;
+  /**
+   * 0..1. As the support surface tilts away from world up, blend the body-up
+   * target toward world up by `steepness × this`. On flat ground no change;
+   * on a wall (normal perpendicular to world up) full blend, body stays
+   * vertical against gravity even with the foot on a wall.
+   */
+  steepSlopeWorldUpBias: number;
   /** Multiplier on the geometric hip-drop from lean: drop = legLength·(1−cos(θ))·this. */
   leanCompressionScale: number;
   /** Extra pelvis drop from speed alone (m at `desiredRunSpeed`). Added on top of leanCompression. */
@@ -194,7 +206,9 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   airborneForwardPitch: 0.28, // ~16° forward tilt in air at full speed; scaled by speed factor.
   leanDragCoeff: 0.5,         // at v=8 → ~22° steady-state forward lean (atan(4/9.81)).
   leanResponsiveness: 8.0,    // ~0.12 s time constant on body-up chase.
-  maxLeanAngle: 0.6,          // ~34° hard ceiling.
+  maxLeanAngle: 0.6,            // ~34° forward / lateral ceiling.
+  maxBackwardLeanAngle: 0.18,   // ~10° backward ceiling — braking stays composed.
+  steepSlopeWorldUpBias: 0.9,   // strong pull toward world up on steep slopes.
   leanCompressionScale: 1.0,  // geometric hip drop = L·(1−cos θ) at scale 1.
   pelvisSpeedCompression: 0.08, // extra 8 cm drop at full run on top of geometric.
   leanGravityCounterScale: 1.0,

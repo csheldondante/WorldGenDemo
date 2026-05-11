@@ -119,7 +119,7 @@ export function createBodyLeanSystem(): SystemDescriptor {
               (v.linear[2] - v.prevLinear[2]) * invDt,
             ];
 
-            const { bodyUpTarget, leanAngle } = solveBodyUpTarget({
+            const { bodyUpTarget } = solveBodyUpTarget({
               velocity: [v.linear[0], v.linear[1], v.linear[2]],
               accelReal,
               surfaceNormal,
@@ -129,14 +129,29 @@ export function createBodyLeanSystem(): SystemDescriptor {
                 ctrl.locomotionMode === "surfaceConstrained" ? profile.leanGravityCounterScale : 0,
             });
 
-            // Clamp lean angle to profile.maxLeanAngle, preserving direction.
-            const clampedTarget = clampBodyUpAngle(bodyUpTarget, surfaceNormal, leanAngle, profile.maxLeanAngle);
+            // Steep-slope bias: as the support surface tilts away from world
+            // up, blend bodyUp toward world up. On flat (steepness=0) the
+            // solver result is preserved; on a wall (steepness=1) the body
+            // stays vertical against gravity.
+            const steepness = Math.max(0, 1 - surfaceNormal[1]);
+            const upBias = steepness * profile.steepSlopeWorldUpBias;
+            const biasedWorldUp: Vec3 = upBias > 0
+              ? vnormalizeOr([
+                  bodyUpTarget[0] * (1 - upBias),
+                  bodyUpTarget[1] * (1 - upBias) + upBias,
+                  bodyUpTarget[2] * (1 - upBias),
+                ], [0, 1, 0])
+              : bodyUpTarget;
 
-            // Express bodyUp in pelvis-local frame (inverse entity yaw) and
-            // build a localRot quaternion from world-up to that direction.
+            // Pelvis-local body up (entity-yaw inverse rotation).
             const invYaw = fromYaw(-t.yaw);
-            const bodyUpLocal = rotate(invYaw, clampedTarget);
-            const targetLocalRot = quatFromTo([0, 1, 0], bodyUpLocal);
+            const bodyUpLocal = rotate(invYaw, biasedWorldUp);
+
+            // Asymmetric cap: tighter when the body would lean backward
+            // (head behind feet → +Z component in pelvis-local). Forward
+            // and lateral lean use the full maxLeanAngle.
+            const cappedLocal = clampAsymmetric(bodyUpLocal, profile.maxLeanAngle, profile.maxBackwardLeanAngle);
+            const targetLocalRot = quatFromTo([0, 1, 0], cappedLocal);
 
             // Exponential smoothing on the quaternion toward target.
             const responsiveness = profile.leanResponsiveness > 0 ? profile.leanResponsiveness : 8.0;
@@ -188,26 +203,34 @@ function quatAngleFromIdentity(q: Quat): number {
   return 2 * Math.acos(w);
 }
 
-/** Clamp the body-up angle from surface normal to `maxAngle`, preserving direction. */
-function clampBodyUpAngle(bodyUp: Vec3, surfaceNormal: Vec3, currentAngle: number, maxAngle: number): Vec3 {
-  if (currentAngle <= maxAngle || currentAngle < 1e-6) return bodyUp;
-  // Project bodyUp onto the (normal, tangentToward(bodyUp)) plane, scale tangent by tan(maxAngle).
-  const nDotUp = surfaceNormal[0] * bodyUp[0] + surfaceNormal[1] * bodyUp[1] + surfaceNormal[2] * bodyUp[2];
-  const tangentX = bodyUp[0] - surfaceNormal[0] * nDotUp;
-  const tangentY = bodyUp[1] - surfaceNormal[1] * nDotUp;
-  const tangentZ = bodyUp[2] - surfaceNormal[2] * nDotUp;
-  const tLen = Math.hypot(tangentX, tangentY, tangentZ);
-  if (tLen < 1e-9) return bodyUp;
-  const cosMax = Math.cos(maxAngle);
-  const sinMax = Math.sin(maxAngle);
-  const tx = tangentX / tLen;
-  const ty = tangentY / tLen;
-  const tz = tangentZ / tLen;
-  return [
-    surfaceNormal[0] * cosMax + tx * sinMax,
-    surfaceNormal[1] * cosMax + ty * sinMax,
-    surfaceNormal[2] * cosMax + tz * sinMax,
-  ];
+/**
+ * Asymmetric clamp on the pelvis-local body-up direction. Forward and lateral
+ * lean use `maxForward`; backward lean (+Z in pelvis-local frame) tapers
+ * toward `maxBackward`. The cap blends smoothly between the two based on
+ * how much of the horizontal tilt is in the backward direction.
+ */
+function clampAsymmetric(bodyUpLocal: Vec3, maxForward: number, maxBackward: number): Vec3 {
+  const x = bodyUpLocal[0];
+  const y = bodyUpLocal[1];
+  const z = bodyUpLocal[2];
+  const horiz = Math.hypot(x, z);
+  if (horiz < 1e-9) return bodyUpLocal;
+  const backwardWeight = Math.max(0, z) / horiz; // 0 = pure forward/lateral, 1 = pure backward
+  const cap = maxForward * (1 - backwardWeight) + maxBackward * backwardWeight;
+  const angle = Math.acos(Math.max(-1, Math.min(1, y)));
+  if (angle <= cap) return bodyUpLocal;
+  const tx = x / horiz;
+  const tz = z / horiz;
+  const newSin = Math.sin(cap);
+  const newCos = Math.cos(cap);
+  return [tx * newSin, newCos, tz * newSin];
+}
+
+/** Normalize a vector, returning `fallback` if length is too small. */
+function vnormalizeOr(v: Vec3, fallback: Vec3): Vec3 {
+  const len = Math.hypot(v[0], v[1], v[2]);
+  if (len < 1e-9) return fallback;
+  return [v[0] / len, v[1] / len, v[2] / len];
 }
 
 /** Leg length from the rig: |knee.bindLocalPos| + |foot.bindLocalPos| using leg 0. */
