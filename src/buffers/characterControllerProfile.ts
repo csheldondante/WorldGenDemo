@@ -123,12 +123,18 @@ export interface CharacterControllerProfile {
    *  CoM. Spring dynamics naturally ease it in/out at takeoff and landing. */
   airborneForwardPitch: number;
 
-  // --- Hip height (posture vs. speed) ---------------------------------------
-  /** Maximum drop of the pelvis Y from its bind position (m), reached at
-   *  `desiredRunSpeed`. Real bipeds run with bent knees at a lower hip than
-   *  standing height; scaling drop by speed naturally produces a tall idle
-   *  pose and a crouched run with the legs bending to absorb each stride. */
-  hipDropAtFullSpeed: number;
+  // --- Body lean (apparent-gravity solver) ----------------------------------
+  /** Implicit-drag coefficient (1/s). Effective accel = a_real + dragCoeff·v.
+   *  Bigger value → more steady-state forward lean at running speed. */
+  leanDragCoeff: number;
+  /** Exponential smoothing rate for body-up chase (1/s). Time constant ≈ 1/this. */
+  leanResponsiveness: number;
+  /** Hard ceiling on lean angle from surface normal (rad). */
+  maxLeanAngle: number;
+  /** Multiplier on the geometric hip-drop from lean: drop = legLength·(1−cos(θ))·this. */
+  leanCompressionScale: number;
+  /** Extra pelvis drop from speed alone (m at `desiredRunSpeed`). Added on top of leanCompression. */
+  pelvisSpeedCompression: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -179,7 +185,11 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   footBrakeLeadGain: 0.008,   // 0.008 s extra lead per (m/s²) of decel; at 20 m/s² → +0.16s, but…
   footBrakeLeadMax: 0.05,     // …capped to 0.05 s additional lookahead so plants don't fly off.
   airborneForwardPitch: 0.28, // ~16° forward tilt in air at full speed; scaled by speed factor.
-  hipDropAtFullSpeed: 0.18,   // pelvis drops up to 18 cm at full run; smooth ramp from idle.
+  leanDragCoeff: 0.5,         // at v=8 → ~22° steady-state forward lean (atan(4/9.81)).
+  leanResponsiveness: 8.0,    // ~0.12 s time constant on body-up chase.
+  maxLeanAngle: 0.6,          // ~34° hard ceiling.
+  leanCompressionScale: 1.0,  // geometric hip drop = L·(1−cos θ) at scale 1.
+  pelvisSpeedCompression: 0.08, // extra 8 cm drop at full run on top of geometric.
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {

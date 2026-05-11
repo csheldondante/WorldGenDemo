@@ -55,6 +55,7 @@ function setup() {
       timeInState: 0,
       yawVel: 0,
       targetYaw: 0,
+      bodyUpCurrent: [0, 0, 0, 1],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });

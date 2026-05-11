@@ -36,6 +36,14 @@ export interface CharacterControllerComponent {
    */
   targetYaw: number;
   /**
+   * Smoothed body-up direction in world space (quaternion). BodyLeanSystem
+   * computes a target each tick from the apparent-gravity solver and slerps
+   * this toward it with `leanResponsiveness`. The pelvis bone's localRot is
+   * derived from this so the lean visibly damps rather than snapping.
+   * Initialized to identity (0,0,0,1) on spawn.
+   */
+  bodyUpCurrent: [number, number, number, number];
+  /**
    * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
    * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`
    * slerps toward target at orientationSlerpRate × dt. RenderSync reads `current`; the linear

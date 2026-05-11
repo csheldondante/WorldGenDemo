@@ -104,6 +104,7 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
             timeInState: 0,
             yawVel: 0,
             targetYaw: 0,
+            bodyUpCurrent: [0, 0, 0, 1] as [number, number, number, number],
             orientation: {
               current: [0, 0, 0, 1] as [number, number, number, number],
               target: [0, 0, 0, 1] as [number, number, number, number],

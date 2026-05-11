@@ -14,14 +14,6 @@ import {
   type SkeletonBufferData,
   type BoneState,
 } from "../buffers/skeleton";
-import {
-  CHARACTER_CONTROLLER_BUFFER_ID,
-  type CharacterControllerBufferData,
-} from "../buffers/characterController";
-import {
-  CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
-  type CharacterControllerProfileBufferData,
-} from "../buffers/characterControllerProfile";
 import { fromRotationVector, fromYaw, rotate } from "../lib/math/quat";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
 import { SKELETON_WORLD_SYSTEM_ID } from "./skeletonWorld";
@@ -56,8 +48,6 @@ export function createChainDynamicsSystem(): SystemDescriptor {
       { id: RIG_DEFINITION_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
       { id: VELOCITY_BUFFER_ID, access: "read" },
-      { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
-      { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: SKELETON_BUFFER_ID, access: "readwrite" },
     ],
     runsAfter: [STATE_MACHINE_SYSTEM_ID, SURFACE_CONSTRAINT_SYSTEM_ID],
@@ -69,8 +59,6 @@ export function createChainDynamicsSystem(): SystemDescriptor {
       const rigs = readBuffer(buffer<RigDefinitionBufferData>(RIG_DEFINITION_BUFFER_ID));
       const transforms = readBuffer(buffer<TransformBufferData>(TRANSFORM_BUFFER_ID));
       const vels = readBuffer(buffer<VelocityBufferData>(VELOCITY_BUFFER_ID));
-      const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
-      const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       const skelBuf = buffer<SkeletonBufferData>(SKELETON_BUFFER_ID);
       const skel = readBuffer(skelBuf);
       if (skel.byEntity.size === 0) return;
@@ -97,35 +85,15 @@ export function createChainDynamicsSystem(): SystemDescriptor {
           ];
           const localAccel = rotate(invYaw, worldAccel);
 
-          const ctrl = cc.byEntity.get(id);
-          const profile = ctrl ? profiles.byId.get(ctrl.profileId) : undefined;
-          const speed = Math.hypot(v.linear[0], v.linear[2]);
-          const speedFactor = profile && profile.desiredRunSpeed > 0
-            ? Math.min(1, speed / profile.desiredRunSpeed)
-            : 0;
-
-          // Airborne forward-pitch term: approximates the angular momentum
-          // a real biped carries off a forward push-off. Spring dynamics
-          // naturally ease it in/out at takeoff and landing.
-          let airborneForwardPitch = 0;
-          if (ctrl && profile && ctrl.locomotionMode === "volumeConstrained") {
-            // Negative because forward-tilt about +X axis is a negative rawX
-            // (see applyChain sign comment). Speed-scaled.
-            airborneForwardPitch = -profile.airborneForwardPitch * speedFactor;
-          }
-
-          // Speed-driven hip drop: real bipeds run with bent knees at a
-          // lower hip than standing height. Pelvis localPos.Y interpolates
-          // from bind (standing tall) to bind − hipDropAtFullSpeed (crouched
-          // at full run). The IK keeps feet on the ground, so this drop
-          // bends the knees rather than burying the body.
-          const rig0 = rig.bones[0]; // pelvis (root)
-          if (profile) {
-            comp.bones[0].localPos[1] = rig0.bindLocalPos[1] - profile.hipDropAtFullSpeed * speedFactor;
-          }
-
+          // The pelvis is no longer driven by chain dynamics — `BodyLeanSystem`
+          // owns the pelvis lean (via apparent-gravity solver) and pelvis
+          // compression. The rig's spine chain has been updated to exclude
+          // bone 0, so this loop only animates the spine bones above the
+          // pelvis with their own small spring-damped lean for secondary
+          // motion. Drop the airborne pitch hack — `BodyLeanSystem` produces
+          // a coherent airborne lean too.
           for (const chain of rig.chains) {
-            applyChain(chain, comp.bones, localVel, localAccel, airborneForwardPitch, dt);
+            applyChain(chain, comp.bones, localVel, localAccel, 0, dt);
           }
         }
       });

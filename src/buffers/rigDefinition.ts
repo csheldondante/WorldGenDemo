@@ -153,9 +153,13 @@ const BIPED: RigDefinition = {
     //   leanScaleAccel=0.05 → +14° lean at 5 m/s² accel (≈ inverted-pendulum).
     //   maxLean=0.6 rad ≈ 34° hard cap.
     {
+      // Pelvis (bone 0) is NOT in segments — it's owned by `BodyLeanSystem`
+      // (apparent-gravity solver writes pelvis.localRot directly). The chain
+      // here only animates spine1/spine2/head for secondary motion on top of
+      // the pelvis lean.
       name: "spine",
       rootBone: 0,
-      segments: [0, 1, 2, 3],
+      segments: [1, 2, 3],
       stiffness: 80,
       damping: 18,
       leanScaleVel: 0.03,
