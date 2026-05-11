@@ -17,6 +17,7 @@ import {
 import {
   CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
   type CharacterControllerProfileBufferData,
+  type CharacterControllerProfile,
 } from "../buffers/characterControllerProfile";
 import {
   FOOT_LOCK_BUFFER_ID,
@@ -33,13 +34,18 @@ export const FOOT_PLANNER_SYSTEM_ID = "footPlannerSystem";
 
 /**
  * Plant-and-step planner. Each foot stays glued to its current world plant
- * until the hip drifts beyond `footUnplantDistance`, then it swings to a new
- * plant ahead of the body's current position. Only one foot per entity may
- * be swinging at a time, so alternation falls out of the rule rather than a
- * scheduled clock.
+ * until the hip drifts beyond `footUnplantDistance` OR the body has yawed
+ * `footUnplantYawDelta` since the plant — then it swings to a new plant.
+ * The yaw trigger is what makes turn-in-place reposition feet; hip-spread on
+ * a biped is only ~0.1m so translation drift alone barely fires.
  *
- * Per-foot state lives in FootLockBuffer (see that file for shape). This
- * system writes the buffer; FootIKSystem reads it and solves the IK.
+ * Only one foot per entity may be swinging at a time, so alternation falls
+ * out of the rule rather than a scheduled clock.
+ *
+ * Plant target prediction: when a swing starts we look ahead by
+ * (swingDuration + footPlantLeadTime) seconds and place the new plant where
+ * the hip *will be* at that time, not where it is now. Without this, the
+ * body strides past the plant during the swing and feet visibly trail behind.
  *
  * Locked-foot rule (per user 2026-05-11): in normal surface-run state the
  * planter is the *default* — feet hold position, the body moves under them.
@@ -57,7 +63,7 @@ export function createFootPlannerSystem(): SystemDescriptor {
   return {
     id: FOOT_PLANNER_SYSTEM_ID,
     description:
-      "Per-foot plant-and-step planner. Feet remain locked to a world position until the hip drifts beyond a profile-driven distance, then swing (one at a time) to a new plant ahead of the hip. Reads transform/velocity/surface; writes FootLockBuffer for FootIKSystem to consume.",
+      "Per-foot plant-and-step planner. Feet remain locked to a world position until hip translation or body yaw passes profile thresholds, then swing (one at a time) to a predicted future-hip plant. Reads transform/velocity/surface; writes FootLockBuffer for FootIKSystem to consume.",
     buffers: [
       { id: RIG_DEFINITION_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
@@ -104,7 +110,7 @@ export function createFootPlannerSystem(): SystemDescriptor {
             locks.byEntity.set(id, footStates);
           }
 
-          // Pelvis frame including chain-dynamics lean — same composition the IK uses.
+          // Compose pelvis frame using yaw + chain-dynamics lean — same as IK.
           const yawQ = fromYaw(t.yaw);
           const pelvisLocalRot = comp.bones[0].localRot;
           const pelvisWorldRot = mul(yawQ, pelvisLocalRot);
@@ -113,51 +119,41 @@ export function createFootPlannerSystem(): SystemDescriptor {
           const v = vels.byEntity.get(id);
           const vx = v ? v.linear[0] : 0;
           const vz = v ? v.linear[2] : 0;
-          const speed = Math.hypot(vx, vz);
-
-          // Forward lead pushes plant targets ahead of the hip so the body can
-          // stride over them. At rest the lead is zero, so plant targets land
-          // exactly under the hip (foot moves under for balance).
-          const lead = speed > profile.footStandingSpeed ? profile.footPlantLeadTime : 0;
-          const leadX = vx * lead;
-          const leadZ = vz * lead;
 
           for (let i = 0; i < rig.legs.length; i++) {
             const leg = rig.legs[i];
             const lock = footStates[i];
-            const hipUnder = computeHipUnder(rig, leg, pelvisWorldRot, pelvisWorldPos, leadX, leadZ, surface);
-            if (!hipUnder) continue;
+
+            const hipOffsetWorld = rotate(pelvisWorldRot, rig.bones[leg.hipBone].bindLocalPos);
+            const hipWorldX = pelvisWorldPos[0] + hipOffsetWorld[0];
+            const hipWorldZ = pelvisWorldPos[2] + hipOffsetWorld[2];
+            const currentHipUnder = sampleSurfaceAtXZ(surface, hipWorldX, hipWorldZ);
+            if (!currentHipUnder) continue;
 
             if (!lock.initialized) {
-              lock.plantPos = [hipUnder[0], hipUnder[1], hipUnder[2]];
-              lock.prevPlant = [hipUnder[0], hipUnder[1], hipUnder[2]];
-              lock.plantTarget = [hipUnder[0], hipUnder[1], hipUnder[2]];
-              lock.swingT = 0;
-              lock.state = "planted";
+              setPlanted(lock, currentHipUnder, t.yaw);
               lock.initialized = true;
               continue;
             }
 
             if (lock.state === "planted") {
-              const dx = lock.plantPos[0] - hipUnder[0];
-              const dz = lock.plantPos[2] - hipUnder[2];
+              const dx = lock.plantPos[0] - currentHipUnder[0];
+              const dz = lock.plantPos[2] - currentHipUnder[2];
               const horizDist = Math.hypot(dx, dz);
-              const driftedFar = horizDist > profile.footUnplantDistance;
-              if (driftedFar && !anyOtherSwinging(footStates, i)) {
-                lock.state = "swinging";
-                lock.swingT = 0;
-                lock.swingDur = profile.footSwingDuration + 0.04 * horizDist;
-                lock.prevPlant = [lock.plantPos[0], lock.plantPos[1], lock.plantPos[2]];
-                lock.plantTarget = [hipUnder[0], hipUnder[1], hipUnder[2]];
+              const yawDrift = Math.abs(wrapPi(t.yaw - lock.plantYaw));
+              const distTrigger = horizDist > profile.footUnplantDistance;
+              const yawTrigger = yawDrift > profile.footUnplantYawDelta;
+              if ((distTrigger || yawTrigger) && !anyOtherSwinging(footStates, i)) {
+                startSwing(lock, profile, leg, rig.bones[leg.hipBone].bindLocalPos, t.yaw, pelvisWorldPos, vx, vz, horizDist, surface);
               }
-              // Planted: plantPos stays at world position.
             } else {
-              // Swinging: advance and interpolate plantPos for downstream consumers.
+              // Swinging: advance and lerp plantPos for IK consumers.
               lock.swingT += dt / Math.max(1e-3, lock.swingDur);
               if (lock.swingT >= 1) {
                 lock.swingT = 1;
                 lock.plantPos = [lock.plantTarget[0], lock.plantTarget[1], lock.plantTarget[2]];
                 lock.state = "planted";
+                lock.plantYaw = t.yaw;
               } else {
                 const u = smoothstep(lock.swingT);
                 lock.plantPos = [
@@ -174,33 +170,78 @@ export function createFootPlannerSystem(): SystemDescriptor {
   };
 }
 
-function anyOtherSwinging(states: FootLockState[], skipIndex: number): boolean {
-  for (let i = 0; i < states.length; i++) {
-    if (i === skipIndex) continue;
-    if (states[i].state === "swinging") return true;
-  }
-  return false;
+function setPlanted(lock: FootLockState, plant: Vec3, yaw: number): void {
+  lock.plantPos = [plant[0], plant[1], plant[2]];
+  lock.prevPlant = [plant[0], plant[1], plant[2]];
+  lock.plantTarget = [plant[0], plant[1], plant[2]];
+  lock.swingT = 0;
+  lock.state = "planted";
+  lock.plantYaw = yaw;
 }
 
-/** World position of the surface point directly below the hip (with optional forward lead). Returns null if outside the heightmap. */
-function computeHipUnder(
-  rig: { bones: { bindLocalPos: [number, number, number] }[] },
-  leg: LegSpec,
-  pelvisWorldRot: [number, number, number, number],
+/**
+ * Start a swing with a predicted plant target.
+ *
+ * We project the hip forward by (swingDuration + leadTime) along the current
+ * velocity, then sample the surface there — so the foot lands ahead of where
+ * the hip will be at swing end, not where it is now. Without the lookahead
+ * the body strides past the plant during the 0.22s swing and feet visibly
+ * trail behind.
+ *
+ * We don't predict yaw rotation during the swing — a 0.3s swing at typical
+ * turn rates rotates the body only ~1.5 rad max, which is acceptable
+ * approximation error for the predicted plant. (Yaw drift is what triggered
+ * the swing in the first place if turning in place; the new plant lines up
+ * with current yaw.)
+ */
+function startSwing(
+  lock: FootLockState,
+  profile: CharacterControllerProfile,
+  _leg: LegSpec,
+  hipBindLocalPos: [number, number, number],
+  currentYaw: number,
   pelvisWorldPos: Vec3,
-  leadX: number,
-  leadZ: number,
+  vx: number,
+  vz: number,
+  horizDist: number,
   surface: NonNullable<SurfaceProviderBufferData["heightmap"]>,
+): void {
+  const swingDur = profile.footSwingDuration + 0.04 * horizDist;
+  const lookahead = swingDur + profile.footPlantLeadTime;
+
+  // Predict where the hip's XZ will be at swing-end + leadBuffer. Yaw held
+  // constant for the prediction (good enough; a full yaw chase finishes
+  // faster than a typical swing distance).
+  const futureBodyX = pelvisWorldPos[0] + vx * lookahead;
+  const futureBodyZ = pelvisWorldPos[2] + vz * lookahead;
+  // Apply current yaw to the leg's bind offset to get future hip XZ.
+  const cy = Math.cos(currentYaw);
+  const sy = Math.sin(currentYaw);
+  // Body-local (x, y, z) rotated by yaw about +Y → world.
+  // x_world = x_local * cos(yaw) + z_local * sin(yaw)
+  // z_world = -x_local * sin(yaw) + z_local * cos(yaw)
+  const hipDx = hipBindLocalPos[0] * cy + hipBindLocalPos[2] * sy;
+  const hipDz = -hipBindLocalPos[0] * sy + hipBindLocalPos[2] * cy;
+  const targetX = futureBodyX + hipDx;
+  const targetZ = futureBodyZ + hipDz;
+  const target = sampleSurfaceAtXZ(surface, targetX, targetZ);
+  if (!target) return; // outside map; defer swing decision to next tick
+
+  lock.state = "swinging";
+  lock.swingT = 0;
+  lock.swingDur = swingDur;
+  lock.prevPlant = [lock.plantPos[0], lock.plantPos[1], lock.plantPos[2]];
+  lock.plantTarget = [target[0], target[1], target[2]];
+}
+
+function sampleSurfaceAtXZ(
+  surface: NonNullable<SurfaceProviderBufferData["heightmap"]>,
+  x: number,
+  z: number,
 ): Vec3 | null {
-  const hipBone = rig.bones[leg.hipBone];
-  const hipOffsetWorld = rotate(pelvisWorldRot, hipBone.bindLocalPos);
-  const xz = [pelvisWorldPos[0] + hipOffsetWorld[0] + leadX, pelvisWorldPos[2] + hipOffsetWorld[2] + leadZ];
-  const [u, v] = surface.worldToUV(xz[0], xz[1]);
+  const [u, v] = surface.worldToUV(x, z);
   if (u < 0 || u > 1 || v < 0 || v > 1) return null;
   const sample = surface.sampleAtUV(u, v);
-  // Sit the foot fractionally above the surface along its normal (clearance
-  // applied here so IK sees an above-ground target). The IK clamp ensures
-  // it can be reached.
   const CLEARANCE = 0.05;
   return [
     sample.position[0] + sample.normal[0] * CLEARANCE,
@@ -209,10 +250,26 @@ function computeHipUnder(
   ];
 }
 
+function anyOtherSwinging(states: FootLockState[], skipIndex: number): boolean {
+  for (let i = 0; i < states.length; i++) {
+    if (i === skipIndex) continue;
+    if (states[i].state === "swinging") return true;
+  }
+  return false;
+}
+
 function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);
 }
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+function wrapPi(x: number): number {
+  const TAU = Math.PI * 2;
+  let r = x % TAU;
+  if (r > Math.PI) r -= TAU;
+  else if (r <= -Math.PI) r += TAU;
+  return r;
 }

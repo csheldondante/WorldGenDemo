@@ -244,6 +244,32 @@ describe("FootPlannerSystem", () => {
     expect(readBuffer(locks).byEntity.has(1)).toBe(false);
   });
 
+  it("body yaw drift past threshold triggers a step even without translation", () => {
+    const { reg, g, tf, locks } = setup();
+    tick(reg, g); // initialize
+    // Rotate the body in place by ~30° (default threshold 0.35 rad ≈ 20°).
+    writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 1, 0], yaw: 0.52, scale: 1 }); });
+    tick(reg, g);
+    const states = readBuffer(locks).byEntity.get(1)!;
+    const anySwinging = states.some((s) => s.state === "swinging");
+    expect(anySwinging).toBe(true);
+  });
+
+  it("predicts plant target ahead of body during forward run", () => {
+    const { reg, g, tf, vel, locks } = setup();
+    tick(reg, g); // initialize plants under the hip at z=0
+    // Move entity forward to trigger a swing, then check plantTarget is ahead of CURRENT hip.
+    writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 1, -1.0], yaw: 0, scale: 1 }); });
+    writeBuffer(vel, (d) => { d.byEntity.set(1, { linear: [0, 0, -8], prevLinear: [0, 0, -8] }); });
+    tick(reg, g);
+    const swinging = readBuffer(locks).byEntity.get(1)!.find((s) => s.state === "swinging");
+    expect(swinging).toBeDefined();
+    if (!swinging) return;
+    // plantTarget.z should be ahead of body (more negative than entity's current z = -1.0)
+    // by at least velocity * (swingDur + leadTime).
+    expect(swinging.plantTarget[2]).toBeLessThan(-1.0 - 0.5);
+  });
+
   it("flat surface (no-op worldToUV) still initializes feet to surface y=0", () => {
     const { reg, g, locks } = setup(FLAT_SURFACE);
     tick(reg, g);

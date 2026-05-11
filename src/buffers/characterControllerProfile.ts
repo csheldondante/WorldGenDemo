@@ -82,9 +82,15 @@ export interface CharacterControllerProfile {
   // --------------------------------------------------------------------------
   /** Horizontal distance the hip can drift from a planted foot before that foot starts a swing (m). */
   footUnplantDistance: number;
+  /** Body yaw delta (rad) since plant before that foot starts a swing. Lets turn-in-place
+   *  trigger steps even when translation drift is small (hip-spread on a biped is only ~0.1m). */
+  footUnplantYawDelta: number;
   /** Base swing duration when transitioning a foot to a new plant (s). Longer-distance swings extend this slightly. */
   footSwingDuration: number;
-  /** Lead time used to push the plant target forward of the current hip position: planted at `hipUnder + velocity · leadTime` (s). */
+  /** Extra lookahead beyond `footSwingDuration` when predicting plant target (s).
+   *  Plant target = surface(hip + velocity · (swingDuration + leadTime)) — so the
+   *  foot lands ahead of where the hip will be when the swing finishes. Without
+   *  this the body strides past the plant during the swing and feet trail behind. */
   footPlantLeadTime: number;
   /** Peak vertical lift during swing, meters. */
   footStepHeight: number;
@@ -128,9 +134,10 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   walkBackwardYThreshold: -0.3, // moveY < -0.3 → walk backward instead of spinning.
   // Foot planner: foot can drift 0.35m from under-hip before stepping; swing
   // ~0.22s; plant 0.18s ahead of hip → at 8 m/s plants land ~1.4m forward.
-  footUnplantDistance: 0.35,
+  footUnplantDistance: 0.28,
+  footUnplantYawDelta: 0.35, // rad; ≈20° body turn before re-plant.
   footSwingDuration: 0.22,
-  footPlantLeadTime: 0.18,
+  footPlantLeadTime: 0.12,    // extra time beyond swingDur for predicted plant.
   footStepHeight: 0.18,
   footStandingSpeed: 0.15,
 };

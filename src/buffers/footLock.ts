@@ -22,6 +22,9 @@ export interface FootLockState {
   prevPlant: [number, number, number];
   /** World position the foot is swinging toward. */
   plantTarget: [number, number, number];
+  /** Body yaw (rad) at the time this plant was recorded. Used so a turn-in-place
+   *  triggers a re-plant even though the hip barely translates. */
+  plantYaw: number;
   /** Normalized swing progress in [0, 1]. */
   swingT: number;
   /** Duration of the current swing (seconds); lets longer-distance swings take longer naturally. */
@@ -51,6 +54,7 @@ export function makeUninitializedFootLockStates(count: number): FootLockState[] 
     plantPos: [0, 0, 0] as [number, number, number],
     prevPlant: [0, 0, 0] as [number, number, number],
     plantTarget: [0, 0, 0] as [number, number, number],
+    plantYaw: 0,
     swingT: 0,
     swingDur: 0.22,
     initialized: false,
