@@ -204,20 +204,30 @@ describe("FootPlannerSystem", () => {
     expect(anySwinging).toBe(true);
   });
 
-  it("alternates: only one foot swings at a time", () => {
+  it("alternates under normal-drift triggers (only one foot swings at a time)", () => {
     const { reg, g, tf, locks } = setup();
     tick(reg, g);
-    writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 1, -2.0], yaw: 0, scale: 1 }); });
+    // Drift just past footUnplantDistance (0.22) but well inside max leg reach
+    // — only one foot should trigger via the normal rule.
+    writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 1, -0.3], yaw: 0, scale: 1 }); });
     tick(reg, g);
-    let states = readBuffer(locks).byEntity.get(1)!;
+    const states = readBuffer(locks).byEntity.get(1)!;
     const swinging = states.filter((s) => s.state === "swinging").length;
     expect(swinging).toBeLessThanOrEqual(1);
-    // Push the entity even farther; complete the first swing across many ticks.
+  });
+
+  it("strict alternation holds even at sprint drift (both want to step → only one steps per tick)", () => {
+    const { reg, g, tf, locks } = setup();
+    tick(reg, g);
+    // Teleport the entity very far forward — both plants are wildly behind.
+    // Strict one-at-a-time means only one foot may start a swing this tick;
+    // the other waits. This stops the "both feet stick forward" artifact at
+    // sprint speed even though it briefly leaves the back leg over-extended.
     writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 1, -5.0], yaw: 0, scale: 1 }); });
-    for (let i = 0; i < 60; i++) tick(reg, g, 0.016);
-    states = readBuffer(locks).byEntity.get(1)!;
-    const stillSwinging = states.filter((s) => s.state === "swinging").length;
-    expect(stillSwinging).toBeLessThanOrEqual(1);
+    tick(reg, g);
+    const states = readBuffer(locks).byEntity.get(1)!;
+    const swinging = states.filter((s) => s.state === "swinging").length;
+    expect(swinging).toBe(1);
   });
 
   it("after enough ticks the trailing foot completes its swing and is planted near hipUnder", () => {

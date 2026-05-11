@@ -119,6 +119,7 @@ export function createFootPlannerSystem(): SystemDescriptor {
           const v = vels.byEntity.get(id);
           const vx = v ? v.linear[0] : 0;
           const vz = v ? v.linear[2] : 0;
+          const speed = Math.hypot(vx, vz);
 
           for (let i = 0; i < rig.legs.length; i++) {
             const leg = rig.legs[i];
@@ -126,6 +127,7 @@ export function createFootPlannerSystem(): SystemDescriptor {
 
             const hipOffsetWorld = rotate(pelvisWorldRot, rig.bones[leg.hipBone].bindLocalPos);
             const hipWorldX = pelvisWorldPos[0] + hipOffsetWorld[0];
+            const hipWorldY = pelvisWorldPos[1] + hipOffsetWorld[1];
             const hipWorldZ = pelvisWorldPos[2] + hipOffsetWorld[2];
             const currentHipUnder = sampleSurfaceAtXZ(surface, hipWorldX, hipWorldZ);
             if (!currentHipUnder) continue;
@@ -143,9 +145,22 @@ export function createFootPlannerSystem(): SystemDescriptor {
               const yawDrift = Math.abs(wrapPi(t.yaw - lock.plantYaw));
               const distTrigger = horizDist > profile.footUnplantDistance;
               const yawTrigger = yawDrift > profile.footUnplantYawDelta;
-              if ((distTrigger || yawTrigger) && !anyOtherSwinging(footStates, i)) {
-                startSwing(lock, profile, leg, rig.bones[leg.hipBone].bindLocalPos, t.yaw, pelvisWorldPos, vx, vz, horizDist, surface);
+
+              // Strict alternation: a foot only starts a swing when no other
+              // foot is currently swinging. Letting both swing simultaneously
+              // makes them visibly both reach forward, which looks worse than
+              // a transiently-stilted back leg at sprint speed. The
+              // `footMaxReachStretch` profile knob is no longer consulted at
+              // the trigger — it's effectively a tuning ceiling on how far
+              // behind the back leg can fall, addressed instead by shortening
+              // `swingDuration` at speed.
+              const trigger = (distTrigger || yawTrigger) && !anyOtherSwinging(footStates, i);
+              if (trigger) {
+                startSwing(lock, profile, leg, rig.bones[leg.hipBone].bindLocalPos, t.yaw, pelvisWorldPos, vx, vz, speed, horizDist, surface);
               }
+              // hipWorldY only used by the over-reach math previously; kept the var
+              // to make a future over-reach branch easy to wire back in.
+              void hipWorldY;
             } else {
               // Swinging: advance and lerp plantPos for IK consumers.
               lock.swingT += dt / Math.max(1e-3, lock.swingDur);
@@ -203,10 +218,15 @@ function startSwing(
   pelvisWorldPos: Vec3,
   vx: number,
   vz: number,
+  speed: number,
   horizDist: number,
   surface: NonNullable<SurfaceProviderBufferData["heightmap"]>,
 ): void {
-  const swingDur = profile.footSwingDuration + 0.04 * horizDist;
+  // Swing duration shortens with speed so sprint cadence stays high enough
+  // that the back leg never has time to stretch out behind. Plus a small
+  // bump per drift distance so long re-plants take a hair longer.
+  const dynBase = profile.footSwingDuration / (1 + profile.footSwingSpeedFactor * speed);
+  const swingDur = Math.max(profile.footMinSwingDuration, dynBase) + 0.02 * horizDist;
   const lookahead = swingDur + profile.footPlantLeadTime;
 
   // Predict where the hip's XZ will be at swing-end + leadBuffer. Yaw held
@@ -257,6 +277,7 @@ function anyOtherSwinging(states: FootLockState[], skipIndex: number): boolean {
   }
   return false;
 }
+
 
 function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);

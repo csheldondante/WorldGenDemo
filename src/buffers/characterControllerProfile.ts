@@ -87,11 +87,21 @@ export interface CharacterControllerProfile {
   footUnplantYawDelta: number;
   /** Base swing duration when transitioning a foot to a new plant (s). Longer-distance swings extend this slightly. */
   footSwingDuration: number;
+  /** Per-(m/s)-of-speed reduction in swing duration. Effective = base / (1 + factor·speed),
+   *  clamped to `footMinSwingDuration`. At v=8 with factor=0.18 swings finish in ~0.09s
+   *  so the back leg recovers before the body has run past max reach. */
+  footSwingSpeedFactor: number;
+  /** Lower bound on the speed-scaled swing duration (s). */
+  footMinSwingDuration: number;
   /** Extra lookahead beyond `footSwingDuration` when predicting plant target (s).
    *  Plant target = surface(hip + velocity · (swingDuration + leadTime)) — so the
    *  foot lands ahead of where the hip will be when the swing finishes. Without
    *  this the body strides past the plant during the swing and feet trail behind. */
   footPlantLeadTime: number;
+  /** Fraction of max leg reach (L1 + L2) at which the planter forces a swing even if
+   *  the other foot is still swinging. Stops the stance leg from getting yanked into a
+   *  fully-extended straight line during sprints (the visible "stilted leg" artifact). */
+  footMaxReachStretch: number;
   /** Peak vertical lift during swing, meters. */
   footStepHeight: number;
   /** Below this horizontal speed the foot planner returns plants to under-hip for balance, not ahead (m/s). */
@@ -134,11 +144,14 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   walkBackwardYThreshold: -0.3, // moveY < -0.3 → walk backward instead of spinning.
   // Foot planner: foot can drift 0.35m from under-hip before stepping; swing
   // ~0.22s; plant 0.18s ahead of hip → at 8 m/s plants land ~1.4m forward.
-  footUnplantDistance: 0.28,
+  footUnplantDistance: 0.18,
   footUnplantYawDelta: 0.35, // rad; ≈20° body turn before re-plant.
   footSwingDuration: 0.22,
-  footPlantLeadTime: 0.12,    // extra time beyond swingDur for predicted plant.
-  footStepHeight: 0.18,
+  footSwingSpeedFactor: 0.10, // at v=8: swing ≈ 0.12s, keeps stance brief and cadence ~4 Hz/leg.
+  footMinSwingDuration: 0.10,
+  footPlantLeadTime: 0.04,    // small forward bias so plant lands ~ velocity·0.04 ahead of swing-end hip.
+  footMaxReachStretch: 0.85,  // currently unused; reserved for a future "tuck under" emergency path.
+  footStepHeight: 0.32,       // visible knee lift on stride — fast runners look bent, not stilted.
   footStandingSpeed: 0.15,
 };
 
