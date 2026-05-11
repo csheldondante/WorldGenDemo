@@ -29,17 +29,20 @@ const LOOK_INPUT_EPSILON = 1e-6;
  *          → effective accel (clamped to ±turnAccelMax)
  *          → integrate (yawVel += eff·dt; yaw = wrap(yaw + yawVel·dt))
  *
- * `targetYaw` is *latched*: it only updates while the player is actively
- * applying look input (non-zero `InputMapBuffer.lookDelta`). When the camera
- * is idle the body chases its last latched target — so strafing sideways
- * keeps the body facing the previous direction, which makes the gait
- * trivially observable from the side during debugging. This is also the
- * camera-driven-only orientation model the user asked for on 2026-05-11:
- * "make the character not turn to look at the camera direction unless the
- * camera input is touched."
+ * Target-latch rule (per the user 2026-05-11):
  *
- * Movement input does NOT influence the target. To rotate the body the
- * player rotates the camera; otherwise the body holds.
+ *   1. If moving forward-ish: `target = cam.yaw − atan2(moveX, moveY)` —
+ *      the world-direction of movement. Body faces where it's going.
+ *   2. Else if look input is active (mouse moving or stick deflected):
+ *      `target = cam.yaw`. Lets the player look around while standing still
+ *      and have the body follow.
+ *   3. Else: target unchanged. Idle camera + idle player → body holds. Walk-
+ *      backward (`moveY < walkBackwardYThreshold`) also falls here — keeps
+ *      pressing S from 180°-spinning the body.
+ *
+ * Strafing → body faces the strafe direction (camera ± 90°). Side-stepping
+ * makes the gait observable from the side because the camera and body are
+ * perpendicular during a strafe.
  *
  * Future per the user's earlier note: split this into hip yaw (tracks
  * movement direction) and torso yaw (tracks look direction). Currently
@@ -66,6 +69,9 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
       const ccBuf = buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
       const tBuf = buffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
 
+      const moveX = im.moveAxis.x;
+      const moveY = im.moveAxis.y;
+      const moveMagSq = moveX * moveX + moveY * moveY;
       const lookActive =
         Math.abs(im.lookDelta.yaw) > LOOK_INPUT_EPSILON ||
         Math.abs(im.lookDelta.pitch) > LOOK_INPUT_EPSILON;
@@ -78,9 +84,12 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
             const t = transforms.byEntity.get(id);
             if (!t) continue;
 
-            // Latch the target only when the player is actively turning the
-            // camera. Idle camera → body holds heading.
-            if (lookActive) {
+            // Two-tier latch: movement aims body; look-input fills the
+            // standing-still case so the player can turn to look at things
+            // without walking. Idle player + idle camera → body holds.
+            if (moveMagSq > 0.01 && moveY > profile.walkBackwardYThreshold) {
+              ctrl.targetYaw = cam.yaw - Math.atan2(moveX, moveY);
+            } else if (lookActive) {
               ctrl.targetYaw = cam.yaw;
             }
 
