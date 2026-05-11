@@ -83,13 +83,6 @@ export interface LegSpec {
    * i.e. `[0, 0, -1]`. Quadruped back legs flip the sign.
    */
   kneePoleDir: [number, number, number];
-  /**
-   * Phase offset added to the per-character gait clock for this leg, radians.
-   * Biped legs are π apart (alternating); quadruped trot uses opposing pairs
-   * (foreL+hindR=0, foreR+hindL=π); bound gait pairs forelimbs at 0 and
-   * hindlimbs at π. Plays the foot-stepping pattern entirely from data.
-   */
-  gaitPhaseOffset: number;
 }
 
 export interface RigDefinition {
@@ -168,8 +161,8 @@ const BIPED: RigDefinition = {
   legs: [
     // Knee bends forward in pelvis-local frame. Forward is -Z under three.js
     // conventions used by the rest of the project.
-    { name: "legL", hipBone: 4, kneeBone: 5, footBone: 6, kneePoleDir: [0, 0, -1], gaitPhaseOffset: 0 },
-    { name: "legR", hipBone: 7, kneeBone: 8, footBone: 9, kneePoleDir: [0, 0, -1], gaitPhaseOffset: Math.PI },
+    { name: "legL", hipBone: 4, kneeBone: 5, footBone: 6, kneePoleDir: [0, 0, -1] },
+    { name: "legR", hipBone: 7, kneeBone: 8, footBone: 9, kneePoleDir: [0, 0, -1] },
   ],
 };
 

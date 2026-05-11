@@ -26,6 +26,7 @@ import { createSurfaceProviderBuffer } from "./surfaceProvider";
 import { createVolumeFieldBuffer } from "./volumeField";
 import { createRigDefinitionBuffer } from "./rigDefinition";
 import { createSkeletonBuffer } from "./skeleton";
+import { createFootLockBuffer } from "./footLock";
 
 export function registerCoreBuffers(reg: Registry): void {
   // Runtime
@@ -53,6 +54,7 @@ export function registerCoreBuffers(reg: Registry): void {
   reg.registerBuffer(createVolumeFieldBuffer());
   reg.registerBuffer(createRigDefinitionBuffer());
   reg.registerBuffer(createSkeletonBuffer());
+  reg.registerBuffer(createFootLockBuffer());
 }
 
 export * from "./input";
@@ -77,3 +79,4 @@ export * from "./surfaceProvider";
 export * from "./volumeField";
 export * from "./rigDefinition";
 export * from "./skeleton";
+export * from "./footLock";

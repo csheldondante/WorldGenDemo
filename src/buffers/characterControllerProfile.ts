@@ -74,20 +74,22 @@ export interface CharacterControllerProfile {
    */
   walkBackwardYThreshold: number;
 
-  // --- Gait / footstep clock ------------------------------------------------
-  // Cadence-and-stride model: stepFreq (Hz) is linear in speed. Stride length
-  // = speed / (2·stepFreq). At rest, freq's baseline still ticks the clock
-  // slowly so the stride amplitude smoothly fades — but if speed drops below
-  // `gaitMinSpeed`, the phase freezes entirely (no marching in place).
+  // --- Footstep planner (plant-and-step model) ------------------------------
+  // Each foot stays at a world plant position until the hip drifts beyond
+  // `footUnplantDistance`, at which point it swings (over `footSwingDuration`)
+  // to a new plant point ahead of the body's current position. Forward lead
+  // = velocity × footPlantLeadTime so plants land where the hip *will* be.
   // --------------------------------------------------------------------------
-  /** Below this horizontal speed (m/s) the gait clock stops advancing. */
-  gaitMinSpeed: number;
-  /** Step frequency at near-zero speed, Hz (cycles per second per leg). */
-  gaitBaseFreq: number;
-  /** Added step frequency per m/s of speed, Hz/(m/s). */
-  gaitSpeedFreq: number;
-  /** Peak foot lift during swing, meters. Scaled visibly by stride/speed. */
-  gaitStepHeight: number;
+  /** Horizontal distance the hip can drift from a planted foot before that foot starts a swing (m). */
+  footUnplantDistance: number;
+  /** Base swing duration when transitioning a foot to a new plant (s). Longer-distance swings extend this slightly. */
+  footSwingDuration: number;
+  /** Lead time used to push the plant target forward of the current hip position: planted at `hipUnder + velocity · leadTime` (s). */
+  footPlantLeadTime: number;
+  /** Peak vertical lift during swing, meters. */
+  footStepHeight: number;
+  /** Below this horizontal speed the foot planner returns plants to under-hip for balance, not ahead (m/s). */
+  footStandingSpeed: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -124,12 +126,13 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   turnAccelMax: 40,           // rad/s² — reaches max turn rate in 0.15s.
   turnPGain: 8,               // rad/s per rad offset; saturates to desiredTurnRate at ~0.75 rad (43°).
   walkBackwardYThreshold: -0.3, // moveY < -0.3 → walk backward instead of spinning.
-  // Gait: at v=2 m/s, freq = 0.6 + 0.3·2 = 1.2 Hz; stride = 2/2.4 ≈ 0.83 m.
-  //       at v=8 m/s (full run), freq = 3.0 Hz; stride = 8/6 ≈ 1.33 m.
-  gaitMinSpeed: 0.15,
-  gaitBaseFreq: 0.6,
-  gaitSpeedFreq: 0.3,
-  gaitStepHeight: 0.18,
+  // Foot planner: foot can drift 0.35m from under-hip before stepping; swing
+  // ~0.22s; plant 0.18s ahead of hip → at 8 m/s plants land ~1.4m forward.
+  footUnplantDistance: 0.35,
+  footSwingDuration: 0.22,
+  footPlantLeadTime: 0.18,
+  footStepHeight: 0.18,
+  footStandingSpeed: 0.15,
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {
