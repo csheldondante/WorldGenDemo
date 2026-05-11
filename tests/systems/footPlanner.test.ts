@@ -155,6 +155,7 @@ function setup(surface: SurfaceProvider = POSITION_AWARE_SURFACE) {
       lastTransitionReason: "spawn",
       timeInState: 0,
       yawVel: 0,
+      targetYaw: 0,
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });

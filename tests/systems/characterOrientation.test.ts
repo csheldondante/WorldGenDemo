@@ -54,6 +54,7 @@ function setup() {
       lastTransitionReason: "spawn",
       timeInState: 0,
       yawVel: 0,
+      targetYaw: 0,
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });
@@ -61,6 +62,11 @@ function setup() {
 
   const g = buildExecutionGraph({ id: "g", nodes: [CHARACTER_ORIENTATION_SYSTEM_ID], registry: reg });
   return { reg, g, cc, tf, im, cam };
+}
+
+/** Mark look input active so the orientation system latches camera yaw into targetYaw. */
+function activateLook(im: ReturnType<typeof setup>["im"], yawDelta = 0.05) {
+  writeBuffer(im, (d) => { d.lookDelta = { yaw: yawDelta, pitch: 0 }; });
 }
 
 function tickN(
@@ -80,9 +86,10 @@ describe("CharacterOrientationSystem", () => {
     expect(readBuffer(cc).byEntity.get(1)!.yawVel).toBeCloseTo(0, 6);
   });
 
-  it("camera turned to π/2 → body yaw chases toward π/2 over time", () => {
-    const { reg, g, cc, tf, cam } = setup();
+  it("camera turned with look input active → body chases to camera yaw", () => {
+    const { reg, g, cc, tf, cam, im } = setup();
     writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    activateLook(im);
     tickN(reg, g, 5);
     const earlyYaw = readBuffer(tf).byEntity.get(1)!.yaw;
     expect(earlyYaw).toBeGreaterThan(0);
@@ -91,47 +98,61 @@ describe("CharacterOrientationSystem", () => {
     expect(lateYaw).toBeGreaterThan(earlyYaw);
     expect(lateYaw).toBeGreaterThan(Math.PI / 2 - 0.05);
     expect(lateYaw).toBeLessThan(Math.PI / 2 + 0.05);
-    // Velocity damped to near zero on settle.
     expect(Math.abs(readBuffer(cc).byEntity.get(1)!.yawVel)).toBeLessThan(0.5);
   });
 
-  it("forward input + camera yaw=0 → target is camera yaw, body stays facing forward", () => {
+  it("camera moved but look input idle (lookDelta=0) → body does NOT chase camera", () => {
+    const { reg, g, tf, cam } = setup();
+    writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    // No activateLook → lookDelta stays zero → target stays at 0 → body stays.
+    tickN(reg, g, 60);
+    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 4);
+  });
+
+  it("strafe input alone does NOT rotate the body (camera-driven-only orientation)", () => {
+    const { reg, g, tf, im } = setup();
+    writeBuffer(im, (d) => { d.moveAxis = { x: 1, y: 0 }; });
+    // Movement axis is set but lookDelta is zero → body should hold.
+    tickN(reg, g, 60);
+    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 4);
+  });
+
+  it("forward input alone does NOT rotate the body (movement is independent of orientation)", () => {
     const { reg, g, tf, im } = setup();
     writeBuffer(im, (d) => { d.moveAxis = { x: 0, y: 1 }; });
     tickN(reg, g, 30);
-    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 3);
+    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 4);
   });
 
-  it("right strafe + camera yaw=0 → target is camera-relative right (yaw = -π/2)", () => {
-    const { reg, g, tf, im } = setup();
-    writeBuffer(im, (d) => { d.moveAxis = { x: 1, y: 0 }; });
-    tickN(reg, g, 120);
-    const yaw = readBuffer(tf).byEntity.get(1)!.yaw;
-    // Right strafe in three.js convention faces yaw=-π/2.
-    expect(yaw).toBeLessThan(-1.4);
-    expect(yaw).toBeGreaterThan(-1.7);
-  });
-
-  it("backward input (moveY = -1) does NOT spin the body — yaw stays near camera yaw", () => {
-    const { reg, g, tf, im } = setup();
-    writeBuffer(im, (d) => { d.moveAxis = { x: 0, y: -1 }; });
+  it("body holds last camera-driven target after the player stops moving the camera", () => {
+    const { reg, g, tf, cam, im } = setup();
+    // First, turn camera with active look — body should chase.
+    writeBuffer(cam, (d) => { d.yaw = 1.0; });
+    activateLook(im);
     tickN(reg, g, 60);
-    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 2);
+    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(1.0, 1);
+
+    // Now the camera moves to π/2 but the player isn't touching it (lookDelta=0).
+    // Body should stay at the latched 1.0, NOT chase the new camera position.
+    writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    writeBuffer(im, (d) => { d.lookDelta = { yaw: 0, pitch: 0 }; });
+    tickN(reg, g, 60);
+    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(1.0, 1);
   });
 
-  it("shortest-path wrap: camera at π+0.1 with body at 0 turns the short way (negative)", () => {
-    const { reg, g, tf, cam } = setup();
-    // Camera at -π + 0.1 (just past the wrap boundary). Shortest path is
-    // backward (negative direction), not forward through positive.
+  it("shortest-path wrap: camera near -π with active look turns the short way (negative)", () => {
+    const { reg, g, tf, cam, im } = setup();
     writeBuffer(cam, (d) => { d.yaw = -Math.PI + 0.1; });
+    activateLook(im);
     tickN(reg, g, 3);
     const yawAfterFew = readBuffer(tf).byEntity.get(1)!.yaw;
-    expect(yawAfterFew).toBeLessThan(0); // turned in the short direction
+    expect(yawAfterFew).toBeLessThan(0);
   });
 
   it("respects turnAccelMax: from rest, yawVel rises no faster than profile cap × dt per tick", () => {
-    const { reg, g, cc, cam } = setup();
+    const { reg, g, cc, cam, im } = setup();
     writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    activateLook(im);
     const dt = 0.016;
     executeGraph(g, reg, { dt, now: 0 });
     const yawVel = readBuffer(cc).byEntity.get(1)!.yawVel;

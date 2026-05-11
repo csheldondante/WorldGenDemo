@@ -23,11 +23,18 @@ export interface CharacterControllerComponent {
   timeInState: number;
   /**
    * Angular velocity about world +Y (rad/s). Integrated each tick by
-   * CharacterOrientationSystem under a critically-damped spring toward a
-   * camera/movement-derived target yaw. Kept here (per-character) so future
-   * AI entities can drive their own orientation with the same dynamics.
+   * CharacterOrientationSystem under a critically-damped spring toward
+   * `targetYaw`. Kept here (per-character) so future AI entities can drive
+   * their own orientation with the same dynamics.
    */
   yawVel: number;
+  /**
+   * Desired body yaw the orientation controller is chasing. Latched: updates
+   * only when the player actively applies look input (mouse or right stick).
+   * When camera is idle the body holds this heading even while strafing —
+   * makes it easy to debug the gait from the side.
+   */
+  targetYaw: number;
   /**
    * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
    * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`
