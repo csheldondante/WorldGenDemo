@@ -29,6 +29,13 @@ export interface CharacterControllerComponent {
    */
   yawVel: number;
   /**
+   * Gait clock phase in radians, [0, 2π). Advanced by GaitSystem at a rate
+   * proportional to horizontal speed; consumed by FootIKSystem per leg using
+   * `LegSpec.gaitPhaseOffset` to produce alternating stepping cycles.
+   * Frozen at the current value when speed drops below `gaitMinSpeed`.
+   */
+  gaitPhase: number;
+  /**
    * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
    * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`
    * slerps toward target at orientationSlerpRate × dt. RenderSync reads `current`; the linear

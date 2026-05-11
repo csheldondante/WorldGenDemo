@@ -28,6 +28,7 @@ import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
 import { CAMERA_FOLLOW_SYSTEM_ID } from "../systems/cameraFollow";
 import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "../systems/chainDynamics";
+import { GAIT_SYSTEM_ID } from "../systems/gait";
 import { FOOT_IK_SYSTEM_ID } from "../systems/footIk";
 import { SKELETON_WORLD_SYSTEM_ID } from "../systems/skeletonWorld";
 import { SKELETON_DEBUG_RENDER_SYSTEM_ID } from "../systems/skeletonDebugRender";
@@ -78,6 +79,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       CAMERA_FOLLOW_SYSTEM_ID,
       CHARACTER_RENDER_SYNC_SYSTEM_ID,
       CHAIN_DYNAMICS_SYSTEM_ID,
+      GAIT_SYSTEM_ID,
       FOOT_IK_SYSTEM_ID,
       SKELETON_WORLD_SYSTEM_ID,
       SKELETON_DEBUG_RENDER_SYSTEM_ID,

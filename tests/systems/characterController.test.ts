@@ -41,6 +41,7 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
       lastTransitionReason: "spawn",
       timeInState: 0,
       yawVel: 0,
+      gaitPhase: 0,
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });

@@ -103,6 +103,7 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
             lastTransitionReason: "spawn",
             timeInState: 0,
             yawVel: 0,
+            gaitPhase: 0,
             orientation: {
               current: [0, 0, 0, 1] as [number, number, number, number],
               target: [0, 0, 0, 1] as [number, number, number, number],

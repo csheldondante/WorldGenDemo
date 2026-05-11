@@ -73,6 +73,21 @@ export interface CharacterControllerProfile {
    * the body walks backward. Prevents 180° spins on quick stick reversals.
    */
   walkBackwardYThreshold: number;
+
+  // --- Gait / footstep clock ------------------------------------------------
+  // Cadence-and-stride model: stepFreq (Hz) is linear in speed. Stride length
+  // = speed / (2·stepFreq). At rest, freq's baseline still ticks the clock
+  // slowly so the stride amplitude smoothly fades — but if speed drops below
+  // `gaitMinSpeed`, the phase freezes entirely (no marching in place).
+  // --------------------------------------------------------------------------
+  /** Below this horizontal speed (m/s) the gait clock stops advancing. */
+  gaitMinSpeed: number;
+  /** Step frequency at near-zero speed, Hz (cycles per second per leg). */
+  gaitBaseFreq: number;
+  /** Added step frequency per m/s of speed, Hz/(m/s). */
+  gaitSpeedFreq: number;
+  /** Peak foot lift during swing, meters. Scaled visibly by stride/speed. */
+  gaitStepHeight: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -109,6 +124,12 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   turnAccelMax: 40,           // rad/s² — reaches max turn rate in 0.15s.
   turnPGain: 8,               // rad/s per rad offset; saturates to desiredTurnRate at ~0.75 rad (43°).
   walkBackwardYThreshold: -0.3, // moveY < -0.3 → walk backward instead of spinning.
+  // Gait: at v=2 m/s, freq = 0.6 + 0.3·2 = 1.2 Hz; stride = 2/2.4 ≈ 0.83 m.
+  //       at v=8 m/s (full run), freq = 3.0 Hz; stride = 8/6 ≈ 1.33 m.
+  gaitMinSpeed: 0.15,
+  gaitBaseFreq: 0.6,
+  gaitSpeedFreq: 0.3,
+  gaitStepHeight: 0.18,
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {
