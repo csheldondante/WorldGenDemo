@@ -53,6 +53,26 @@ export interface CharacterControllerProfile {
   landingSnapMeters: number;
   /** Player sphere radius, also used for surface offset. */
   bodyRadius: number;
+
+  // --- Orientation / turning -------------------------------------------------
+  // Mirrors the linear-motion phases (desired velocity → required accel →
+  // capped accel → integrate) but for body yaw. The desired yaw velocity is
+  // proportional to the offset between body and target yaw, clamped by
+  // `desiredTurnRate`. The applied angular accel is `turnAccelMax` capped.
+  // ---------------------------------------------------------------------------
+  /** Maximum body-turn rate, rad/s. */
+  desiredTurnRate: number;
+  /** Maximum body angular acceleration, rad/s². */
+  turnAccelMax: number;
+  /** P-gain on (target − current) yaw → desired turn rate. Higher = snappier
+   *  small-angle response; saturates to `desiredTurnRate` past a threshold. */
+  turnPGain: number;
+  /**
+   * Below this |moveY| threshold (toward backward) the character does NOT
+   * rotate to face the movement direction — it keeps facing the camera and
+   * the body walks backward. Prevents 180° spins on quick stick reversals.
+   */
+  walkBackwardYThreshold: number;
 }
 
 export interface CharacterControllerProfileBufferData {
@@ -85,6 +105,10 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   slopeStandMaxRad: 0.7, // ~40 degrees
   landingSnapMeters: 0.4,
   bodyRadius: 0.5,
+  desiredTurnRate: 6,         // rad/s — ~344°/s; can do a 180° in ~0.55s once at speed.
+  turnAccelMax: 40,           // rad/s² — reaches max turn rate in 0.15s.
+  turnPGain: 8,               // rad/s per rad offset; saturates to desiredTurnRate at ~0.75 rad (43°).
+  walkBackwardYThreshold: -0.3, // moveY < -0.3 → walk backward instead of spinning.
 };
 
 export function createCharacterControllerProfileBuffer(): Buffer<CharacterControllerProfileBufferData> {

@@ -22,6 +22,13 @@ export interface CharacterControllerComponent {
   /** Time spent in the current state, seconds; reset on transition. */
   timeInState: number;
   /**
+   * Angular velocity about world +Y (rad/s). Integrated each tick by
+   * CharacterOrientationSystem under a critically-damped spring toward a
+   * camera/movement-derived target yaw. Kept here (per-character) so future
+   * AI entities can drive their own orientation with the same dynamics.
+   */
+  yawVel: number;
+  /**
    * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
    * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`
    * slerps toward target at orientationSlerpRate × dt. RenderSync reads `current`; the linear

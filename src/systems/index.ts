@@ -23,6 +23,7 @@ import { createSurfaceProviderSystem } from "./pipeline/surfaceProvider";
 import { createPlayerSpawnSystem } from "./pipeline/playerSpawn";
 // V1 character systems
 import { createCharacterInputSystem } from "./characterInput";
+import { createCharacterOrientationSystem } from "./characterOrientation";
 import { createForceFieldSystem } from "./forceField";
 import { createCharacterControllerSystem } from "./characterController";
 import { createVelocityIntegrationSystem } from "./velocityIntegration";
@@ -67,6 +68,7 @@ export function registerCoreSystems(reg: Registry): CoreSystems {
   reg.registerSystem(createBuilderSystem(builderAccumulator, builderDom));
   // V1 character systems (Running graph)
   reg.registerSystem(createCharacterInputSystem());
+  reg.registerSystem(createCharacterOrientationSystem());
   reg.registerSystem(createForceFieldSystem());
   reg.registerSystem(createCharacterControllerSystem());
   reg.registerSystem(createVelocityIntegrationSystem());
@@ -97,6 +99,7 @@ export * from "./pipeline/assetPlacement";
 export * from "./pipeline/surfaceProvider";
 export * from "./pipeline/playerSpawn";
 export * from "./characterInput";
+export * from "./characterOrientation";
 export * from "./forceField";
 export * from "./characterController";
 export * from "./velocityIntegration";

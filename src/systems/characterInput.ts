@@ -18,6 +18,9 @@ export const CHARACTER_INPUT_SYSTEM_ID = "characterInputSystem";
  * CharacterInputBuffer components, attaching the current camera yaw for
  * locomotion-frame projection by the controller. No device knowledge here —
  * raw input + binding live in InputMapperSystem.
+ *
+ * Body orientation (Transform.yaw) is managed by CharacterOrientationSystem
+ * downstream; this system intentionally does not touch transforms.
  */
 export function createCharacterInputSystem(): SystemDescriptor {
   return {

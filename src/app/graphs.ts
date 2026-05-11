@@ -20,6 +20,7 @@ import { BUILDER_INPUT_SYSTEM_ID } from "../systems/builderInput";
 import { BUILDER_SYSTEM_ID } from "../systems/builder";
 // V1 character per-frame systems
 import { CHARACTER_INPUT_SYSTEM_ID } from "../systems/characterInput";
+import { CHARACTER_ORIENTATION_SYSTEM_ID } from "../systems/characterOrientation";
 import { FORCE_FIELD_SYSTEM_ID } from "../systems/forceField";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "../systems/characterController";
 import { VELOCITY_INTEGRATION_SYSTEM_ID } from "../systems/velocityIntegration";
@@ -69,6 +70,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       INPUT_SYSTEM_ID,
       INPUT_MAPPER_SYSTEM_ID,
       CHARACTER_INPUT_SYSTEM_ID,
+      CHARACTER_ORIENTATION_SYSTEM_ID,
       FORCE_FIELD_SYSTEM_ID,
       CHARACTER_CONTROLLER_SYSTEM_ID,
       VELOCITY_INTEGRATION_SYSTEM_ID,

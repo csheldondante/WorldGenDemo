@@ -40,6 +40,7 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
       profileId: DEFAULT_PLAYER_PROFILE.id,
       lastTransitionReason: "spawn",
       timeInState: 0,
+      yawVel: 0,
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });
