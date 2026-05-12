@@ -121,11 +121,12 @@ describe("CharacterOrientationSystem", () => {
     expect(yaw).toBeGreaterThan(-1.7);
   });
 
-  it("backward input does NOT spin the body — target stays put", () => {
+  it("backward input pivots the body 180° (movement trumps camera)", () => {
     const { reg, g, tf, im } = setup();
     writeBuffer(im, (d) => { d.moveAxis = { x: 0, y: -1 }; });
     tickN(reg, g, 60);
-    expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 2);
+    const yaw = Math.abs(readBuffer(tf).byEntity.get(1)!.yaw);
+    expect(yaw).toBeCloseTo(Math.PI, 1);
   });
 
   it("after movement-driven turn, body holds when player stops and camera is idle", () => {

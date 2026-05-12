@@ -36,9 +36,12 @@ const LOOK_INPUT_EPSILON = 1e-6;
  *   2. Else if look input is active (mouse moving or stick deflected):
  *      `target = cam.yaw`. Lets the player look around while standing still
  *      and have the body follow.
- *   3. Else: target unchanged. Idle camera + idle player → body holds. Walk-
- *      backward (`moveY < walkBackwardYThreshold`) also falls here — keeps
- *      pressing S from 180°-spinning the body.
+ *   3. Else: target unchanged. Idle camera + idle player → body holds.
+ *
+ * Any nonzero move stick rotates the body to face the world-direction of
+ * movement, including backward-toward-camera (pressing S while camera trails
+ * behind → body pivots 180° to face the camera, runs toward it). Movement
+ * trumps camera unconditionally.
  *
  * Strafing → body faces the strafe direction (camera ± 90°). Side-stepping
  * makes the gait observable from the side because the camera and body are
@@ -87,7 +90,7 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
             // Two-tier latch: movement aims body; look-input fills the
             // standing-still case so the player can turn to look at things
             // without walking. Idle player + idle camera → body holds.
-            if (moveMagSq > 0.01 && moveY > profile.walkBackwardYThreshold) {
+            if (moveMagSq > 0.01) {
               ctrl.targetYaw = cam.yaw - Math.atan2(moveX, moveY);
             } else if (lookActive) {
               ctrl.targetYaw = cam.yaw;

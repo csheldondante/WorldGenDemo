@@ -67,12 +67,6 @@ export interface CharacterControllerProfile {
   /** P-gain on (target − current) yaw → desired turn rate. Higher = snappier
    *  small-angle response; saturates to `desiredTurnRate` past a threshold. */
   turnPGain: number;
-  /**
-   * Below this |moveY| threshold (toward backward) the character does NOT
-   * rotate to face the movement direction — it keeps facing the camera and
-   * the body walks backward. Prevents 180° spins on quick stick reversals.
-   */
-  walkBackwardYThreshold: number;
 
   // --- Footstep planner (plant-and-step model) ------------------------------
   // Each foot stays at a world plant position until the hip drifts beyond
@@ -189,7 +183,6 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   desiredTurnRate: 6,         // rad/s — ~344°/s; can do a 180° in ~0.55s once at speed.
   turnAccelMax: 40,           // rad/s² — reaches max turn rate in 0.15s.
   turnPGain: 8,               // rad/s per rad offset; saturates to desiredTurnRate at ~0.75 rad (43°).
-  walkBackwardYThreshold: -0.3, // moveY < -0.3 → walk backward instead of spinning.
   // Foot planner: foot can drift 0.35m from under-hip before stepping; swing
   // ~0.22s; plant 0.18s ahead of hip → at 8 m/s plants land ~1.4m forward.
   footUnplantDistance: 0.18,
