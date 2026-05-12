@@ -109,7 +109,19 @@ export function createFootIkSystem(): SystemDescriptor {
           const yawQ = fromYaw(t.yaw);
           const pelvisLocalRot = comp.bones[0].localRot;
           const pelvisWorldRot = mul(yawQ, pelvisLocalRot);
-          const pelvisWorldPos: Vec3 = [t.position[0], t.position[1], t.position[2]];
+          // The pelvis BONE is offset from the entity transform by
+          // bones[0].localPos (~0.30 m up at bind; BodyLeanSystem drops it
+          // during lean/speed compression). Using t.position alone left the
+          // IK frame ~0.30 m below the rendered hip, so planted feet ended up
+          // at ~61% leg extension (~105° knee bend) instead of nearly straight.
+          // Compose pelvisWorldPos the same way SkeletonWorldSystem does so
+          // the IK frame matches the rendered pelvis frame.
+          const pelvisLocalPosWorld = rotate(yawQ, comp.bones[0].localPos);
+          const pelvisWorldPos: Vec3 = [
+            t.position[0] + pelvisLocalPosWorld[0],
+            t.position[1] + pelvisLocalPosWorld[1],
+            t.position[2] + pelvisLocalPosWorld[2],
+          ];
 
           if (ctrl.locomotionMode === "surfaceConstrained") {
             const footStates = locks.byEntity.get(id);
