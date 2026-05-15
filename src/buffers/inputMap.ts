@@ -34,6 +34,7 @@ export interface InputMapBufferData {
   lookDelta: { yaw: number; pitch: number };
   actions: {
     jump: ButtonState;
+    toggleHud: ButtonState;
   };
 }
 
@@ -47,7 +48,7 @@ export function createInputMapBuffer(): Buffer<InputMapBufferData> {
     initial: {
       moveAxis: { x: 0, y: 0 },
       lookDelta: { yaw: 0, pitch: 0 },
-      actions: { jump: emptyButtonState() },
+      actions: { jump: emptyButtonState(), toggleHud: emptyButtonState() },
     },
   });
 }

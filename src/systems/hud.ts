@@ -10,6 +10,7 @@ import {
   type CharacterControllerBufferData,
   type ControllerTransition,
 } from "../buffers/characterController";
+import { INPUT_MAP_BUFFER_ID, type InputMapBufferData } from "../buffers/inputMap";
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
 import { MINIMAP_SYSTEM_ID } from "./minimap";
 import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
@@ -25,8 +26,12 @@ import { PLAYER_SPAWN_SYSTEM_ID } from "./pipeline/playerSpawn";
 import { BUILDER_SYSTEM_ID } from "./builder";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
+import { INPUT_MAPPER_SYSTEM_ID } from "./inputMapper";
 
 export const HUD_SYSTEM_ID = "hudSystem";
+
+/** How far back (in seconds, wall-clock from scheduler `now`) to show transitions by default. */
+const TRANSITION_WINDOW_SEC = 4;
 
 export function formatHud(args: {
   sceneName: string | null;
@@ -42,6 +47,8 @@ export function formatHud(args: {
     lastTransitionReason: string;
     transitions: ControllerTransition[];
   } | null;
+  now: number;
+  transitionWindowSec: number;
 }): string {
   const ms = (n: number) => (n ?? 0).toFixed(1).padStart(6);
   const yawDeg = (args.cam.yaw * 180 / Math.PI).toFixed(0);
@@ -62,9 +69,11 @@ export function formatHud(args: {
     lines.push("");
     lines.push(`player: ${c.state.padEnd(13)} (${c.locomotionMode})  t=${c.timeInState.toFixed(2)}s`);
     lines.push(`reason: ${c.lastTransitionReason}`);
-    if (c.transitions.length > 0) {
-      lines.push(`transitions (oldest → newest):`);
-      for (const tr of c.transitions) {
+    const cutoff = args.now - args.transitionWindowSec;
+    const recent = c.transitions.filter((tr) => tr.t >= cutoff);
+    if (recent.length > 0) {
+      lines.push(`transitions (last ${args.transitionWindowSec}s, oldest → newest):`);
+      for (const tr of recent) {
         lines.push(`  [${tr.t.toFixed(2)}s] ${tr.from} → ${tr.to}: ${tr.reason}`);
       }
     }
@@ -73,9 +82,12 @@ export function formatHud(args: {
 }
 
 export function createHudSystem(): SystemDescriptor {
+  // UI-cursor closure state (same precedent as SceneCyclerSystem): purely display-side,
+  // never read by gameplay. Visibility toggles with H key (KeyH / GamepadBack).
+  let visible = true;
   return {
     id: HUD_SYSTEM_ID,
-    description: "Renders timings, scene name, FSM state, and camera pos into the HUD overlay.",
+    description: "Renders timings, scene name, FSM state, and camera pos into the HUD overlay. H toggles visibility; transitions filter to the last few seconds.",
     buffers: [
       { id: CAMERA_BUFFER_ID, access: "read" },
       { id: TIMING_BUFFER_ID, access: "read" },
@@ -83,6 +95,7 @@ export function createHudSystem(): SystemDescriptor {
       { id: WORLD_DATA_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
+      { id: INPUT_MAP_BUFFER_ID, access: "read" },
     ],
     // Hud reads `timing`; every system that writes timing must run before us.
     // (LoadScene writes timing in the Loading graph; pipeline systems write
@@ -104,15 +117,23 @@ export function createHudSystem(): SystemDescriptor {
       BUILDER_SYSTEM_ID,
       CHARACTER_CONTROLLER_SYSTEM_ID,
       SURFACE_CONSTRAINT_SYSTEM_ID,
+      INPUT_MAPPER_SYSTEM_ID,
     ],
-    execute: ({ buffer }) => {
+    execute: ({ buffer, now }) => {
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
       const t = readBuffer(buffer<TimingBufferData>(TIMING_BUFFER_ID));
       const sm = readBuffer(buffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
       const world = readBuffer(buffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
       const refs = readBuffer(buffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID));
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
+      const im = readBuffer(buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID));
       if (!refs.hudEl) return;
+      if (im.actions.toggleHud.pressed) visible = !visible;
+      if (!visible) {
+        refs.hudEl.style.display = "none";
+        return;
+      }
+      refs.hudEl.style.display = "";
       const first = cc.byEntity.values().next();
       const controller = first.done
         ? null
@@ -131,6 +152,8 @@ export function createHudSystem(): SystemDescriptor {
         warnings: t.warnings.length,
         cam: { pos: cam.pos, yaw: cam.yaw },
         controller,
+        now,
+        transitionWindowSec: TRANSITION_WINDOW_SEC,
       });
     },
   };

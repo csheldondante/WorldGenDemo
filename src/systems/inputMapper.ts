@@ -29,6 +29,7 @@ const BINDINGS: Record<keyof InputMapBufferData["actions"], {
   gamepadButtons: readonly string[];
 }> = {
   jump: { keys: ["Space"], gamepadButtons: ["GamepadA"] },
+  toggleHud: { keys: ["KeyH"], gamepadButtons: ["GamepadBack"] },
 };
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -95,11 +96,15 @@ export function createInputMapperSystem(): SystemDescriptor {
         BINDINGS.jump.keys.some((k) => input.keys.has(k)) ||
         BINDINGS.jump.gamepadButtons.some((b) => input.gamepadButtons.has(b));
       const jump = nextButtonState(jumpHeld, prevMap.actions.jump, dt);
+      const toggleHudHeld =
+        BINDINGS.toggleHud.keys.some((k) => input.keys.has(k)) ||
+        BINDINGS.toggleHud.gamepadButtons.some((b) => input.gamepadButtons.has(b));
+      const toggleHud = nextButtonState(toggleHudHeld, prevMap.actions.toggleHud, dt);
 
       writeBuffer(imBuf, (d) => {
         d.moveAxis = { x: moveX, y: moveY };
         d.lookDelta = lookDelta;
-        d.actions = { jump };
+        d.actions = { jump, toggleHud };
       });
 
       // Drain mouse deltas after consumption.
