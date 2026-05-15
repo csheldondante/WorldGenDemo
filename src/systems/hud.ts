@@ -20,8 +20,12 @@ export const HUD_SYSTEM_ID = "hudSystem";
 
 /** Max simultaneously-visible messages (oldest scrolls off top when this is exceeded). */
 const MAX_MESSAGES = 3;
-/** Seconds a message stays on screen after it was recorded. */
-const MESSAGE_LIFETIME_SEC = 2.5;
+/**
+ * How long a message stays on screen after it was recorded — in MILLISECONDS,
+ * because the scheduler's `now` is `performance.now()` (ms), not seconds.
+ * `dt` is seconds; `now` is ms. Don't confuse the two.
+ */
+const MESSAGE_LIFETIME_MS = 2500;
 
 /**
  * Format the visible transition stack, oldest → newest top-to-bottom. The
@@ -30,11 +34,13 @@ const MESSAGE_LIFETIME_SEC = 2.5;
  */
 export function formatHud(args: {
   transitions: ControllerTransition[];
+  /** Scheduler `now` in milliseconds (`performance.now()`). */
   now: number;
-  lifetimeSec: number;
+  /** Message lifetime in the same unit as `now` (milliseconds). */
+  lifetimeMs: number;
   maxMessages: number;
 }): string {
-  const cutoff = args.now - args.lifetimeSec;
+  const cutoff = args.now - args.lifetimeMs;
   const recent = args.transitions.filter((tr) => tr.t >= cutoff);
   const tail = recent.slice(-args.maxMessages);
   return tail.map((tr) => `${tr.from} → ${tr.to}: ${tr.reason}`).join("\n");
@@ -83,7 +89,7 @@ export function createHudSystem(): SystemDescriptor {
         ? formatHud({
             transitions,
             now,
-            lifetimeSec: MESSAGE_LIFETIME_SEC,
+            lifetimeMs: MESSAGE_LIFETIME_MS,
             maxMessages: MAX_MESSAGES,
           })
         : "";

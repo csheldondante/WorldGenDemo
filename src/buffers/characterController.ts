@@ -21,7 +21,8 @@ export interface ControllerTransition {
   to: ControllerState;
   /** Locomotion mode after the transition (may differ from before — e.g. surfaceRun→airborne). */
   locomotion: LocomotionMode;
-  /** Wall-clock-ish timestamp (`now` from the scheduler tick). */
+  /** Wall-clock-ish timestamp (`now` from the scheduler tick) in MILLISECONDS
+   *  — this is `performance.now()`, NOT seconds. `dt` elsewhere is seconds; don't mix them. */
   t: number;
   /** Human-readable reason set at the transition site. */
   reason: string;
