@@ -9,20 +9,48 @@ import { CHARACTER_INPUT_BUFFER_ID, type CharacterInputBufferData, emptyInput } 
 import { TRANSFORM_BUFFER_ID, type TransformBufferData } from "../../src/buffers/transform";
 import { VELOCITY_BUFFER_ID, type VelocityBufferData } from "../../src/buffers/velocity";
 import { SURFACE_ATTACHMENT_BUFFER_ID, type SurfaceAttachmentBufferData } from "../../src/buffers/surfaceAttachment";
-import type { SurfaceSample } from "../../src/world/surfaceProvider";
+import { SURFACE_PROVIDER_BUFFER_ID, type SurfaceProviderBufferData } from "../../src/buffers/surfaceProvider";
 import { DEFAULT_PLAYER_PROFILE } from "../../src/buffers/characterControllerProfile";
 import { createCharacterControllerSystem } from "../../src/systems/characterController";
 import { createForceFieldSystem } from "../../src/systems/forceField";
 import { createSurfaceConstrainedVelocitySystem } from "../../src/systems/surfaceConstrainedVelocity";
 import { createVolumetricConstrainedVelocitySystem } from "../../src/systems/volumetricConstrainedVelocity";
 import { createTangentInputMapperSystem } from "../../src/systems/tangentInputMapper";
+import { PlaneSurfaceProvider } from "../../src/world/parametricSurfaceProvider";
 
 /**
- * Per-tick test harness: ForceField → Controller → VelocityIntegration.
- * Drives the surface-frame solver end-to-end. Gravity comes from VolumeFieldBuffer's
- * default (-9.81 on Y), so the surface gets a normal-force budget for grip.
+ * Per-tick test harness: ForceField → TangentInputMapper → Controller →
+ * SurfaceConstrainedVelocity → VolumetricConstrainedVelocity. Drives the surface-frame
+ * solver end-to-end against a real `PlaneSurfaceProvider` (configurable slope, friction,
+ * and per-surface stiffness caps). No synthetic-sample stand-ins — each test exercises
+ * the full integration pipeline a runtime would use. See
+ * `wiki/worldgen-demo-no-silent-fallbacks-in-tests.md`.
  */
-function setup(opts?: { sample?: Partial<SurfaceSample> }) {
+interface SetupOpts {
+  /** Tilt around the world X axis (radians). 0 → flat plane, normal=+Y.
+   *  Positive → surface tilts up in −Z (rising toward camera at yaw=0). */
+  slopeRad?: number;
+  friction?: number;
+  normalInMax?: number;
+  normalOutMax?: number;
+}
+
+function setup(opts?: SetupOpts) {
+  const slope = opts?.slopeRad ?? 0;
+  const PATCH = 200; // 200×200m plane so tests can run forward at 8 m/s for many seconds.
+  // Tilted plane: extentU along world +X, extentV in the (Y, −Z) plane rotated by `slope`.
+  //   cross(extentU, extentV) ∝ (0, +cos(slope), +sin(slope)) — the desired normal.
+  //   Origin placed so sample(0.5, 0.5) = (0, 0, 0): the character spawns above world origin.
+  const provider = new PlaneSurfaceProvider({
+    id: "test-plane",
+    origin: [-PATCH / 2, -(PATCH / 2) * Math.sin(slope), (PATCH / 2) * Math.cos(slope)],
+    extentU: [PATCH, 0, 0],
+    extentV: [0, PATCH * Math.sin(slope), -PATCH * Math.cos(slope)],
+    friction: opts?.friction ?? 1,
+    normalInMax: opts?.normalInMax ?? 800,
+    normalOutMax: opts?.normalOutMax ?? 200,
+  });
+
   const reg = createRegistry();
   registerCoreBuffers(reg);
   reg.registerSystem(createForceFieldSystem());
@@ -30,19 +58,28 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
   reg.registerSystem(createCharacterControllerSystem());
   reg.registerSystem(createSurfaceConstrainedVelocitySystem());
   reg.registerSystem(createVolumetricConstrainedVelocitySystem());
+
   const cc = reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
   const ci = reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID);
   const t = reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
   const v = reg.getBuffer<VelocityBufferData>(VELOCITY_BUFFER_ID);
   const sa = reg.getBuffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID);
+  const sp = reg.getBuffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID);
+
+  // Register the provider so UV integration can sample it.
+  writeBuffer(sp, (d) => { d.heightmap = provider; });
 
   const id = 1;
+  const sample = provider.sampleAtUV(0.5, 0.5);
+  const radius = DEFAULT_PLAYER_PROFILE.bodyRadius;
+
   writeBuffer(cc, (d) => {
     d.byEntity.set(id, {
       state: "surfaceRun",
       locomotionMode: "surfaceConstrained",
       profileId: DEFAULT_PLAYER_PROFILE.id,
       lastTransitionReason: "spawn",
+      transitions: [],
       timeInState: 0,
       yawVel: 0,
       targetYaw: 0,
@@ -51,27 +88,29 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
     });
   });
   writeBuffer(ci, (d) => { d.byEntity.set(id, emptyInput(0)); });
-  writeBuffer(t, (d) => { d.byEntity.set(id, { position: [0, 1, 0], yaw: 0, scale: 1 }); });
-  writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 0, 0], prevLinear: [0, 0, 0] }); });
-  const baseSample = {
-    position: [0, 0, 0] as [number, number, number],
-    normal: [0, 1, 0] as [number, number, number],
-    tangentU: [1, 0, 0] as [number, number, number],
-    tangentV: [0, 0, 1] as [number, number, number],
-    tangentUNorm: 1,
-    tangentVNorm: 1,
-    slopeRad: 0,
-    friction: 1,
-    normalInMax: 800,
-    normalOutMax: 200,
-    traversable: true,
-  };
-  writeBuffer(sa, (d) => {
+  // Start the body at sample + radius·N so the integrator's first reconstruction is
+  // consistent with the spawn point.
+  writeBuffer(t, (d) => {
     d.byEntity.set(id, {
-      surfaceId: "test", uv: [0.5, 0.5], offsetAlongNormal: 0.5,
-      sample: { ...baseSample, ...(opts?.sample ?? {}) },
+      position: [
+        sample.position[0] + sample.normal[0] * radius,
+        sample.position[1] + sample.normal[1] * radius,
+        sample.position[2] + sample.normal[2] * radius,
+      ],
+      yaw: 0,
+      scale: 1,
     });
   });
+  writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 0, 0], prevLinear: [0, 0, 0] }); });
+  writeBuffer(sa, (d) => {
+    d.byEntity.set(id, {
+      surfaceId: provider.id,
+      uv: [0.5, 0.5],
+      offsetAlongNormal: radius,
+      sample,
+    });
+  });
+
   const g = buildExecutionGraph({
     id: "g",
     nodes: [
@@ -83,7 +122,7 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
     ],
     registry: reg,
   });
-  return { reg, cc, ci, t, v, sa, g, id };
+  return { reg, cc, ci, t, v, sa, g, id, provider };
 }
 
 function tick(g: ReturnType<typeof buildExecutionGraph>, reg: ReturnType<typeof createRegistry>, dt = 0.016, now = 0) {
@@ -116,13 +155,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
   it("steep slope transitions surfaceRun → surfaceSlide", () => {
     // Use a normal that's actually consistent with slopeRad ≈ 1.2 (~69°).
     // normal = (0, cos(1.2), sin(1.2)) — surface tilts toward +Z.
-    const slope = 1.2;
-    const { reg, cc, g } = setup({
-      sample: {
-        slopeRad: slope,
-        normal: [0, Math.cos(slope), Math.sin(slope)],
-      },
-    });
+    const { reg, cc, g } = setup({ slopeRad: 1.2 });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(1)!;
     expect(after.state).toBe("surfaceSlide");
@@ -144,13 +177,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
 
   it("30° slope with forward input: some velocity goes vertical, total |v| ≤ desiredRunSpeed", () => {
     // Surface normal tilts toward +Z so the slope rises in -Z. Input forward (-Z) walks uphill.
-    const slope = Math.PI / 6; // 30°
-    const { reg, ci, v, g, id } = setup({
-      sample: {
-        slopeRad: slope,
-        normal: [0, Math.cos(slope), Math.sin(slope)],
-      },
-    });
+    const { reg, ci, v, g, id } = setup({ slopeRad: Math.PI / 6 });
     writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1 }); });
     for (let i = 0; i < 200; i++) tick(g, reg, 0.05);
     const lin = readBuffer(v).byEntity.get(id)!.linear;
@@ -172,7 +199,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
   });
 
   it("icy surface (low friction) under hard input → state transitions to surfaceSlide", () => {
-    const { reg, ci, cc, g, id } = setup({ sample: { friction: 0.05 } });
+    const { reg, ci, cc, g, id } = setup({ friction: 0.05 });
     // Strong forward input — desired tangent accel exceeds (μ × |g_N|) = 0.05 × 9.81 ≈ 0.49.
     // The state-transition slip check fires when required tangent accel > grip × slideGripScale.
     writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1 }); });
@@ -185,7 +212,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
   it("low normalOutMax → required suction exceeds cap → detach to airborne", () => {
     // Pre-load v with strong upward velocity. Pinning v_N to 0 requires a large negative
     // normal accel; surface can't pull that hard → detach.
-    const { reg, v, cc, g, id } = setup({ sample: { normalOutMax: 1 } });
+    const { reg, v, cc, g, id } = setup({ normalOutMax: 1 });
     writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, 50, 0], prevLinear: [0, 50, 0] }); });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(id)!;
@@ -197,7 +224,7 @@ describe("CharacterControllerSystem (FSM core)", () => {
   it("low normalInMax → required reaction exceeds cap → ragdoll → airborne (V1)", () => {
     // Pre-load v with strong downward velocity. Pinning v_N to 0 requires a large positive
     // normal accel; surface stiffness exceeded → ragdoll. V1 redirects to airborne.
-    const { reg, v, cc, g, id } = setup({ sample: { normalInMax: 1 } });
+    const { reg, v, cc, g, id } = setup({ normalInMax: 1 });
     writeBuffer(v, (d) => { d.byEntity.set(id, { linear: [0, -50, 0], prevLinear: [0, -50, 0] }); });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(id)!;

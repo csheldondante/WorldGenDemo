@@ -12,6 +12,7 @@ import {
 import {
   CHARACTER_CONTROLLER_BUFFER_ID,
   type CharacterControllerBufferData,
+  type CharacterControllerComponent,
   type ControllerState,
 } from "../buffers/characterController";
 import {
@@ -60,7 +61,7 @@ export function createCharacterControllerSystem(): SystemDescriptor {
       { id: FORCE_ACCUMULATOR_BUFFER_ID, access: "readwrite" },
     ],
     runsAfter: [STATE_MACHINE_SYSTEM_ID, CHARACTER_INPUT_SYSTEM_ID, TANGENT_INPUT_MAPPER_SYSTEM_ID, FORCE_FIELD_SYSTEM_ID],
-    execute: ({ buffer, dt }) => {
+    execute: ({ buffer, dt, now }) => {
       const ci = readBuffer(buffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID));
       const ti = readBuffer(buffer<CharacterTangentInputBufferData>(CHARACTER_TANGENT_INPUT_BUFFER_ID));
       const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
@@ -206,7 +207,7 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   let stateChanged = false;
                   if (aSurfaceNRequired > sample.normalInMax * profile.ragdollNormalInScale) {
                     // Surface stiffness exceeded — V1 has no ragdoll behavior yet, so detach to airborne.
-                    setState(ctrl, "airborne", `smack: required normal-in ${aSurfaceNRequired.toFixed(0)} > ${(sample.normalInMax * profile.ragdollNormalInScale).toFixed(0)}`);
+                    setState(ctrl, "airborne", `smack: required normal-in ${aSurfaceNRequired.toFixed(0)} > ${(sample.normalInMax * profile.ragdollNormalInScale).toFixed(0)}`, now);
                     ctrl.locomotionMode = "volumeConstrained";
                     stateChanged = true;
                   } else if (pullDemand > gripBudget_N) {
@@ -214,7 +215,7 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                     const reason = isCentripetal
                       ? `detach: centripetal apparent_N=${apparentN.toFixed(2)} (v²·κ=${aCentripetalN.toFixed(2)}, aExN=${aExN.toFixed(2)}) > grip ${gripBudget_N.toFixed(2)}`
                       : `detach: departing vN=${vN.toFixed(2)} pull=${pullDemand.toFixed(2)} > grip ${gripBudget_N.toFixed(2)}`;
-                    setState(ctrl, "airborne", reason);
+                    setState(ctrl, "airborne", reason, now);
                     ctrl.locomotionMode = "volumeConstrained";
                     stateChanged = true;
                     if (IS_DEV) {
@@ -224,15 +225,15 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                       );
                     }
                   } else if (slipMag > gripBudget * profile.slideGripScale && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", "grip exceeded");
+                    setState(ctrl, "surfaceSlide", "grip exceeded", now);
                   } else if (sample.slopeRad > profile.slopeRunMaxRad && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", `slope ${sample.slopeRad.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)}`);
+                    setState(ctrl, "surfaceSlide", `slope ${sample.slopeRad.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)}`, now);
                   } else if (
                     ctrl.state === "surfaceSlide" &&
                     sample.slopeRad < profile.slopeStandMaxRad &&
                     Math.abs(vF) + Math.abs(vR) < 0.5
                   ) {
-                    setState(ctrl, "surfaceRun", `slope eased to ${sample.slopeRad.toFixed(2)}`);
+                    setState(ctrl, "surfaceRun", `slope eased to ${sample.slopeRad.toFixed(2)}`, now);
                   }
 
                   // ----- Add tangent control + surface reaction to the accumulator -----
@@ -250,7 +251,7 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                 if (input.jumpPressed && ctrl.locomotionMode === "surfaceConstrained") {
                   v.linear[1] = profile.jumpImpulse;
                   ctrl.locomotionMode = "volumeConstrained";
-                  setState(ctrl, "airborne", "jump pressed");
+                  setState(ctrl, "airborne", "jump pressed", now);
                 }
               } else {
                 // Air states: simple horizontal-XZ velocity targeting.
@@ -283,15 +284,34 @@ export function createCharacterControllerSystem(): SystemDescriptor {
   };
 }
 
-function setState(
-  ctrl: { state: ControllerState; lastTransitionReason: string; timeInState: number },
+/** Maximum number of recent transitions we keep on the controller for the HUD. */
+const TRANSITION_LOG_LIMIT = 12;
+
+/** Record a state transition: mutates ctrl, pushes a ControllerTransition into its ring buffer.
+ *  Exported so other systems (surfaceConstraint's walked-off-edge / landed paths) use the same
+ *  pattern and the debug HUD sees every state change. `now` is the scheduler's `now` for timestamping. */
+export function recordTransition(
+  ctrl: CharacterControllerComponent,
   next: ControllerState,
   reason: string,
+  now: number,
 ): void {
   if (ctrl.state === next) return;
+  const from = ctrl.state;
   ctrl.state = next;
   ctrl.lastTransitionReason = reason;
   ctrl.timeInState = 0;
+  ctrl.transitions.push({ from, to: next, locomotion: ctrl.locomotionMode, t: now, reason });
+  if (ctrl.transitions.length > TRANSITION_LOG_LIMIT) ctrl.transitions.shift();
+}
+
+function setState(
+  ctrl: CharacterControllerComponent,
+  next: ControllerState,
+  reason: string,
+  now: number,
+): void {
+  recordTransition(ctrl, next, reason, now);
 }
 
 function approach(current: number, target: number, accelLimit: number, dt: number): number {

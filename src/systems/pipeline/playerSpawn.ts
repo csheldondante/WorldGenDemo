@@ -113,6 +113,7 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
             profileId: profile.id,
             lastTransitionReason: "spawn",
             timeInState: 0,
+            transitions: [],
             yawVel: 0,
             targetYaw: 0,
             bodyUpCurrent: [0, 0, 0, 1] as [number, number, number, number],

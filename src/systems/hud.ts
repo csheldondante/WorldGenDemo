@@ -5,6 +5,11 @@ import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
+import {
+  CHARACTER_CONTROLLER_BUFFER_ID,
+  type CharacterControllerBufferData,
+  type ControllerTransition,
+} from "../buffers/characterController";
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
 import { MINIMAP_SYSTEM_ID } from "./minimap";
 import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
@@ -18,6 +23,8 @@ import { ASSET_PLACEMENT_SYSTEM_ID } from "./pipeline/assetPlacement";
 import { SURFACE_PROVIDER_SYSTEM_ID } from "./pipeline/surfaceProvider";
 import { PLAYER_SPAWN_SYSTEM_ID } from "./pipeline/playerSpawn";
 import { BUILDER_SYSTEM_ID } from "./builder";
+import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
+import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
 
 export const HUD_SYSTEM_ID = "hudSystem";
 
@@ -28,10 +35,17 @@ export function formatHud(args: {
   totalRebuildMs: number;
   warnings: number;
   cam: { pos: [number, number, number]; yaw: number };
+  controller: {
+    state: string;
+    locomotionMode: string;
+    timeInState: number;
+    lastTransitionReason: string;
+    transitions: ControllerTransition[];
+  } | null;
 }): string {
   const ms = (n: number) => (n ?? 0).toFixed(1).padStart(6);
   const yawDeg = (args.cam.yaw * 180 / Math.PI).toFixed(0);
-  return [
+  const lines = [
     `scene: ${args.sceneName ?? "—"}    state: ${args.state}`,
     `parse:       ${ms(args.stages.parse ?? 0)} ms`,
     `split:       ${ms(args.stages.split ?? 0)} ms`,
@@ -42,7 +56,20 @@ export function formatHud(args: {
     `total:       ${ms(args.totalRebuildMs)} ms`,
     `warnings:    ${args.warnings}`,
     `cam: x=${args.cam.pos[0].toFixed(1)} z=${args.cam.pos[2].toFixed(1)} yaw=${yawDeg}°`,
-  ].join("\n");
+  ];
+  if (args.controller) {
+    const c = args.controller;
+    lines.push("");
+    lines.push(`player: ${c.state.padEnd(13)} (${c.locomotionMode})  t=${c.timeInState.toFixed(2)}s`);
+    lines.push(`reason: ${c.lastTransitionReason}`);
+    if (c.transitions.length > 0) {
+      lines.push(`transitions (oldest → newest):`);
+      for (const tr of c.transitions) {
+        lines.push(`  [${tr.t.toFixed(2)}s] ${tr.from} → ${tr.to}: ${tr.reason}`);
+      }
+    }
+  }
+  return lines.join("\n");
 }
 
 export function createHudSystem(): SystemDescriptor {
@@ -55,6 +82,7 @@ export function createHudSystem(): SystemDescriptor {
       { id: STATE_MACHINE_BUFFER_ID, access: "read" },
       { id: WORLD_DATA_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "read" },
+      { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
     ],
     // Hud reads `timing`; every system that writes timing must run before us.
     // (LoadScene writes timing in the Loading graph; pipeline systems write
@@ -74,6 +102,8 @@ export function createHudSystem(): SystemDescriptor {
       SURFACE_PROVIDER_SYSTEM_ID,
       PLAYER_SPAWN_SYSTEM_ID,
       BUILDER_SYSTEM_ID,
+      CHARACTER_CONTROLLER_SYSTEM_ID,
+      SURFACE_CONSTRAINT_SYSTEM_ID,
     ],
     execute: ({ buffer }) => {
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
@@ -81,7 +111,18 @@ export function createHudSystem(): SystemDescriptor {
       const sm = readBuffer(buffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
       const world = readBuffer(buffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
       const refs = readBuffer(buffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID));
+      const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
       if (!refs.hudEl) return;
+      const first = cc.byEntity.values().next();
+      const controller = first.done
+        ? null
+        : {
+            state: first.value.state,
+            locomotionMode: first.value.locomotionMode,
+            timeInState: first.value.timeInState,
+            lastTransitionReason: first.value.lastTransitionReason,
+            transitions: first.value.transitions,
+          };
       refs.hudEl.textContent = formatHud({
         sceneName: world.sceneName,
         state: sm.state,
@@ -89,6 +130,7 @@ export function createHudSystem(): SystemDescriptor {
         totalRebuildMs: t.totalRebuildMs,
         warnings: t.warnings.length,
         cam: { pos: cam.pos, yaw: cam.yaw },
+        controller,
       });
     },
   };

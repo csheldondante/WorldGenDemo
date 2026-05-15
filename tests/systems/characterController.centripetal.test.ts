@@ -76,6 +76,7 @@ function setupOnSurface(opts: {
       locomotionMode: "surfaceConstrained",
       profileId: DEFAULT_PLAYER_PROFILE.id,
       lastTransitionReason: "spawn",
+      transitions: [],
       timeInState: 0,
       yawVel: 0,
       targetYaw: 0,

@@ -8,31 +8,65 @@ import {
   CHARACTER_CONTROLLER_BUFFER_ID,
   type CharacterControllerBufferData,
 } from "../buffers/characterController";
+import {
+  CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
+  type CharacterControllerProfileBufferData,
+} from "../buffers/characterControllerProfile";
+import {
+  SURFACE_ATTACHMENT_BUFFER_ID,
+  type SurfaceAttachmentBufferData,
+} from "../buffers/surfaceAttachment";
+import {
+  SURFACE_PROVIDER_BUFFER_ID,
+  type SurfaceProviderBufferData,
+} from "../buffers/surfaceProvider";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
+import { assertDev } from "../runtime/dev";
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
 /**
- * Integration for surface-attached characters. In B.2 this is still semi-implicit Euler
- * in XYZ — same math as the old `velocityIntegrationSystem`, just filtered to entities
- * with `locomotionMode === "surfaceConstrained"`. `SurfaceConstraintSystem` snaps the
- * position back to the surface immediately after.
+ * UV-space integration for surface-attached characters.
  *
- * B.3 will replace the body of this system with UV-space integration (so the snap step
- * becomes unnecessary). For B.2 it's a pure refactor — the controller still produces
- * world-space accelerations, we still integrate in world space, and the snap still
- * runs downstream.
+ * Replaces the prior "XYZ semi-implicit Euler then snap back to surface" pattern with a
+ * single UV-space integration step that keeps the body geometrically on the surface at
+ * all times. The world position is DERIVED from the new UV each tick (sample + radius·N);
+ * world velocity is RECONSTRUCTED from UV velocity using the new tangent frame.
  *
- * Splitting the previous combined integration is what enables B.3: we change THIS
- * system's math without touching the volumetric path.
+ * Per-tick math (per the surface-frame-physics-solver wiki article):
+ *   1. Project current world velocity onto sample tangents → UV-parameter velocity
+ *      (divide by tangent magnitudes |∂P/∂u|, |∂P/∂v|).
+ *   2. Project accumulator accel onto the same tangents → UV-parameter acceleration.
+ *   3. Semi-implicit Euler in UV: uvel += auv·dt; uv += uvel·dt.
+ *   4. Sample the surface at the new UV: get new world position and new tangent frame.
+ *   5. World position = newSample.position + radius·newSample.normal (body offset along
+ *      the new surface normal — works for any surface orientation).
+ *   6. World velocity reconstructed from UV velocity × new tangent magnitudes × new
+ *      tangents. The body's vN is implicitly zero — the constraint is exact.
+ *
+ * The normal component of the accumulator (gravity-into-surface, etc.) is dropped during
+ * the tangent projection in step 2 — that's the constraint at work. No surface-reaction
+ * force needed: the body is rigidly on the surface, and the controller's leave rule
+ * decides separately when to detach.
+ *
+ * If the integrated UV crosses [0, 1] (character walks off the edge), this system flags
+ * the attachment with `outOfBounds = true` by leaving the UV un-clamped and writing the
+ * sample at the clamped UV. `SurfaceConstraintSystem` detects this and transitions to
+ * airborne.
+ *
+ * Compared to B.2: same buffer access except we add SurfaceProviderBuffer (read for
+ * sampleAtUV) and SurfaceAttachmentBuffer (readwrite for the UV update).
  */
 export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
   return {
     id: SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID,
     description:
-      "Integrates surface-attached characters (locomotionMode === 'surfaceConstrained'). B.2 implementation: XYZ semi-implicit Euler — same code path as the prior combined velocityIntegrationSystem. B.3 will switch this to UV-space integration so the snap step in SurfaceConstraintSystem disappears.",
+      "UV-space integration for surface-attached characters. Projects world velocity & accel onto the surface tangent frame, integrates in UV via semi-implicit Euler, derives new world position from the integrated UV (sample + radius·N), and reconstructs world velocity from the new tangent frame. Eliminates the XYZ-then-snap pattern and its bug class (mesa-snap, cliff-snap, cylinder-embed).",
     buffers: [
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
+      { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
+      { id: SURFACE_PROVIDER_BUFFER_ID, access: "read" },
+      { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "readwrite" },
       { id: FORCE_ACCUMULATOR_BUFFER_ID, access: "readwrite" },
       { id: VELOCITY_BUFFER_ID, access: "readwrite" },
       { id: TRANSFORM_BUFFER_ID, access: "readwrite" },
@@ -40,46 +74,139 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
     runsAfter: [STATE_MACHINE_SYSTEM_ID, CHARACTER_CONTROLLER_SYSTEM_ID],
     execute: ({ buffer, dt }) => {
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
+      const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
+      const sp = readBuffer(buffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID));
+      const surface = sp.heightmap;
       const fa = buffer<ForceAccumulatorBufferData>(FORCE_ACCUMULATOR_BUFFER_ID);
       const vBuf = buffer<VelocityBufferData>(VELOCITY_BUFFER_ID);
       const tBuf = buffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
+      const saBuf = buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID);
       const accels = readBuffer(fa);
+
+      // If there are any surface-attached entities, a SurfaceProvider must be registered.
+      // Silent fallback to XYZ integration here would mask the very class of bugs B.3
+      // exists to eliminate. See `wiki/worldgen-demo-no-silent-fallbacks-in-tests.md`.
+      const anySurfaceAttached = (() => {
+        for (const ctrl of cc.byEntity.values()) {
+          if (ctrl.locomotionMode === "surfaceConstrained") return true;
+        }
+        return false;
+      })();
+      assertDev(
+        !anySurfaceAttached || surface !== null,
+        "surfaceConstrainedVelocity: a surfaceConstrained entity exists but SurfaceProviderBuffer.heightmap is null — register a SurfaceProvider before integrating.",
+      );
+      if (!surface) return; // no surface-attached entities AND no provider → nothing to do
 
       writeBuffer(vBuf, (vels) => {
         writeBuffer(tBuf, (transforms) => {
-          for (const [id, ctrl] of cc.byEntity) {
-            if (ctrl.locomotionMode !== "surfaceConstrained") continue;
-            const vel = vels.byEntity.get(id);
-            if (!vel) continue;
-            vel.prevLinear[0] = vel.linear[0];
-            vel.prevLinear[1] = vel.linear[1];
-            vel.prevLinear[2] = vel.linear[2];
-            const a = accels.byEntity.get(id);
-            if (a) {
-              vel.linear[0] += a.accel[0] * dt;
-              vel.linear[1] += a.accel[1] * dt;
-              vel.linear[2] += a.accel[2] * dt;
-            }
-            const t = transforms.byEntity.get(id);
-            if (t) {
-              t.position[0] += vel.linear[0] * dt;
-              t.position[1] += vel.linear[1] * dt;
-              t.position[2] += vel.linear[2] * dt;
+          writeBuffer(saBuf, (atts) => {
+            for (const [id, ctrl] of cc.byEntity) {
+              if (ctrl.locomotionMode !== "surfaceConstrained") continue;
+              const att = atts.byEntity.get(id);
+              const vel = vels.byEntity.get(id);
+              const t = transforms.byEntity.get(id);
+              const profile = profiles.byId.get(ctrl.profileId);
+              if (!att || !vel || !t || !profile) continue;
+              const sample = att.sample;
+              if (!sample) continue; // attachment must carry a sample to integrate against
+              const radius = profile.bodyRadius;
+
+              // Snapshot pre-integration world velocity for downstream consumers
+              // (chain dynamics, hit reactions, future ragdoll triggers).
+              vel.prevLinear[0] = vel.linear[0];
+              vel.prevLinear[1] = vel.linear[1];
+              vel.prevLinear[2] = vel.linear[2];
+
+              // Integration: keep world velocity as the primary state and project onto
+              // the surface each step. The tangent-frame-scalar form (vTanU·tangentU +
+              // vTanV·tangentV) is energy-conserving ONLY when the tangents are
+              // orthogonal — but on a heightmap with non-zero gradients in BOTH u and v,
+              // tangentU·tangentV ≠ 0, and reconstruction injects spurious energy via
+              // the cross term. This formulation avoids the decomposition entirely.
+              //
+              // Step 1: read accumulator accel; integrate world velocity (semi-implicit Euler).
+              const a = accels.byEntity.get(id);
+              if (a) {
+                vel.linear[0] += a.accel[0] * dt;
+                vel.linear[1] += a.accel[1] * dt;
+                vel.linear[2] += a.accel[2] * dt;
+              }
+
+              // Step 2: capture post-acceleration speed (energy anchor).
+              const speedTarget = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
+
+              // Step 3: advance UV from the world velocity projected onto current
+              // sample's tangent UNIT vectors, divided by tangent magnitudes.
+              const safeTU = sample.tangentUNorm > 0 ? sample.tangentUNorm : 1;
+              const safeTV = sample.tangentVNorm > 0 ? sample.tangentVNorm : 1;
+              const vTanU_proj =
+                vel.linear[0] * sample.tangentU[0] +
+                vel.linear[1] * sample.tangentU[1] +
+                vel.linear[2] * sample.tangentU[2];
+              const vTanV_proj =
+                vel.linear[0] * sample.tangentV[0] +
+                vel.linear[1] * sample.tangentV[1] +
+                vel.linear[2] * sample.tangentV[2];
+              const u_raw = att.uv[0] + (vTanU_proj * dt) / safeTU;
+              const v_raw = att.uv[1] + (vTanV_proj * dt) / safeTV;
+
+              // Step 4: sample new UV (clamped for the actual sample call).
+              const u_clamped = Math.max(0, Math.min(1, u_raw));
+              const v_clamped = Math.max(0, Math.min(1, v_raw));
+              const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
+
+              // Step 5: world position = new surface point + radius along new normal.
+              t.position[0] = sample_new.position[0] + sample_new.normal[0] * radius;
+              t.position[1] = sample_new.position[1] + sample_new.normal[1] * radius;
+              t.position[2] = sample_new.position[2] + sample_new.normal[2] * radius;
               transforms.byEntity.set(id, t);
+
+              // Step 6: project world velocity onto the new tangent plane (drop the
+              // component along the new normal — the surface absorbs it as a constraint
+              // reaction). This is independent of whether tangents are orthogonal.
+              const Nnx = sample_new.normal[0];
+              const Nny = sample_new.normal[1];
+              const Nnz = sample_new.normal[2];
+              const vNnew =
+                vel.linear[0] * Nnx +
+                vel.linear[1] * Nny +
+                vel.linear[2] * Nnz;
+              vel.linear[0] -= vNnew * Nnx;
+              vel.linear[1] -= vNnew * Nny;
+              vel.linear[2] -= vNnew * Nnz;
+
+              // Step 7: rescale projected velocity to preserve the post-acceleration
+              // speed (energy conservation across the projection). If vNnew was small
+              // this is a near-identity rescale; if surface curved significantly between
+              // ticks it corrects the small magnitude loss from projection. Without
+              // this, the body would lose energy each tick proportional to surface
+              // curvature, slowing artificially.
+              const speedProj = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
+              if (speedProj > 1e-9) {
+                const scale = speedTarget / speedProj;
+                vel.linear[0] *= scale;
+                vel.linear[1] *= scale;
+                vel.linear[2] *= scale;
+              }
+              vels.byEntity.set(id, vel);
+
+              // Store un-clamped UV so surfaceConstraint can detect "walked off edge";
+              // cache the new sample on the attachment.
+              att.uv = [u_raw, v_raw];
+              att.sample = sample_new;
+              atts.byEntity.set(id, att);
             }
-            vels.byEntity.set(id, vel);
-          }
+          });
         });
       });
 
-      // Clear accumulator only for entities we touched. The volumetric system clears
-      // its own. (Non-character entities have accumulator entries cleared by the
-      // volumetric system.)
+      // Clear accumulator slots we touched. Volumetric integrator clears its own.
       writeBuffer(fa, (d) => {
         for (const [id, ctrl] of cc.byEntity) {
           if (ctrl.locomotionMode !== "surfaceConstrained") continue;
-          const a = d.byEntity.get(id);
-          if (a) { a.accel[0] = 0; a.accel[1] = 0; a.accel[2] = 0; }
+          const aa = d.byEntity.get(id);
+          if (aa) { aa.accel[0] = 0; aa.accel[1] = 0; aa.accel[2] = 0; }
         }
       });
     },

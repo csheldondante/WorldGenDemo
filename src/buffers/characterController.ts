@@ -13,6 +13,20 @@ export type ControllerState =
 
 export type LocomotionMode = "surfaceConstrained" | "volumeConstrained";
 
+/** Single state transition record kept in a ring buffer on the controller for debug HUD. */
+export interface ControllerTransition {
+  /** State the entity transitioned from. */
+  from: ControllerState;
+  /** State the entity transitioned to. */
+  to: ControllerState;
+  /** Locomotion mode after the transition (may differ from before — e.g. surfaceRun→airborne). */
+  locomotion: LocomotionMode;
+  /** Wall-clock-ish timestamp (`now` from the scheduler tick). */
+  t: number;
+  /** Human-readable reason set at the transition site. */
+  reason: string;
+}
+
 export interface CharacterControllerComponent {
   state: ControllerState;
   locomotionMode: LocomotionMode;
@@ -21,6 +35,8 @@ export interface CharacterControllerComponent {
   lastTransitionReason: string;
   /** Time spent in the current state, seconds; reset on transition. */
   timeInState: number;
+  /** Ring buffer of recent state transitions for the debug HUD. Oldest first; bounded to ~10 entries. */
+  transitions: ControllerTransition[];
   /**
    * Angular velocity about world +Y (rad/s). Integrated each tick by
    * CharacterOrientationSystem under a critically-damped spring toward

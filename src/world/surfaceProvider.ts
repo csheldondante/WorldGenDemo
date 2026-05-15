@@ -151,16 +151,25 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
     const tangentU: [number, number, number] = [tu[0] / tuLen, tu[1] / tuLen, tu[2] / tuLen];
     const tangentV: [number, number, number] = [tv[0] / tvLen, tv[1] / tvLen, tv[2] / tvLen];
     const slopeRad = Math.acos(Math.max(0, Math.min(1, ny)));
+    // |∂P/∂u| and |∂P/∂v| — world meters per UV unit, including the height gradient.
+    // P(u, v) = (worldWidth·(u−0.5), H(u,v), worldDepth·(v−0.5))
+    //   → ∂P/∂u = (worldWidth, ∂H/∂u, 0); |∂P/∂u| = √(worldWidth² + (∂H/∂u)²)
+    //   → ∂P/∂v = (0, ∂H/∂v, worldDepth); |∂P/∂v| = √(worldDepth² + (∂H/∂v)²)
+    // The `tu` and `tv` vectors above are 2·eps·(∂P/∂u, ∂P/∂v), so their magnitudes
+    // divided by 2·eps give the true norms. Hardcoding `worldWidth` here (the old form)
+    // was correct only on perfectly flat terrain — on slopes it underestimated |∂P/∂u|
+    // so UV-space velocity came out 15% too high on a 30° slope, making the character
+    // move faster than expected along the surface.
+    const inv2eps = 1 / (2 * eps);
+    const tangentUNorm = tuLen * inv2eps;
+    const tangentVNorm = tvLen * inv2eps;
     return {
       position: [x, y, z],
       normal: [nx, ny, nz],
       tangentU,
       tangentV,
-      // Heightmap is parameterized as P(u,v) = (worldWidth·(u−0.5), H(u,v), worldDepth·(v−0.5)),
-      // so |∂P/∂u| ≈ worldWidth and |∂P/∂v| ≈ worldDepth (the H_u/H_v terms add < 1% for
-      // typical heightmap slopes — we ignore them for the centripetal mapping).
-      tangentUNorm: this.worldWidth,
-      tangentVNorm: this.worldDepth,
+      tangentUNorm,
+      tangentVNorm,
       slopeRad,
       friction: 1,
       normalInMax: 800,

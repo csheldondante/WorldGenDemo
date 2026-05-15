@@ -18,20 +18,28 @@ import { TRANSFORM_BUFFER_ID, type TransformBufferData } from "../buffers/transf
 import { VELOCITY_BUFFER_ID, type VelocityBufferData } from "../buffers/velocity";
 import { SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID } from "./surfaceConstrainedVelocity";
 import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "./volumetricConstrainedVelocity";
+import { recordTransition } from "./characterController";
 
 export const SURFACE_CONSTRAINT_SYSTEM_ID = "surfaceConstraintSystem";
 
 /**
- * After integration: project surface-attached entities back onto the surface
- * (snap y to height + bodyRadius) and refresh the cached SurfaceSample. For
- * volume-constrained entities, check landing — if the player has fallen
- * within `landingSnapMeters` of the surface and is moving downward, re-attach.
+ * Surface-attach/detach event handler (B.3+).
+ *
+ * For SURFACE-CONSTRAINED entities: the integration is already done in UV by
+ * `SurfaceConstrainedVelocitySystem`. This system only checks whether the integration
+ * pushed the UV out of the surface patch — if so, transition to airborne with reason
+ * "walked off edge". No position snap; the body's world position came from the UV.
+ *
+ * For VOLUME-CONSTRAINED entities (airborne / falling): check landing. When the body
+ * crosses below `groundY` (sample.y + bodyRadius) while moving downward, snap to
+ * groundY and re-attach. Strict comparison (no grace window) — see
+ * `wiki/worldgen-demo-landing-snap-strict.md` for why.
  */
 export function createSurfaceConstraintSystem(): SystemDescriptor {
   return {
     id: SURFACE_CONSTRAINT_SYSTEM_ID,
     description:
-      "Snaps surface-attached entities to the surface y. Detects landings: volume-constrained entities reattach when descending into the surface.",
+      "Surface-attach/detach event handler. For surface-attached entities: detects walked-off-edge from out-of-bounds UV written by SurfaceConstrainedVelocity, transitions to airborne. For airborne entities: detects landing (body crosses below groundY while descending), snaps to surface and re-attaches.",
     buffers: [
       { id: SURFACE_PROVIDER_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
@@ -45,7 +53,7 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
       SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID,
       VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID,
     ],
-    execute: ({ buffer }) => {
+    execute: ({ buffer, now }) => {
       const sp = readBuffer(buffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID));
       const profile = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       if (!sp.heightmap) return;
@@ -68,36 +76,27 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                 const radius = prof?.bodyRadius ?? 0.5;
 
                 if (ctrl.locomotionMode === "surfaceConstrained") {
-                  // Snap to surface, refresh sample
-                  const [u, vUV] = surface.worldToUV(t.position[0], t.position[1], t.position[2]);
-                  const clampedU = Math.max(0, Math.min(1, u));
-                  const clampedV = Math.max(0, Math.min(1, vUV));
-                  // If we walked off the world edge, fall into volume mode
-                  if (clampedU !== u || clampedV !== vUV) {
+                  // SurfaceConstrainedVelocity already integrated UV and placed the
+                  // body at sample(new_uv) + radius·N. We just check whether the new UV
+                  // is out of bounds — if so, the body walked off the patch's edge and
+                  // should transition to airborne. Position stays at the clamped-UV
+                  // surface point (set by the integrator), velocity carries forward.
+                  const att = sa.byEntity.get(id);
+                  if (!att) continue;
+                  const u = att.uv[0];
+                  const v = att.uv[1];
+                  if (u < 0 || u > 1 || v < 0 || v > 1) {
                     ctrl.locomotionMode = "volumeConstrained";
-                    ctrl.state = "airborne";
-                    ctrl.lastTransitionReason = "walked off edge";
-                    ctrl.timeInState = 0;
+                    recordTransition(ctrl, "airborne", "walked off edge", now);
+                    // Clamp the cached UV so future reads are well-defined. Sample
+                    // was already at clamped UV by the integrator.
+                    att.uv = [Math.max(0, Math.min(1, u)), Math.max(0, Math.min(1, v))];
+                    sa.byEntity.set(id, att);
                     cc.byEntity.set(id, ctrl);
                     continue;
                   }
-                  const sample = surface.sampleAtUV(clampedU, clampedV);
-                  // Heightmap-style providers: worldToUV is a vertical (XZ) projection, so
-                  // sample.position[0/2] already equals the character's XZ. Snap Y only —
-                  // this preserves any horizontal motion from velocity integration. (The
-                  // "offset along normal" form is wrong here because it shifts XZ by
-                  // ~0.25m every tick on any slope, undoing uphill motion.)
-                  t.position[0] = sample.position[0];
-                  t.position[1] = sample.position[1] + radius;
-                  t.position[2] = sample.position[2];
-                  transforms.byEntity.set(id, t);
-                  // Refresh the attachment with the new sample
-                  const att = sa.byEntity.get(id);
-                  if (att) {
-                    att.uv = [clampedU, clampedV];
-                    att.sample = sample;
-                    sa.byEntity.set(id, att);
-                  }
+                  // Otherwise: still attached. The integrator already wrote position,
+                  // velocity, and the sample. No work to do.
                 } else {
                   // volumeConstrained: check for landing
                   const [u, vUV] = surface.worldToUV(t.position[0], t.position[1], t.position[2]);
@@ -127,9 +126,7 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                     transforms.byEntity.set(id, t);
                     vels.byEntity.set(id, v);
                     ctrl.locomotionMode = "surfaceConstrained";
-                    ctrl.state = "surfaceRun";
-                    ctrl.lastTransitionReason = "landed";
-                    ctrl.timeInState = 0;
+                    recordTransition(ctrl, "surfaceRun", "landed", now);
                     const att = sa.byEntity.get(id);
                     if (att) {
                       att.uv = [u, vUV];
