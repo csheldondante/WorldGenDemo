@@ -1,9 +1,5 @@
 import { readBuffer } from "../runtime/buffer";
 import type { SystemDescriptor } from "../runtime/system";
-import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
-import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
-import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
-import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
 import {
   CHARACTER_CONTROLLER_BUFFER_ID,
@@ -12,149 +8,98 @@ import {
 } from "../buffers/characterController";
 import { INPUT_MAP_BUFFER_ID, type InputMapBufferData } from "../buffers/inputMap";
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
-import { MINIMAP_SYSTEM_ID } from "./minimap";
-import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
-import { LOAD_SCENE_SYSTEM_ID } from "./loadScene";
-import { PARSE_BITMAP_SYSTEM_ID } from "./pipeline/parseBitmap";
-import { SPLIT_LAYERS_SYSTEM_ID } from "./pipeline/splitLayers";
-import { JFA_SYSTEM_ID } from "./pipeline/jfa";
-import { HEIGHTMAP_SYSTEM_ID } from "./pipeline/heightmap";
-import { TERRAIN_MESH_SYSTEM_ID } from "./pipeline/terrainMesh";
-import { ASSET_PLACEMENT_SYSTEM_ID } from "./pipeline/assetPlacement";
-import { SURFACE_PROVIDER_SYSTEM_ID } from "./pipeline/surfaceProvider";
-import { PLAYER_SPAWN_SYSTEM_ID } from "./pipeline/playerSpawn";
-import { BUILDER_SYSTEM_ID } from "./builder";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
 import { INPUT_MAPPER_SYSTEM_ID } from "./inputMapper";
+import { BODY_LEAN_SYSTEM_ID } from "./bodyLean";
+import { CHARACTER_ORIENTATION_SYSTEM_ID } from "./characterOrientation";
+import { PLAYER_SPAWN_SYSTEM_ID } from "./pipeline/playerSpawn";
+import { MINIMAP_SYSTEM_ID } from "./minimap";
 
 export const HUD_SYSTEM_ID = "hudSystem";
 
-/** How far back (in seconds, wall-clock from scheduler `now`) to show transitions by default. */
-const TRANSITION_WINDOW_SEC = 4;
+/** Max simultaneously-visible messages (oldest scrolls off top when this is exceeded). */
+const MAX_MESSAGES = 3;
+/** Seconds a message stays on screen after it was recorded. */
+const MESSAGE_LIFETIME_SEC = 2.5;
 
+/**
+ * Format the visible transition stack, oldest → newest top-to-bottom. The
+ * `#hud` element is anchored bottom-left in CSS, so as the stack grows the
+ * box expands upward — newest entry is always on the bottom line.
+ */
 export function formatHud(args: {
-  sceneName: string | null;
-  state: string;
-  stages: Record<string, number>;
-  totalRebuildMs: number;
-  warnings: number;
-  cam: { pos: [number, number, number]; yaw: number };
-  controller: {
-    state: string;
-    locomotionMode: string;
-    timeInState: number;
-    lastTransitionReason: string;
-    transitions: ControllerTransition[];
-  } | null;
+  transitions: ControllerTransition[];
   now: number;
-  transitionWindowSec: number;
+  lifetimeSec: number;
+  maxMessages: number;
 }): string {
-  const ms = (n: number) => (n ?? 0).toFixed(1).padStart(6);
-  const yawDeg = (args.cam.yaw * 180 / Math.PI).toFixed(0);
-  const lines = [
-    `scene: ${args.sceneName ?? "—"}    state: ${args.state}`,
-    `parse:       ${ms(args.stages.parse ?? 0)} ms`,
-    `split:       ${ms(args.stages.split ?? 0)} ms`,
-    `jfa:         ${ms(args.stages.jfa ?? 0)} ms`,
-    `heightmap:   ${ms(args.stages.heightmap ?? 0)} ms`,
-    `terrainMesh: ${ms(args.stages.terrainMesh ?? 0)} ms`,
-    `assets:      ${ms(args.stages.assetPlacement ?? 0)} ms`,
-    `total:       ${ms(args.totalRebuildMs)} ms`,
-    `warnings:    ${args.warnings}`,
-    `cam: x=${args.cam.pos[0].toFixed(1)} z=${args.cam.pos[2].toFixed(1)} yaw=${yawDeg}°`,
-  ];
-  if (args.controller) {
-    const c = args.controller;
-    lines.push("");
-    lines.push(`player: ${c.state.padEnd(13)} (${c.locomotionMode})  t=${c.timeInState.toFixed(2)}s`);
-    lines.push(`reason: ${c.lastTransitionReason}`);
-    const cutoff = args.now - args.transitionWindowSec;
-    const recent = c.transitions.filter((tr) => tr.t >= cutoff);
-    if (recent.length > 0) {
-      lines.push(`transitions (last ${args.transitionWindowSec}s, oldest → newest):`);
-      for (const tr of recent) {
-        lines.push(`  [${tr.t.toFixed(2)}s] ${tr.from} → ${tr.to}: ${tr.reason}`);
-      }
-    }
-  }
-  return lines.join("\n");
+  const cutoff = args.now - args.lifetimeSec;
+  const recent = args.transitions.filter((tr) => tr.t >= cutoff);
+  const tail = recent.slice(-args.maxMessages);
+  return tail.map((tr) => `${tr.from} → ${tr.to}: ${tr.reason}`).join("\n");
 }
 
 export function createHudSystem(): SystemDescriptor {
   // UI-cursor closure state (same precedent as SceneCyclerSystem): purely display-side,
-  // never read by gameplay. Visibility toggles with H key (KeyH / GamepadBack).
+  // never read by gameplay. H key toggles visibility entirely.
   let visible = true;
+  // DOM diff cache: only write textContent when the rendered string actually changes.
+  // The render loop runs every tick (~60Hz); without this the panel flickers visibly
+  // as the browser re-lays out for each identical textContent assignment.
+  let lastText: string | null = null;
+  let lastDisplay: string | null = null;
   return {
     id: HUD_SYSTEM_ID,
-    description: "Renders timings, scene name, FSM state, and camera pos into the HUD overlay. H toggles visibility; transitions filter to the last few seconds.",
+    description:
+      "Renders a rolling transition-log toast (max 3 messages, ~2.5s lifetime each) for the player character. H toggles visibility. DOM-diffs to prevent flicker; otherwise silent when no recent transitions.",
     buffers: [
-      { id: CAMERA_BUFFER_ID, access: "read" },
-      { id: TIMING_BUFFER_ID, access: "read" },
-      { id: STATE_MACHINE_BUFFER_ID, access: "read" },
-      { id: WORLD_DATA_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
       { id: INPUT_MAP_BUFFER_ID, access: "read" },
     ],
-    // Hud reads `timing`; every system that writes timing must run before us.
-    // (LoadScene writes timing in the Loading graph; pipeline systems write
-    // timing in the Rebuilding graph; both lists include systems that may
-    // not be in every graph — graph builder silently drops out-of-graph edges.)
     runsAfter: [
       STATE_MACHINE_SYSTEM_ID,
-      CAMERA_FOLLOW_SYSTEM_ID,
-      MINIMAP_SYSTEM_ID,
-      LOAD_SCENE_SYSTEM_ID,
-      PARSE_BITMAP_SYSTEM_ID,
-      SPLIT_LAYERS_SYSTEM_ID,
-      JFA_SYSTEM_ID,
-      HEIGHTMAP_SYSTEM_ID,
-      TERRAIN_MESH_SYSTEM_ID,
-      ASSET_PLACEMENT_SYSTEM_ID,
-      SURFACE_PROVIDER_SYSTEM_ID,
-      PLAYER_SPAWN_SYSTEM_ID,
-      BUILDER_SYSTEM_ID,
+      // All systems that write CharacterControllerBuffer must run before us so the
+      // transitions list and player state read consistently this tick. Out-of-graph
+      // IDs are silently dropped, so one list works across Loading/Running/Rebuilding/Builder.
       CHARACTER_CONTROLLER_SYSTEM_ID,
       SURFACE_CONSTRAINT_SYSTEM_ID,
+      BODY_LEAN_SYSTEM_ID,
+      CHARACTER_ORIENTATION_SYSTEM_ID,
+      PLAYER_SPAWN_SYSTEM_ID,
       INPUT_MAPPER_SYSTEM_ID,
+      MINIMAP_SYSTEM_ID,
     ],
     execute: ({ buffer, now }) => {
-      const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
-      const t = readBuffer(buffer<TimingBufferData>(TIMING_BUFFER_ID));
-      const sm = readBuffer(buffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
-      const world = readBuffer(buffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
       const refs = readBuffer(buffer<RenderRefsBufferData>(RENDER_REFS_BUFFER_ID));
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
       const im = readBuffer(buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID));
       if (!refs.hudEl) return;
       if (im.actions.toggleHud.pressed) visible = !visible;
-      if (!visible) {
-        refs.hudEl.style.display = "none";
-        return;
-      }
-      refs.hudEl.style.display = "";
       const first = cc.byEntity.values().next();
-      const controller = first.done
-        ? null
-        : {
-            state: first.value.state,
-            locomotionMode: first.value.locomotionMode,
-            timeInState: first.value.timeInState,
-            lastTransitionReason: first.value.lastTransitionReason,
-            transitions: first.value.transitions,
-          };
-      refs.hudEl.textContent = formatHud({
-        sceneName: world.sceneName,
-        state: sm.state,
-        stages: t.stages,
-        totalRebuildMs: t.totalRebuildMs,
-        warnings: t.warnings.length,
-        cam: { pos: cam.pos, yaw: cam.yaw },
-        controller,
-        now,
-        transitionWindowSec: TRANSITION_WINDOW_SEC,
-      });
+      const transitions = first.done ? [] : first.value.transitions;
+      const text = visible
+        ? formatHud({
+            transitions,
+            now,
+            lifetimeSec: MESSAGE_LIFETIME_SEC,
+            maxMessages: MAX_MESSAGES,
+          })
+        : "";
+      // Collapse the panel (hide the element entirely) when there's nothing to show.
+      // The CSS gives #hud a dark background + padding, so an empty textContent
+      // would still leave a visible sliver; full `display:none` matches the
+      // user's "collapse it down" intent.
+      const nextDisplay = text.length > 0 ? "" : "none";
+      if (nextDisplay !== lastDisplay) {
+        refs.hudEl.style.display = nextDisplay;
+        lastDisplay = nextDisplay;
+      }
+      if (text !== lastText) {
+        refs.hudEl.textContent = text;
+        lastText = text;
+      }
     },
   };
 }
