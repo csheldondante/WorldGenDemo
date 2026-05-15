@@ -36,6 +36,22 @@ export async function loadScene(name: string): Promise<LoadedScene> {
   if (!sceneRes.ok) throw new Error(`scene not found: ${sceneUrl}`);
   const scene = (await sceneRes.json()) as SceneFile;
 
+  // Parametric (gym) scenes have no PNG — the SurfaceProvider is built analytically by
+  // parametricSurfaceSystem from scene.parametric. Return a placeholder labelMap so the
+  // existing LoadedScene shape stays uniform; downstream bitmap stages early-out when
+  // scene.parametric is present.
+  if (scene.parametric) {
+    const palette = buildPalette(scene); // empty labels is fine
+    const labelMap = parseBitmap({
+      width: 1, height: 1,
+      pixels: new Uint8ClampedArray([0, 0, 0, 0]),
+      palette,
+      tileSize: scene.tileSize,
+    });
+    const image = new Image(); // unused for parametric, but the LoadedScene shape expects one
+    return { scene, palette, labelMap, image };
+  }
+
   const palette = buildPalette(scene); // throws on unknown id
 
   const png = await fetchPng(mapUrl);

@@ -13,7 +13,9 @@ import type { SurfaceSample } from "../../src/world/surfaceProvider";
 import { DEFAULT_PLAYER_PROFILE } from "../../src/buffers/characterControllerProfile";
 import { createCharacterControllerSystem } from "../../src/systems/characterController";
 import { createForceFieldSystem } from "../../src/systems/forceField";
-import { createVelocityIntegrationSystem } from "../../src/systems/velocityIntegration";
+import { createSurfaceConstrainedVelocitySystem } from "../../src/systems/surfaceConstrainedVelocity";
+import { createVolumetricConstrainedVelocitySystem } from "../../src/systems/volumetricConstrainedVelocity";
+import { createTangentInputMapperSystem } from "../../src/systems/tangentInputMapper";
 
 /**
  * Per-tick test harness: ForceField → Controller → VelocityIntegration.
@@ -24,8 +26,10 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
   const reg = createRegistry();
   registerCoreBuffers(reg);
   reg.registerSystem(createForceFieldSystem());
+  reg.registerSystem(createTangentInputMapperSystem());
   reg.registerSystem(createCharacterControllerSystem());
-  reg.registerSystem(createVelocityIntegrationSystem());
+  reg.registerSystem(createSurfaceConstrainedVelocitySystem());
+  reg.registerSystem(createVolumetricConstrainedVelocitySystem());
   const cc = reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
   const ci = reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID);
   const t = reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
@@ -54,6 +58,8 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
     normal: [0, 1, 0] as [number, number, number],
     tangentU: [1, 0, 0] as [number, number, number],
     tangentV: [0, 0, 1] as [number, number, number],
+    tangentUNorm: 1,
+    tangentVNorm: 1,
     slopeRad: 0,
     friction: 1,
     normalInMax: 800,
@@ -68,7 +74,13 @@ function setup(opts?: { sample?: Partial<SurfaceSample> }) {
   });
   const g = buildExecutionGraph({
     id: "g",
-    nodes: ["forceFieldSystem", "characterControllerSystem", "velocityIntegrationSystem"],
+    nodes: [
+      "forceFieldSystem",
+      "tangentInputMapperSystem",
+      "characterControllerSystem",
+      "surfaceConstrainedVelocitySystem",
+      "volumetricConstrainedVelocitySystem",
+    ],
     registry: reg,
   });
   return { reg, cc, ci, t, v, sa, g, id };

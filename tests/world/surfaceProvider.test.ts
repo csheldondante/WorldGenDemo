@@ -23,9 +23,9 @@ describe("HeightmapSurfaceProvider", () => {
     const hm = flatHeightmap(10, 10, 5, 1);
     const sp = new HeightmapSurfaceProvider("hm", hm);
     // World (-W/2, -D/2) is UV (0, 0); world (+W/2, +D/2) is UV (1, 1).
-    expect(sp.worldToUV(-5, -5)).toEqual([0, 0]);
-    expect(sp.worldToUV(5, 5)).toEqual([1, 1]);
-    expect(sp.worldToUV(0, 0)).toEqual([0.5, 0.5]);
+    expect(sp.worldToUV(-5, 0, -5)).toEqual([0, 0]);
+    expect(sp.worldToUV(5, 0, 5)).toEqual([1, 1]);
+    expect(sp.worldToUV(0, 0, 0)).toEqual([0.5, 0.5]);
   });
 
   it("uvToWorld returns the expected y for a flat heightmap", () => {
@@ -62,5 +62,66 @@ describe("HeightmapSurfaceProvider", () => {
     expect(sp.canAttachAt(-0.1, 0.5)).toBe(false);
     expect(sp.canAttachAt(0.5, 1.1)).toBe(false);
     expect(sp.canAttachAt(0.5, 0.5)).toBe(true);
+  });
+
+  describe("getCurvature", () => {
+    function domeHeightmap(width: number, height: number, amplitude: number, tileSize = 1): Heightmap {
+      // Smooth dome (Gaussian-ish) centered at the heightmap center. Sampled curvature at the
+      // apex should be negative (convex / hilltop).
+      const data = new Float32Array(width * height);
+      const cx = (width - 1) / 2, cz = (height - 1) / 2;
+      const sigma = Math.max(width, height) / 4;
+      for (let z = 0; z < height; z++) {
+        for (let x = 0; x < width; x++) {
+          const dx = x - cx, dz = z - cz;
+          data[z * width + x] = amplitude * Math.exp(-(dx * dx + dz * dz) / (2 * sigma * sigma));
+        }
+      }
+      return { width, height, tileSize, data };
+    }
+
+    function bowlHeightmap(width: number, height: number, depth: number, tileSize = 1): Heightmap {
+      // Negative dome (bowl). Sampled curvature at the deepest point should be positive (concave).
+      const data = new Float32Array(width * height);
+      const cx = (width - 1) / 2, cz = (height - 1) / 2;
+      const sigma = Math.max(width, height) / 4;
+      for (let z = 0; z < height; z++) {
+        for (let x = 0; x < width; x++) {
+          const dx = x - cx, dz = z - cz;
+          data[z * width + x] = -depth * Math.exp(-(dx * dx + dz * dz) / (2 * sigma * sigma));
+        }
+      }
+      return { width, height, tileSize, data };
+    }
+
+    it("flat heightmap → zero curvature in every direction", () => {
+      const hm = flatHeightmap(16, 16, 0, 1);
+      const sp = new HeightmapSurfaceProvider("flat", hm);
+      expect(sp.getCurvature(0.5, 0.5, 1, 0)).toBeCloseTo(0, 6);
+      expect(sp.getCurvature(0.5, 0.5, 0, 1)).toBeCloseTo(0, 6);
+      expect(sp.getCurvature(0.3, 0.7, 1, 1)).toBeCloseTo(0, 6);
+    });
+
+    it("dome apex → negative curvature (convex hill, body thrown off at speed)", () => {
+      const hm = domeHeightmap(32, 32, 5, 1);
+      const sp = new HeightmapSurfaceProvider("hill", hm);
+      expect(sp.getCurvature(0.5, 0.5, 1, 0)).toBeLessThan(0);
+      expect(sp.getCurvature(0.5, 0.5, 0, 1)).toBeLessThan(0);
+    });
+
+    it("bowl bottom → positive curvature (concave bowl, body pressed into surface)", () => {
+      const hm = bowlHeightmap(32, 32, 5, 1);
+      const sp = new HeightmapSurfaceProvider("bowl", hm);
+      expect(sp.getCurvature(0.5, 0.5, 1, 0)).toBeGreaterThan(0);
+      expect(sp.getCurvature(0.5, 0.5, 0, 1)).toBeGreaterThan(0);
+    });
+
+    it("curvature is bilinear: doubling direction quadruples result", () => {
+      const hm = domeHeightmap(32, 32, 5, 1);
+      const sp = new HeightmapSurfaceProvider("hill", hm);
+      const base = sp.getCurvature(0.5, 0.5, 1, 0);
+      const doubled = sp.getCurvature(0.5, 0.5, 2, 0);
+      expect(doubled).toBeCloseTo(4 * base, 4);
+    });
   });
 });

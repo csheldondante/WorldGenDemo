@@ -56,6 +56,8 @@ const FLAT_SURFACE: SurfaceProvider = {
       normal: [0, 1, 0],
       tangentU: [1, 0, 0],
       tangentV: [0, 0, 1],
+      tangentUNorm: 1,
+      tangentVNorm: 1,
       slopeRad: 0,
       friction: 1,
       normalInMax: 800,
@@ -63,10 +65,11 @@ const FLAT_SURFACE: SurfaceProvider = {
       traversable: true,
     };
   },
-  worldToUV(_x: number, _z: number): [number, number] { return [0.5, 0.5]; },
+  worldToUV(_x: number, _y: number, _z: number): [number, number] { return [0.5, 0.5]; },
   uvToWorld(_u: number, _v: number): [number, number, number] { return [0, 0, 0]; },
   canAttachAt(): boolean { return true; },
   sampleVelocityAt(): [number, number, number] { return [0, 0, 0]; },
+  getCurvature(): number { return 0; },
 };
 
 // Position-aware surface: returns the actual sampled XZ so the planner can
@@ -82,6 +85,8 @@ const POSITION_AWARE_SURFACE: SurfaceProvider = {
       normal: [0, 1, 0],
       tangentU: [1, 0, 0],
       tangentV: [0, 0, 1],
+      tangentUNorm: 100,
+      tangentVNorm: 100,
       slopeRad: 0,
       friction: 1,
       normalInMax: 800,
@@ -89,7 +94,7 @@ const POSITION_AWARE_SURFACE: SurfaceProvider = {
       traversable: true,
     };
   },
-  worldToUV(x: number, z: number): [number, number] {
+  worldToUV(x: number, _y: number, z: number): [number, number] {
     return [x / 100 + 0.5, z / 100 + 0.5];
   },
   uvToWorld(u: number, v: number): [number, number, number] {
@@ -97,6 +102,7 @@ const POSITION_AWARE_SURFACE: SurfaceProvider = {
   },
   canAttachAt(u: number, v: number): boolean { return u >= 0 && u <= 1 && v >= 0 && v <= 1; },
   sampleVelocityAt(): [number, number, number] { return [0, 0, 0]; },
+  getCurvature(): number { return 0; },
 };
 
 const TWO_LEG_RIG: RigDefinition = {

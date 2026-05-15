@@ -292,7 +292,11 @@ function sampleSurfaceAtXZ(
   x: number,
   z: number,
 ): Vec3 | null {
-  const [u, v] = surface.worldToUV(x, z);
+  // Foot planner reasons in XZ. For heightmaps the y param is ignored; for curved
+  // surfaces this is a known limitation that the wiki article
+  // worldgen-demo-foot-prediction-projection captures (foot prediction on
+  // cylinders/walls needs intrinsic UV projection, not XZ plumb).
+  const [u, v] = surface.worldToUV(x, 0, z);
   if (u < 0 || u > 1 || v < 0 || v > 1) return null;
   const sample = surface.sampleAtUV(u, v);
   const CLEARANCE = 0.05;

@@ -15,7 +15,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const PORT = 5180;
-const URL = `http://127.0.0.1:${PORT}/`;
+const MAP_PARAM = process.env.MAP ? `?map=${encodeURIComponent(process.env.MAP)}` : "";
+const URL = `http://127.0.0.1:${PORT}/${MAP_PARAM}`;
 
 /**
  * Windows-safe process tree kill. cross-spawn returns a wrapper around the

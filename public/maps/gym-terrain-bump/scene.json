@@ -1,0 +1,14 @@
+{
+  "name": "gym-terrain-bump",
+  "tileSize": 1,
+  "labels": [],
+  "parametric": {
+    "type": "heightmap-bump",
+    "width": 40,
+    "height": 40,
+    "tileSize": 1,
+    "peak": 2,
+    "sigma": 2
+  },
+  "spawn": { "uv": [0.2, 0.5] }
+}

@@ -1,4 +1,5 @@
 import { createBuffer, type Buffer } from "../runtime/buffer";
+import type { LinearAccelCurve } from "../lib/math/accelCurve";
 
 export type ProfileId = string;
 
@@ -10,18 +11,26 @@ export type ProfileId = string;
  */
 export interface CharacterControllerProfile {
   id: ProfileId;
-  /** Maximum surface-tangent speed under normal run, m/s. Inputs map to a desired velocity scaled by this. */
+  /** Maximum surface-tangent speed under normal run, m/s. Inputs map to a desired velocity scaled by this.
+   *  Conventionally equals `forwardAccel.vMax` — the speed at which forward accel reaches zero. */
   desiredRunSpeed: number;
-  /** Max self-applied accel along character +forward (m/s²). Capped further by surface gripBudget. */
-  forwardAccelMax: number;
-  /** Max self-applied accel along character -forward (m/s²). Typically smaller than forward. */
-  backwardAccelMax: number;
-  /** Max self-applied accel along character ±right (m/s²). Used for both left and right strafing. */
-  lateralAccelMax: number;
-  /** Max self-applied accel along surface +normal (m/s²). Boost off the surface. Jump uses impulse instead. */
-  upAccelMax: number;
-  /** Max self-applied accel along surface -normal (m/s²). Push into the surface. */
-  downAccelMax: number;
+  /** Max self-applied accel along character +forward, as a curve of (max accel) vs (current forward velocity).
+   *  At currentV=0 you get `accelAtZero` m/s²; at currentV=vMax you get 0. External tangent accelerations
+   *  (gravity along slope, etc.) effectively shift this curve — so the equilibrium speed drops on uphill
+   *  and rises on downhill without any special-case code in the controller. Capped further by gripBudget. */
+  forwardAccel: LinearAccelCurve;
+  /** Max self-applied accel along character -forward. Symmetric model: evaluated at max(0, -vF) so braking
+   *  from forward motion (vF>0) gets the full accelAtZero, while backing up (vF<0) ramps down as |vF| grows. */
+  backwardAccel: LinearAccelCurve;
+  /** Max self-applied accel along character ±right. Evaluated at abs(vR) — symmetric for left/right strafing. */
+  lateralAccel: LinearAccelCurve;
+  /** Max self-applied accel along surface +normal (boost off the surface). Conventionally vMax=Infinity —
+   *  this is a grip budget, not a velocity-shaped curve. Jump uses impulse instead. */
+  upAccel: LinearAccelCurve;
+  /** Max self-applied accel along surface -normal (push/grip into the surface). The Phase-4 centripetal-aware
+   *  leave-surface rule reads this at `max(0, vN_current)` for the grip budget — at vN=0 (attached) the
+   *  budget is exactly accelAtZero. Conventionally vMax=Infinity (constant grip). */
+  downAccel: LinearAccelCurve;
   /** Multiplier on surface.normalInMax: required normal-in > scale × cap → enter ragdoll. */
   ragdollNormalInScale: number;
   /** Multiplier on surface.normalOutMax: required normal-out > scale × cap → detach to airborne. */
@@ -159,11 +168,17 @@ export const CHARACTER_CONTROLLER_PROFILE_BUFFER_ID = "characterControllerProfil
 export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   id: "player",
   desiredRunSpeed: 8,
-  forwardAccelMax: 40,
-  backwardAccelMax: 25,
-  lateralAccelMax: 35,
-  upAccelMax: 5,
-  downAccelMax: 5,
+  // accelAtZero values match the pre-curve scalar caps so v=0 behavior is identical.
+  // Finite vMax on tangent curves makes "external accel shifts the curve" work cleanly:
+  // on a 30° uphill, gravity-along-slope = 4.9 m/s² → forward equilibrium drops from 8 to
+  // ~7.0 m/s without any per-state code; on downhill it rises symmetrically above 8.
+  forwardAccel: { accelAtZero: 40, vMax: 8 },
+  backwardAccel: { accelAtZero: 25, vMax: 6 },
+  lateralAccel: { accelAtZero: 35, vMax: 8 },
+  // Normal curves stay constant — they're grip budgets, not velocity-shaped thrust.
+  // Phase 4's leave rule reads downAccel at max(0,vN) → at attached (vN=0) returns accelAtZero.
+  upAccel: { accelAtZero: 5, vMax: Infinity },
+  downAccel: { accelAtZero: 5, vMax: Infinity },
   ragdollNormalInScale: 1.5,
   detachNormalOutScale: 1.0,
   slideGripScale: 1.0,

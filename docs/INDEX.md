@@ -25,12 +25,13 @@ A single page mapping "I want to learn / change X" → "read these files first."
 4. `tests/{rng,geom,parseBitmap,splitLayers,components,footprint}.test.ts` — behavioral contract
 
 ### …character physics, controllers, surfaces, force fields
-1. `docs/PHYSICS.md` — the surface-frame solver, why it's shaped this way, and how to extend it (orientation, moving platforms, ragdoll, flying)
-2. `src/world/CLAUDE.md` — surface/volume model layer rules
-3. `src/world/surfaceProvider.ts` — `SurfaceProvider` interface + `HeightmapSurfaceProvider`
-4. `src/systems/characterController.ts` — the solver
-5. `src/buffers/characterControllerProfile.ts` — directional accel caps + state thresholds
-6. `tests/systems/characterController.test.ts` — flat / slope / brake / icySlide / detach / ragdoll / jump
+1. `docs/character-controller.md` — end-to-end per-tick pipeline (systems, buffers, FSM, profile table, current leave-surface conditions, known gaps)
+2. `docs/PHYSICS.md` — the surface-frame solver, why it's shaped this way, and how to extend it (orientation, moving platforms, ragdoll, flying)
+3. `src/world/CLAUDE.md` — surface/volume model layer rules
+4. `src/world/surfaceProvider.ts` — `SurfaceProvider` interface + `HeightmapSurfaceProvider`
+5. `src/systems/characterController.ts` — the solver
+6. `src/buffers/characterControllerProfile.ts` — directional accel caps + state thresholds
+7. `tests/systems/characterController.test.ts` — flat / slope / brake / icySlide / detach / ragdoll / jump
 
 ### …the editor (paint maps, palette, send-to-world)
 1. `src/buffers/builder.ts` — buffer shape (palette, history, brush state)

@@ -18,6 +18,7 @@ import { SKELETON_BUFFER_ID, initSkeletonFromRig } from "../../buffers/skeleton"
 import { assertDev } from "../../runtime/dev";
 import { STATE_MACHINE_SYSTEM_ID } from "../../runtime/stateMachine";
 import { SURFACE_PROVIDER_SYSTEM_ID } from "./surfaceProvider";
+import { PARAMETRIC_SURFACE_SYSTEM_ID } from "./parametricSurface";
 import { runOncePerRebuild } from "./common";
 
 export const PLAYER_SPAWN_SYSTEM_ID = "playerSpawnSystem";
@@ -52,20 +53,30 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
       { id: SKELETON_BUFFER_ID, access: "readwrite" },
       { id: TIMING_BUFFER_ID, access: "write" },
     ],
-    runsAfter: [SURFACE_PROVIDER_SYSTEM_ID, STATE_MACHINE_SYSTEM_ID],
+    runsAfter: [SURFACE_PROVIDER_SYSTEM_ID, PARAMETRIC_SURFACE_SYSTEM_ID, STATE_MACHINE_SYSTEM_ID],
     execute: (ctx) => {
       runOncePerRebuild({
         ctx,
         state,
         stageName: "playerSpawn",
-        body: () => {
+        body: (sm) => {
           const world = readBuffer(ctx.buffer<WorldDataBufferData>(WORLD_DATA_BUFFER_ID));
           const surfaceProvider = readBuffer(ctx.buffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID));
-          if (!world.heightmap || !surfaceProvider.heightmap) return;
+          if (!surfaceProvider.heightmap) return;
+          // Bitmap scenes need world.heightmap (the parsed pipeline output) to derive
+          // the spawn UV; parametric scenes don't — the SurfaceProvider's analytic
+          // sampling and scene.spawn.uv handle it.
+          const scene = sm.pendingRebuild?.scene;
+          const isParametric = !!scene?.parametric;
+          if (!isParametric && !world.heightmap) return;
           const profileBuf = readBuffer(ctx.buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
           const profile = profileBuf.byId.get(DEFAULT_PLAYER_PROFILE.id) ?? DEFAULT_PLAYER_PROFILE;
 
-          const spawnUV: [number, number] = [0.5, 0.92]; // south, slightly inset
+          const spawnUV: [number, number] = scene?.spawn?.uv
+            ? [scene.spawn.uv[0], scene.spawn.uv[1]]
+            : isParametric
+              ? [0.5, 0.5]      // parametric default: center of patch
+              : [0.5, 0.92];    // bitmap default: south, slightly inset
           const sample = surfaceProvider.heightmap.sampleAtUV(spawnUV[0], spawnUV[1]);
           const spawnPos: [number, number, number] = [
             sample.position[0],

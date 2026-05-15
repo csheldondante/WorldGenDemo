@@ -1,0 +1,12 @@
+{
+  "name": "gym-plane",
+  "tileSize": 1,
+  "labels": [],
+  "parametric": {
+    "type": "plane",
+    "origin": [-50, 0, -50],
+    "extentU": [100, 0, 0],
+    "extentV": [0, 0, 100]
+  },
+  "spawn": { "uv": [0.5, 0.5] }
+}

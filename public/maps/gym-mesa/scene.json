@@ -1,0 +1,15 @@
+{
+  "name": "gym-mesa",
+  "tileSize": 1,
+  "labels": [],
+  "parametric": {
+    "type": "heightmap-mesa",
+    "width": 60,
+    "height": 60,
+    "tileSize": 1,
+    "peak": 5,
+    "topRadius": 10,
+    "slopeWidth": 4
+  },
+  "spawn": { "uv": [0.4, 0.5] }
+}

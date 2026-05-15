@@ -1,0 +1,33 @@
+{
+  "name": "gym-cylinder-concave",
+  "tileSize": 1,
+  "labels": [],
+  "parametric": {
+    "type": "cylinder",
+    "axisOrigin": [0, -15, 0],
+    "axisDirection": [0, 1, 0],
+    "radius": 12,
+    "height": 30,
+    "concave": true
+  },
+  "spawn": { "uv": [0, 0.5] },
+  "gravityVolumes": [
+    {
+      "shape": {
+        "type": "cylinder",
+        "axisOrigin": [0, -15, 0],
+        "axisDirection": [0, 1, 0],
+        "radius": 13,
+        "halfHeight": 15
+      },
+      "field": {
+        "type": "radial",
+        "axisOrigin": [0, -15, 0],
+        "axisDirection": [0, 1, 0],
+        "direction": "away",
+        "magnitude": 9.81
+      },
+      "priority": 1
+    }
+  ]
+}

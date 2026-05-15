@@ -15,15 +15,18 @@ import { HEIGHTMAP_SYSTEM_ID } from "../systems/pipeline/heightmap";
 import { TERRAIN_MESH_SYSTEM_ID } from "../systems/pipeline/terrainMesh";
 import { ASSET_PLACEMENT_SYSTEM_ID } from "../systems/pipeline/assetPlacement";
 import { SURFACE_PROVIDER_SYSTEM_ID } from "../systems/pipeline/surfaceProvider";
+import { PARAMETRIC_SURFACE_SYSTEM_ID } from "../systems/pipeline/parametricSurface";
 import { PLAYER_SPAWN_SYSTEM_ID } from "../systems/pipeline/playerSpawn";
 import { BUILDER_INPUT_SYSTEM_ID } from "../systems/builderInput";
 import { BUILDER_SYSTEM_ID } from "../systems/builder";
 // V1 character per-frame systems
 import { CHARACTER_INPUT_SYSTEM_ID } from "../systems/characterInput";
+import { TANGENT_INPUT_MAPPER_SYSTEM_ID } from "../systems/tangentInputMapper";
 import { CHARACTER_ORIENTATION_SYSTEM_ID } from "../systems/characterOrientation";
 import { FORCE_FIELD_SYSTEM_ID } from "../systems/forceField";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "../systems/characterController";
-import { VELOCITY_INTEGRATION_SYSTEM_ID } from "../systems/velocityIntegration";
+import { SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/surfaceConstrainedVelocity";
+import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/volumetricConstrainedVelocity";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
 import { CAMERA_FOLLOW_SYSTEM_ID } from "../systems/cameraFollow";
 import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
@@ -72,10 +75,12 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       INPUT_SYSTEM_ID,
       INPUT_MAPPER_SYSTEM_ID,
       CHARACTER_INPUT_SYSTEM_ID,
+      TANGENT_INPUT_MAPPER_SYSTEM_ID,
       CHARACTER_ORIENTATION_SYSTEM_ID,
       FORCE_FIELD_SYSTEM_ID,
       CHARACTER_CONTROLLER_SYSTEM_ID,
-      VELOCITY_INTEGRATION_SYSTEM_ID,
+      SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID,
+      VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID,
       SURFACE_CONSTRAINT_SYSTEM_ID,
       CAMERA_FOLLOW_SYSTEM_ID,
       CHARACTER_RENDER_SYNC_SYSTEM_ID,
@@ -103,6 +108,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       TERRAIN_MESH_SYSTEM_ID,
       ASSET_PLACEMENT_SYSTEM_ID,
       SURFACE_PROVIDER_SYSTEM_ID,
+      PARAMETRIC_SURFACE_SYSTEM_ID,
       PLAYER_SPAWN_SYSTEM_ID,
       RENDER_SYSTEM_ID,
       HUD_SYSTEM_ID,

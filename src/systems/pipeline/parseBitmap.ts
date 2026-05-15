@@ -27,6 +27,10 @@ export function createParseBitmapSystem(): SystemDescriptor {
         stageName: "parse",
         body: (sm) => {
           const payload = sm.pendingRebuild!;
+          // Parametric (gym) scenes are handled by parametricSurfaceSystem; skip the
+          // bitmap path entirely so downstream stages (split/heightmap/...) cleanly
+          // see labelMap=null and short-circuit.
+          if (payload.scene.parametric) return;
           const palette = buildPalette(payload.scene); // throws on unknown id
           const labelMap = parseBitmap({
             width: payload.width,

@@ -16,7 +16,8 @@ import {
 } from "../buffers/characterControllerProfile";
 import { TRANSFORM_BUFFER_ID, type TransformBufferData } from "../buffers/transform";
 import { VELOCITY_BUFFER_ID, type VelocityBufferData } from "../buffers/velocity";
-import { VELOCITY_INTEGRATION_SYSTEM_ID } from "./velocityIntegration";
+import { SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID } from "./surfaceConstrainedVelocity";
+import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "./volumetricConstrainedVelocity";
 
 export const SURFACE_CONSTRAINT_SYSTEM_ID = "surfaceConstraintSystem";
 
@@ -39,7 +40,11 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
       { id: TRANSFORM_BUFFER_ID, access: "readwrite" },
       { id: VELOCITY_BUFFER_ID, access: "readwrite" },
     ],
-    runsAfter: [STATE_MACHINE_SYSTEM_ID, VELOCITY_INTEGRATION_SYSTEM_ID],
+    runsAfter: [
+      STATE_MACHINE_SYSTEM_ID,
+      SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID,
+      VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID,
+    ],
     execute: ({ buffer }) => {
       const sp = readBuffer(buffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID));
       const profile = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
@@ -64,7 +69,7 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
 
                 if (ctrl.locomotionMode === "surfaceConstrained") {
                   // Snap to surface, refresh sample
-                  const [u, vUV] = surface.worldToUV(t.position[0], t.position[2]);
+                  const [u, vUV] = surface.worldToUV(t.position[0], t.position[1], t.position[2]);
                   const clampedU = Math.max(0, Math.min(1, u));
                   const clampedV = Math.max(0, Math.min(1, vUV));
                   // If we walked off the world edge, fall into volume mode
@@ -77,6 +82,11 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                     continue;
                   }
                   const sample = surface.sampleAtUV(clampedU, clampedV);
+                  // Heightmap-style providers: worldToUV is a vertical (XZ) projection, so
+                  // sample.position[0/2] already equals the character's XZ. Snap Y only —
+                  // this preserves any horizontal motion from velocity integration. (The
+                  // "offset along normal" form is wrong here because it shifts XZ by
+                  // ~0.25m every tick on any slope, undoing uphill motion.)
                   t.position[0] = sample.position[0];
                   t.position[1] = sample.position[1] + radius;
                   t.position[2] = sample.position[2];
@@ -90,7 +100,7 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                   }
                 } else {
                   // volumeConstrained: check for landing
-                  const [u, vUV] = surface.worldToUV(t.position[0], t.position[2]);
+                  const [u, vUV] = surface.worldToUV(t.position[0], t.position[1], t.position[2]);
                   if (u < 0 || u > 1 || vUV < 0 || vUV > 1) {
                     // out of bounds; eventually we'd respawn, V1 just lets
                     // them fall forever
@@ -98,9 +108,18 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                   }
                   const sample = surface.sampleAtUV(u, vUV);
                   const groundY = sample.position[1] + radius;
-                  // Land if descending and within the snap window
+                  // Land ONLY when the body has actually reached (or penetrated) the
+                  // surface — i.e., `y ≤ groundY` AND moving downward. The previous form
+                  // allowed a `+landingSnapMeters` grace ABOVE groundY, which caused brief
+                  // detach events (running off a smooth lip at speed, normal change at the
+                  // lip pushes vN slightly positive → centripetal-leave fires for one tick)
+                  // to immediately re-attach the very next tick, because the surface had
+                  // only dropped a few centimeters by then. Strict comparison preserves
+                  // detach events long enough for gravity to actually arc the body away.
+                  // Real landings (falling from height) still trigger: the body crosses
+                  // groundY on the way down and the snap pulls them up to groundY.
                   const descending = v.linear[1] <= 0;
-                  if (descending && t.position[1] <= groundY + (prof?.landingSnapMeters ?? 0.4)) {
+                  if (descending && t.position[1] <= groundY) {
                     t.position[0] = sample.position[0];
                     t.position[1] = groundY;
                     t.position[2] = sample.position[2];

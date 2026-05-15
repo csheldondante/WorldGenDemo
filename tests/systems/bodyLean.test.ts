@@ -115,6 +115,8 @@ function setup() {
         normal: [0, 1, 0],
         tangentU: [1, 0, 0],
         tangentV: [0, 0, 1],
+        tangentUNorm: 1,
+        tangentVNorm: 1,
         slopeRad: 0,
         friction: 1,
         normalInMax: 800,
