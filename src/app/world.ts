@@ -185,10 +185,83 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   const totalTicks = test.steps.reduce((a, s) => a + s.ticks, 0);
   console.log(`[scenario] steps=${test.steps.length} total-ticks=${totalTicks}`);
 
+  attachScenarioMenu(opts.panelEl, test.name);
+
+  // Match startWorld's __runtimeDebug surface so debugging tools work the
+  // same way in scenario mode (used by the smoke harness's state.json capture).
+  (window as unknown as { __runtimeDebug?: () => unknown }).__runtimeDebug = () => ({
+    mode: "scenario",
+    scenarioName: test.name,
+    description: test.description,
+    smState: readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID)).state,
+    activeGraph: readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID)).activeGraph,
+    totalTicks,
+    buffers: reg.listBuffers().map((b) => ({ id: b.id, version: b.version })),
+    systems: reg.listSystems().map((s) => s.id),
+    graphs: reg.listGraphs().map((g) => ({ id: g.id, order: g.order })),
+  });
+
   startLoop(reg);
 
   return {
     requestMode() { /* scenarios don't switch modes */ },
   };
+}
+
+/**
+ * Top-of-panel banner shown in scenario playback mode: scenario name +
+ * dropdown to switch to another scenario + a "play normal" link back to the
+ * regular game. Lightweight DOM, fixed position so it doesn't fight the
+ * Three.js canvas underneath.
+ */
+function attachScenarioMenu(panelEl: HTMLElement, currentName: string): void {
+  const bar = document.createElement("div");
+  bar.style.cssText = [
+    "position:absolute",
+    "top:8px",
+    "left:50%",
+    "transform:translateX(-50%)",
+    "background:rgba(10,12,16,0.85)",
+    "color:#dadce0",
+    "padding:6px 12px",
+    "border:1px solid #333",
+    "border-radius:6px",
+    "font: 12px/1.4 system-ui, sans-serif",
+    "z-index:50",
+    "display:flex",
+    "gap:10px",
+    "align-items:center",
+    "pointer-events:auto",
+  ].join(";");
+  const label = document.createElement("span");
+  label.textContent = "scenario:";
+  label.style.color = "#888";
+  bar.appendChild(label);
+
+  const select = document.createElement("select");
+  select.style.cssText = "background:#1a2030;color:#dadce0;border:1px solid #444;padding:2px 6px;font:inherit;border-radius:3px;cursor:pointer";
+  for (const name of Object.keys(SCENARIOS).sort()) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    if (name === currentName) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener("change", () => {
+    const next = new URL(location.href);
+    next.searchParams.set("scenario", select.value);
+    location.href = next.toString();
+  });
+  bar.appendChild(select);
+
+  const playNormal = document.createElement("a");
+  playNormal.href = location.pathname; // strips ?scenario=...
+  playNormal.textContent = "← play normal";
+  playNormal.style.cssText = "color:#7ab; text-decoration:none";
+  playNormal.addEventListener("mouseenter", () => { playNormal.style.textDecoration = "underline"; });
+  playNormal.addEventListener("mouseleave", () => { playNormal.style.textDecoration = "none"; });
+  bar.appendChild(playNormal);
+
+  panelEl.appendChild(bar);
 }
 
