@@ -1,0 +1,71 @@
+{
+  "name": "camera-look-input",
+  "buffers": {
+    "input": {
+      "gamepadAxes": {
+        "leftX": 0,
+        "leftY": 0,
+        "rightX": 0,
+        "rightY": 0
+      },
+      "gamepadButtons": {
+        "__set__": true,
+        "values": []
+      },
+      "gamepadConnected": false,
+      "keys": {
+        "__set__": true,
+        "values": []
+      },
+      "mouseDx": 0,
+      "mouseDy": 0,
+      "pointerLocked": true
+    },
+    "inputMap": {
+      "actions": {
+        "jump": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
+        "toggleHud": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        }
+      },
+      "lookDelta": {
+        "pitch": -0.0022,
+        "yaw": -0.0044
+      },
+      "moveAxis": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    "camera": {
+      "aspect": 1,
+      "far": 800,
+      "fov": 70,
+      "near": 0.1,
+      "pitch": -0.2640000000000001,
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "yaw": -0.5280000000000002
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "pendingEvents": [],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 0,
+      "state": "Running"
+    }
+  },
+  "toleranceOverrides": {}
+}

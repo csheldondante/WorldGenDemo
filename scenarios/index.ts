@@ -7,9 +7,13 @@
 import type { BufferTest } from "../src/app/bufferTest";
 
 import { test as flatPlaneForward } from "./flat-plane-forward";
+import { test as heightmapHillTraverse } from "./heightmap-hill-traverse";
+import { test as cameraLookInput } from "./camera-look-input";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
+  [heightmapHillTraverse.name]: heightmapHillTraverse,
+  [cameraLookInput.name]: cameraLookInput,
 };
 
 export function getScenario(name: string): BufferTest {
