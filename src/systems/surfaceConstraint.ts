@@ -103,31 +103,43 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                   // Otherwise: still attached. The integrator already wrote position,
                   // velocity, and the sample. No work to do.
                 } else {
-                  // volumeConstrained: check for landing
-                  const [u, vUV] = surface.worldToUV(t.position[0], t.position[1], t.position[2]);
-                  if (u < 0 || u > 1 || vUV < 0 || vUV > 1) {
-                    // out of bounds; eventually we'd respawn, V1 just lets
-                    // them fall forever
+                  // volumeConstrained: check for landing — surface-normal-aware so it
+                  // works on horizontal-axis cylinders and any other non-Y-up surface.
+                  // Conditions:
+                  //   1. Body has approached the surface within its radius along +N:
+                  //        dot(pos - sample.pos, N) <= radius
+                  //   2. Velocity is into the surface:  dot(v, N) <= 0
+                  //
+                  // On the wrap axis we use the integrator's already-folded UV; otherwise
+                  // worldToUV may fall outside [0, 1] for non-wrapping axes (cylinder
+                  // ends, plane edges) — let the body fall.
+                  const [uRaw, vRaw] = surface.worldToUV(t.position[0], t.position[1], t.position[2]);
+                  const u = surface.wrapsU() ? ((uRaw % 1) + 1) % 1 : uRaw;
+                  const vUV = surface.wrapsV() ? ((vRaw % 1) + 1) % 1 : vRaw;
+                  const uOut = !surface.wrapsU() && (u < 0 || u > 1);
+                  const vOut = !surface.wrapsV() && (vUV < 0 || vUV > 1);
+                  if (uOut || vOut) {
+                    // out of bounds; V1 just lets the body fall forever (respawn TODO).
                     continue;
                   }
                   const sample = surface.sampleAtUV(u, vUV);
-                  const groundY = sample.position[1] + radius;
-                  // Land ONLY when the body has actually reached (or penetrated) the
-                  // surface — i.e., `y ≤ groundY` AND moving downward. The previous form
-                  // allowed a `+landingSnapMeters` grace ABOVE groundY, which caused brief
-                  // detach events (running off a smooth lip at speed, normal change at the
-                  // lip pushes vN slightly positive → centripetal-leave fires for one tick)
-                  // to immediately re-attach the very next tick, because the surface had
-                  // only dropped a few centimeters by then. Strict comparison preserves
-                  // detach events long enough for gravity to actually arc the body away.
-                  // Real landings (falling from height) still trigger: the body crosses
-                  // groundY on the way down and the snap pulls them up to groundY.
-                  const descending = v.linear[1] <= 0;
-                  if (descending && t.position[1] <= groundY) {
-                    t.position[0] = sample.position[0];
-                    t.position[1] = groundY;
-                    t.position[2] = sample.position[2];
-                    v.linear[1] = 0;
+                  const Nx = sample.normal[0];
+                  const Ny = sample.normal[1];
+                  const Nz = sample.normal[2];
+                  const dx = t.position[0] - sample.position[0];
+                  const dy = t.position[1] - sample.position[1];
+                  const dz = t.position[2] - sample.position[2];
+                  const distAlongN = dx * Nx + dy * Ny + dz * Nz;
+                  const vAlongN = v.linear[0] * Nx + v.linear[1] * Ny + v.linear[2] * Nz;
+                  if (distAlongN <= radius && vAlongN <= 0) {
+                    // Snap body to sample + radius·N; zero the normal component of velocity
+                    // (tangent velocity preserved → character keeps running on landing).
+                    t.position[0] = sample.position[0] + Nx * radius;
+                    t.position[1] = sample.position[1] + Ny * radius;
+                    t.position[2] = sample.position[2] + Nz * radius;
+                    v.linear[0] -= vAlongN * Nx;
+                    v.linear[1] -= vAlongN * Ny;
+                    v.linear[2] -= vAlongN * Nz;
                     transforms.byEntity.set(id, t);
                     vels.byEntity.set(id, v);
                     ctrl.locomotionMode = "surfaceConstrained";

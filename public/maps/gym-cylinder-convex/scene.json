@@ -15,10 +15,10 @@
     {
       "shape": {
         "type": "cylinder",
-        "axisOrigin": [0, 0, 0],
+        "axisOrigin": [50, 0, 0],
         "axisDirection": [1, 0, 0],
         "radius": 10,
-        "halfHeight": 50
+        "halfHeight": 55
       },
       "field": {
         "type": "radial",

@@ -1,33 +1,48 @@
 import { createBuffer, type Buffer } from "../runtime/buffer";
 
 /**
- * Spherical third-person camera state. The camera orbits the `target` point on a
- * sphere of fixed radius (FOLLOW_DISTANCE inside cameraFollowSystem), parameterized
- * around the `up` axis:
+ * Third-person orbit camera. Source-of-truth state is the camera-to-target offset
+ * as a world-space vector; user look-delta rotates the offset around `up` (yaw)
+ * and around `side = cross(up, offset)` (pitch). No accumulated yaw/pitch scalars
+ * with a fixed reference axis — that produces a singularity when `up` aligns with
+ * the reference. By persisting only the offset, the camera frame is always well-
+ * defined and parallel-transport becomes unnecessary; `up` is a point-wise lookup
+ * (gravity-up at the target) used only by `lookAt` to set roll.
  *
- *   yaw   — azimuth (θ) around `up`; rotates the camera around the player.
- *   pitch — elevation (φ) above the orbit horizon; 0 = level with the player, +π/2 = directly above.
+ *   pos      — world position; derived as `target + offset` each tick.
+ *   target   — pivot point the camera orbits (player position).
+ *   up       — local up direction (gravity-up at the target by default).
+ *   offset   — persistent camera-to-target offset vector (world space).
+ *   fwd      — derived this tick: `-normalize(offset projected ⊥ up)`. Published
+ *              for gameplay consumers (tangentInputMapperSystem) so player input
+ *              tracks the visible camera frame.
+ *   yaw/pitch — DERIVED outputs for back-compat readers (minimap player arrow).
+ *              `yaw = atan2(-offset.x, -offset.z)` (world XZ angle of camera fwd);
+ *              `pitch = asin(-offset_unit · up)`. Not state; rebuilt each tick.
  *
- * Pitch is clamped to slightly less than π/2 so the camera never reaches the
- * "poles" of the orbit sphere. Radius is constant; yaw never changes distance.
- *
- * RenderSystem applies this as `camera.up.set(up); camera.position.set(pos); camera.lookAt(target)`.
+ * RenderSystem applies `camera.up.set(up); camera.position.set(pos); camera.lookAt(target)`.
  */
 export interface CameraBufferData {
   pos: [number, number, number];
+  /** Derived (read-only) output: world-Y yaw of camera-forward. Updated each tick from offset. */
   yaw: number;
+  /** Derived (read-only) output: elevation above horizon. Updated each tick from offset. */
   pitch: number;
   /** Pivot point of the orbit (typically the player position). */
   target: [number, number, number];
   /** Local up direction the camera's "head" stays aligned with (gravity-up by default). */
   up: [number, number, number];
   /**
-   * Camera's actual world-space forward direction, in the up-tangent plane. Persisted
-   * across ticks so cameraFollowSystem can parallel-transport it as `up` rotates (e.g.
-   * traversing a horizontal-axis cylinder), avoiding the reference-axis flip that snaps
-   * the camera when up nearly aligns with the fallback reference. Read by gameplay
-   * systems (tangentInputMapperSystem etc.) so player input tracks the visible camera
-   * frame, not a stale world-Y-yaw reconstruction.
+   * Persistent camera-to-target offset vector (world space). The camera lives at
+   * `target + offset`. User look-delta rotates this around `up` (yaw) and around
+   * `side = cross(up, offset)` (pitch). Initial offset = (0, 2.6, 6.5) — above
+   * and behind the player along world +Z, looking down -Z.
+   */
+  offset: [number, number, number];
+  /**
+   * Camera's world-space forward direction, in the `up`-tangent plane. Derived
+   * each tick from offset; read by tangentInputMapperSystem to drive surface
+   * input projection.
    */
   fwd: [number, number, number];
   fov: number;
@@ -46,9 +61,12 @@ export function createCameraBuffer(): Buffer<CameraBufferData> {
     initial: {
       pos: [0, 8, 60],
       yaw: 0,
-      pitch: 0.35, // ~20° above horizon by default — camera starts above the player
+      pitch: 0.35,
       target: [0, 0, 0],
       up: [0, 1, 0],
+      // Camera sits at world (target + offset). Default: 6.5m behind in +Z and
+      // 2.6m above in +Y → camera looks down ≈ -Z with a slight downward tilt.
+      offset: [0, 2.6, 6.5],
       fwd: [0, 0, -1],
       fov: 70,
       aspect: 1,

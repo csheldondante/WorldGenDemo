@@ -17,33 +17,35 @@ import { pickGravity, sortVolumesByPriority } from "../lib/math/gravityVolume";
 
 export const CAMERA_FOLLOW_SYSTEM_ID = "cameraFollowSystem";
 
-const FOLLOW_DISTANCE = 6.5; // meters; constant orbit radius
-const PITCH_LIMIT = Math.PI / 2 - 0.08; // clamp polar phi (~0.08 rad away from the up/down poles)
+const FOLLOW_DISTANCE = 6.5; // orbit radius (renormalized each tick)
+// Limit how close offset can come to being parallel to `up`. dot(offset_unit, up) is
+// clamped to ±cos(polar_min) so the camera never reaches the pole where pitch rotation
+// becomes ambiguous.
+const POLE_DOT_LIMIT = Math.cos(0.08); // ≈ 0.997 — ~4.5° margin from pole
 
 /**
- * Spherical-orbit third-person camera with parallel-transported forward.
+ * Third-person orbit camera, offset-vector model. State is the camera-to-target
+ * offset as a world-space vector; user input rotates the offset.
  *
- *   up   — `-normalize(gravity)` at the player; fallback world +Y.
- *   fwd  — the camera's actual world-space forward, persisted across ticks. Each
- *          tick we re-project last frame's fwd onto the new up-tangent plane
- *          (parallel transport) so the camera frame stays continuous as up
- *          rotates around the player on curved gravity scenes. User look-delta
- *          rotates fwd around up (yaw axis); pitch tilts the camera above the
- *          horizon plane.
- *   pos  — player + (cos(pitch)·(-fwd) + sin(pitch)·up) · FOLLOW_DISTANCE.
+ *   up    = -normalize(gravity at target); fallback world +Y on zero gravity.
+ *   yaw   delta → rotate offset around `up`.
+ *   pitch delta → rotate offset around `side = normalize(cross(up, offset))`.
+ *   Pole clamp: |dot(offset_unit, up)| ≤ POLE_DOT_LIMIT.
+ *   Renormalize: |offset| = FOLLOW_DISTANCE (constant orbit radius).
  *
- * Eliminates the fixed-reference-axis flip that snapped the camera when up
- * crossed certain orientations (e.g., walking around the side of a horizontal
- * cylinder, where up rotates through world ±Z and the old code switched its
- * reference forward at the threshold).
+ *   pos = target + offset.
+ *   fwd = -normalize(offset projected onto up-perp plane).
  *
- * RenderSystem applies via `camera.up = up; camera.lookAt(target)`.
+ * No accumulated yaw/pitch scalars with fixed reference axes; no parallel transport.
+ * When the player walks around a curved gravity scene (e.g. horizontal-axis cylinder),
+ * `up` rotates per tick but the offset stays world-fixed — the camera "rolls" via
+ * `lookAt(target)` with the new up, but doesn't auto-orbit. User mouses to track.
  */
 export function createCameraFollowSystem(): SystemDescriptor {
   return {
     id: CAMERA_FOLLOW_SYSTEM_ID,
     description:
-      "Spherical-orbit camera. Persists camera-forward across ticks and parallel-transports it as gravity-up rotates so the camera frame stays continuous on curved gravity scenes. Reads InputMap.lookDelta, TransformBuffer, VolumeFieldBuffer; writes CameraBuffer pos/target/up/fwd.",
+      "Third-person orbit camera, offset-vector model. State: a persistent camera-to-target offset rotated by user look-delta around the gravity-up axis (yaw) and the side axis (pitch). Up is a per-tick lookup from VolumeFieldBuffer. No accumulated yaw/pitch scalars, no reference-axis singularity, no parallel transport.",
     buffers: [
       { id: INPUT_MAP_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
@@ -65,22 +67,12 @@ export function createCameraFollowSystem(): SystemDescriptor {
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
       const vf = readBuffer(buffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID));
 
-      // Pick the focus target. With no character, keep the buffer state untouched.
       const targetId = cc.byEntity.keys().next().value as number | undefined;
-      if (targetId === undefined) {
-        // Still accumulate look input so the camera "spins in place" doesn't reset on respawn.
-        writeBuffer(cam, (c) => {
-          c.yaw += im.lookDelta.yaw;
-          c.pitch += im.lookDelta.pitch;
-          if (c.pitch > PITCH_LIMIT) c.pitch = PITCH_LIMIT;
-          if (c.pitch < -PITCH_LIMIT) c.pitch = -PITCH_LIMIT;
-        });
-        return;
-      }
+      if (targetId === undefined) return; // no character yet (Loading state) — leave camera alone
       const t = transforms.byEntity.get(targetId);
       if (!t) return;
 
-      // Gravity at the player position → up. Fallback world +Y on zero gravity.
+      // up: point-wise gravity lookup at the player's position.
       const sortedVolumes = vf.volumes.length > 0 ? sortVolumesByPriority(vf.volumes) : vf.volumes;
       const g = pickGravity(sortedVolumes, vf.gravity, t.position);
       const gLen = Math.hypot(g[0], g[1], g[2]);
@@ -89,68 +81,101 @@ export function createCameraFollowSystem(): SystemDescriptor {
         upX = -g[0] / gLen; upY = -g[1] / gLen; upZ = -g[2] / gLen;
       }
 
+      // Rotate the persistent offset by user look-delta. yaw around up, pitch around side.
       const c = readBuffer(cam);
-      // Parallel transport: project last tick's fwd onto the new up-tangent plane.
-      // For small frame-to-frame changes in `up` this is the correct minimal-rotation
-      // update; the camera frame "rolls" smoothly with up rather than snapping.
-      let fwdX = c.fwd[0], fwdY = c.fwd[1], fwdZ = c.fwd[2];
-      const fDotUp = fwdX * upX + fwdY * upY + fwdZ * upZ;
-      fwdX -= fDotUp * upX;
-      fwdY -= fDotUp * upY;
-      fwdZ -= fDotUp * upZ;
-      let fwdLen = Math.hypot(fwdX, fwdY, fwdZ);
-      if (fwdLen < 1e-6) {
-        // Persisted fwd was (nearly) parallel to new up — pick a fresh tangent
-        // direction. Try world -Z; if that's also nearly parallel, world +X.
-        const wzDot = -upZ;
-        if (Math.abs(wzDot) < 0.95) {
-          fwdX = -upX * wzDot;
-          fwdY = -upY * wzDot;
-          fwdZ = -1 - upZ * wzDot;
-        } else {
-          const wxDot = upX;
-          fwdX = 1 - upX * wxDot;
-          fwdY = -upY * wxDot;
-          fwdZ = -upZ * wxDot;
-        }
-        fwdLen = Math.hypot(fwdX, fwdY, fwdZ) || 1;
+      let oX = c.offset[0], oY = c.offset[1], oZ = c.offset[2];
+
+      // -- yaw: rotate offset around `up` by lookDelta.yaw (Rodrigues for axis-angle) --
+      const dyaw = im.lookDelta.yaw;
+      if (dyaw !== 0) {
+        const cy = Math.cos(dyaw), sy = Math.sin(dyaw);
+        // up × offset
+        const kX = upY * oZ - upZ * oY;
+        const kY = upZ * oX - upX * oZ;
+        const kZ = upX * oY - upY * oX;
+        const kDotO = upX * oX + upY * oY + upZ * oZ;
+        // o' = o·cos + (k × o)·sin + k·(k·o)·(1-cos) — Rodrigues with k=up (unit)
+        const newOX = oX * cy + kX * sy + upX * kDotO * (1 - cy);
+        const newOY = oY * cy + kY * sy + upY * kDotO * (1 - cy);
+        const newOZ = oZ * cy + kZ * sy + upZ * kDotO * (1 - cy);
+        oX = newOX; oY = newOY; oZ = newOZ;
       }
-      fwdX /= fwdLen; fwdY /= fwdLen; fwdZ /= fwdLen;
 
-      // Apply look-delta yaw as a rotation of fwd around up: fwd' = cos(δ)·fwd + sin(δ)·(up×fwd).
-      const sideX = upY * fwdZ - upZ * fwdY;
-      const sideY = upZ * fwdX - upX * fwdZ;
-      const sideZ = upX * fwdY - upY * fwdX;
-      const dy = im.lookDelta.yaw;
-      const cdy = Math.cos(dy);
-      const sdy = Math.sin(dy);
-      const newFwdX = cdy * fwdX + sdy * sideX;
-      const newFwdY = cdy * fwdY + sdy * sideY;
-      const newFwdZ = cdy * fwdZ + sdy * sideZ;
+      // -- pitch: rotate offset around `side = normalize(cross(offset, up))` by lookDelta.pitch --
+      // Sign convention: positive lookDelta.pitch tilts offset toward `up` (camera rises).
+      // (Mouse-down convention in InputMapperSystem produces NEGATIVE pitch delta → camera
+      // descends, looking up from below the player. Flip in inputMapper if you want the
+      // opposite UI feel.)
+      const dpitch = im.lookDelta.pitch;
+      if (dpitch !== 0) {
+        let sX = oY * upZ - oZ * upY;
+        let sY = oZ * upX - oX * upZ;
+        let sZ = oX * upY - oY * upX;
+        const sLen = Math.hypot(sX, sY, sZ);
+        if (sLen > 1e-6) {
+          sX /= sLen; sY /= sLen; sZ /= sLen;
+          const cp = Math.cos(dpitch), sp = Math.sin(dpitch);
+          // Rodrigues around `side` (unit). k·o term is 0 since side ⊥ offset by construction.
+          const kCrossOX = sY * oZ - sZ * oY;
+          const kCrossOY = sZ * oX - sX * oZ;
+          const kCrossOZ = sX * oY - sY * oX;
+          oX = oX * cp + kCrossOX * sp;
+          oY = oY * cp + kCrossOY * sp;
+          oZ = oZ * cp + kCrossOZ * sp;
+        }
+      }
 
-      // Accumulate look-delta pitch and clamp.
-      let pitch = c.pitch + im.lookDelta.pitch;
-      if (pitch > PITCH_LIMIT) pitch = PITCH_LIMIT;
-      if (pitch < -PITCH_LIMIT) pitch = -PITCH_LIMIT;
+      // Renormalize offset to FOLLOW_DISTANCE.
+      let oLen = Math.hypot(oX, oY, oZ);
+      if (oLen < 1e-6) { oX = 0; oY = 0; oZ = FOLLOW_DISTANCE; oLen = FOLLOW_DISTANCE; }
+      const scale = FOLLOW_DISTANCE / oLen;
+      oX *= scale; oY *= scale; oZ *= scale;
 
-      // Camera direction from player = cos(pitch)·(-fwd) + sin(pitch)·up. Constant radius.
-      const cp = Math.cos(pitch);
-      const sp = Math.sin(pitch);
-      const dirX = -cp * newFwdX + sp * upX;
-      const dirY = -cp * newFwdY + sp * upY;
-      const dirZ = -cp * newFwdZ + sp * upZ;
+      // Pole clamp: keep offset away from being parallel to up. If dot(offset_unit, up)
+      // exceeds the limit, rotate offset back along the (up, offset) plane by the
+      // excess angle so it sits at exactly the limit.
+      const dot = (oX * upX + oY * upY + oZ * upZ) / FOLLOW_DISTANCE;
+      if (Math.abs(dot) > POLE_DOT_LIMIT) {
+        // Decompose offset into up-aligned and up-perp components, then re-balance so
+        // dot equals ±POLE_DOT_LIMIT (sign preserved from original dot).
+        const perpX = oX - dot * FOLLOW_DISTANCE * upX;
+        const perpY = oY - dot * FOLLOW_DISTANCE * upY;
+        const perpZ = oZ - dot * FOLLOW_DISTANCE * upZ;
+        const perpLen = Math.hypot(perpX, perpY, perpZ);
+        const clampedDot = dot > 0 ? POLE_DOT_LIMIT : -POLE_DOT_LIMIT;
+        const targetPerpLen = FOLLOW_DISTANCE * Math.sqrt(1 - clampedDot * clampedDot);
+        if (perpLen > 1e-6) {
+          const k = targetPerpLen / perpLen;
+          oX = perpX * k + clampedDot * FOLLOW_DISTANCE * upX;
+          oY = perpY * k + clampedDot * FOLLOW_DISTANCE * upY;
+          oZ = perpZ * k + clampedDot * FOLLOW_DISTANCE * upZ;
+        }
+      }
+
+      // Derive published outputs.
+      // fwd = -normalize(offset projected onto up-perp plane) — what the camera looks along
+      // in the horizon plane. tangentInputMapperSystem projects this onto the surface
+      // tangent plane to drive surface-frame input.
+      const offDotUp = oX * upX + oY * upY + oZ * upZ;
+      let fwdX = -(oX - offDotUp * upX);
+      let fwdY = -(oY - offDotUp * upY);
+      let fwdZ = -(oZ - offDotUp * upZ);
+      const fwdLen = Math.hypot(fwdX, fwdY, fwdZ);
+      if (fwdLen > 1e-6) { fwdX /= fwdLen; fwdY /= fwdLen; fwdZ /= fwdLen; }
+      else { fwdX = 0; fwdY = 0; fwdZ = -1; }
+
+      // Derived scalars for back-compat readers (minimap player arrow uses cam.yaw).
+      const derivedYaw = Math.atan2(-fwdX, -fwdZ); // world XZ angle of camera fwd; matches old YXZ convention
+      const derivedPitch = Math.asin(Math.max(-1, Math.min(1, -offDotUp / FOLLOW_DISTANCE)));
 
       writeBuffer(cam, (next) => {
-        next.yaw += dy; // back-compat: minimap still reads cam.yaw as accumulated azimuth
-        next.pitch = pitch;
-        next.pos = [
-          t.position[0] + dirX * FOLLOW_DISTANCE,
-          t.position[1] + dirY * FOLLOW_DISTANCE,
-          t.position[2] + dirZ * FOLLOW_DISTANCE,
-        ];
+        next.offset = [oX, oY, oZ];
+        next.pos = [t.position[0] + oX, t.position[1] + oY, t.position[2] + oZ];
         next.target = [t.position[0], t.position[1], t.position[2]];
         next.up = [upX, upY, upZ];
-        next.fwd = [newFwdX, newFwdY, newFwdZ];
+        next.fwd = [fwdX, fwdY, fwdZ];
+        next.yaw = derivedYaw;
+        next.pitch = derivedPitch;
       });
     },
   };

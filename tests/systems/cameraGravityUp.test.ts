@@ -1,14 +1,14 @@
 /**
- * cameraFollowSystem orbits the player on a sphere of fixed radius around
- * `up = -normalize(gravity)`. Verifies:
+ * cameraFollowSystem — offset-vector model. The camera-to-target offset is
+ * persistent state; user input rotates it. Verifies:
  *
- *  - Yaw rotates the camera around the up axis without changing distance to player.
- *  - Pitch elevates the camera above the orbit horizon (no horizontal motion).
+ *  - Camera position = target + offset (after renormalization to FOLLOW_DISTANCE).
+ *  - Yaw lookDelta rotates offset around `up` (orbit around player) at constant radius.
+ *  - Pitch lookDelta rotates offset toward/away from `up` (elevation).
  *  - On a radial-away cylinder gravity volume, up swings to the radial-inward
- *    direction (not world +Y), so the camera orbits the player around that axis.
- *  - When the entity has no gravity (zero volume + zero universal gravity), the
- *    camera falls back to world +Y up.
- *  - Pitch is clamped near the poles (camera never reaches "directly above").
+ *    direction; offset stays the same in world space but is renormalized.
+ *  - Zero gravity → up falls back to world +Y.
+ *  - Pole clamp keeps offset away from being parallel to up.
  */
 import { describe, it, expect } from "vitest";
 import { createRegistry } from "../../src/runtime/registry";
@@ -17,6 +17,7 @@ import { buildExecutionGraph } from "../../src/runtime/graph";
 import { executeGraph } from "../../src/runtime/scheduler";
 import { registerCoreBuffers } from "../../src/buffers";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../../src/buffers/camera";
+import { INPUT_MAP_BUFFER_ID, type InputMapBufferData } from "../../src/buffers/inputMap";
 import { TRANSFORM_BUFFER_ID, type TransformBufferData } from "../../src/buffers/transform";
 import { CHARACTER_CONTROLLER_BUFFER_ID, type CharacterControllerBufferData } from "../../src/buffers/characterController";
 import { VOLUME_FIELD_BUFFER_ID, type VolumeFieldBufferData } from "../../src/buffers/volumeField";
@@ -55,10 +56,15 @@ function placePlayer(reg: ReturnType<typeof createRegistry>, pos: [number, numbe
   return id;
 }
 
-function runCamera(reg: ReturnType<typeof createRegistry>, yaw: number, pitch: number) {
-  writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
-    d.yaw = yaw; d.pitch = pitch;
+function runCamera(reg: ReturnType<typeof createRegistry>, opts: { dyaw?: number; dpitch?: number; offset?: [number, number, number] }) {
+  writeBuffer(reg.getBuffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID), (d) => {
+    d.lookDelta = { yaw: opts.dyaw ?? 0, pitch: opts.dpitch ?? 0 };
   });
+  if (opts.offset) {
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.offset = opts.offset!;
+    });
+  }
   const g = buildExecutionGraph({ id: "cam", nodes: ["cameraFollowSystem"], registry: reg });
   executeGraph(g, reg, { dt: 0.016, now: 0 });
   return readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
@@ -68,44 +74,40 @@ function dist(a: [number, number, number], b: [number, number, number]): number 
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-describe("Spherical camera around gravity-up", () => {
-  it("flat ground: yaw rotates around world +Y at constant distance", () => {
+describe("cameraFollow — offset-vector model", () => {
+  it("flat ground: pos = target + offset (renormalized to FOLLOW_DISTANCE)", () => {
     const reg = setupRegistry();
     const playerPos: [number, number, number] = [10, 5, -3];
     placePlayer(reg, playerPos);
-
-    const cam0 = runCamera(reg, 0, 0); // pitch=0 → in horizon plane behind player
-    const cam90 = runCamera(reg, Math.PI / 2, 0);
-
-    // Distance from player invariant under yaw.
-    expect(dist(cam0.pos, playerPos)).toBeCloseTo(FOLLOW_DISTANCE, 5);
-    expect(dist(cam90.pos, playerPos)).toBeCloseTo(FOLLOW_DISTANCE, 5);
-    // Y stays at player's elevation (pitch=0 → in horizon plane).
-    expect(cam0.pos[1]).toBeCloseTo(playerPos[1], 5);
-    expect(cam90.pos[1]).toBeCloseTo(playerPos[1], 5);
-    // up is world +Y.
-    expect(cam0.up[1]).toBeCloseTo(1, 5);
-  });
-
-  it("flat ground: pitch lifts the camera along +Y without horizontal motion", () => {
-    const reg = setupRegistry();
-    const playerPos: [number, number, number] = [0, 0, 0];
-    placePlayer(reg, playerPos);
-
-    const cam = runCamera(reg, 0, Math.PI / 4); // 45° above the horizon
-    // Distance from player still equals FOLLOW_DISTANCE.
+    const cam = runCamera(reg, { offset: [0, 2.6, 6.5] });
     expect(dist(cam.pos, playerPos)).toBeCloseTo(FOLLOW_DISTANCE, 5);
-    // Vertical = sin(π/4)·R; horizontal = cos(π/4)·R.
-    expect(cam.pos[1]).toBeCloseTo(FOLLOW_DISTANCE * Math.SQRT1_2, 5);
-    const horiz = Math.hypot(cam.pos[0], cam.pos[2]);
-    expect(horiz).toBeCloseTo(FOLLOW_DISTANCE * Math.SQRT1_2, 5);
+    // Up is world +Y (universal -Y gravity).
+    expect(cam.up[1]).toBeCloseTo(1, 5);
   });
 
-  it("radial-away cylinder gravity, character offset along +X → up is -X; camera orbits in YZ plane", () => {
+  it("yaw lookDelta rotates offset around up; distance stays constant", () => {
     const reg = setupRegistry();
-    // Concave wall: axis +Y at origin, radius 12. Place character on inside at +X side.
-    const playerPos: [number, number, number] = [11.7, 0, 0];
-    placePlayer(reg, playerPos);
+    placePlayer(reg, [0, 0, 0]);
+    // Default offset (0, 2.6, 6.5) renormalized — camera in +Y/+Z quadrant.
+    // 90° yaw around +Y: +Z → +X. Expect offset.x positive.
+    const cam = runCamera(reg, { dyaw: Math.PI / 2, offset: [0, 2.6, 6.5] });
+    expect(dist(cam.pos, [0, 0, 0])).toBeCloseTo(FOLLOW_DISTANCE, 5);
+    expect(cam.offset[0]).toBeGreaterThan(0.5); // rotated into +X
+    expect(Math.abs(cam.offset[2])).toBeLessThan(1e-5); // Z component zeroed
+  });
+
+  it("pitch lookDelta tilts offset toward up; distance constant", () => {
+    const reg = setupRegistry();
+    placePlayer(reg, [0, 0, 0]);
+    // Start with horizontal offset; positive pitch should tilt toward +Y.
+    const cam = runCamera(reg, { dpitch: 0.5, offset: [0, 0, 6.5] });
+    expect(dist(cam.pos, [0, 0, 0])).toBeCloseTo(FOLLOW_DISTANCE, 5);
+    expect(cam.offset[1]).toBeGreaterThan(0.5); // tilted up
+  });
+
+  it("radial-away cylinder gravity → up swings to -X at +X-side wall position", () => {
+    const reg = setupRegistry();
+    placePlayer(reg, [11.7, 0, 0]);
     writeBuffer(reg.getBuffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID), (d) => {
       d.gravity = [0, -9.81, 0];
       d.volumes = [{
@@ -114,21 +116,12 @@ describe("Spherical camera around gravity-up", () => {
         priority: 1,
       }];
     });
-
-    const cam = runCamera(reg, 0, 0);
-    // up should be -X (gravity points +X here).
+    const cam = runCamera(reg, { offset: [0, 0, 6.5] }); // pure +Z offset
     expect(cam.up[0]).toBeCloseTo(-1, 5);
     expect(cam.up[1]).toBeCloseTo(0, 5);
-    expect(cam.up[2]).toBeCloseTo(0, 5);
-    // Distance invariant.
-    expect(dist(cam.pos, playerPos)).toBeCloseTo(FOLLOW_DISTANCE, 5);
-    // pitch=0 → camera stays in the up-tangent plane (no -X offset from player).
-    expect(cam.pos[0]).toBeCloseTo(playerPos[0], 5);
-
-    // Pitch lifts camera along up axis = -X direction.
-    const camPitched = runCamera(reg, 0, Math.PI / 4);
-    expect(camPitched.pos[0]).toBeCloseTo(playerPos[0] - FOLLOW_DISTANCE * Math.SQRT1_2, 5);
-    expect(dist(camPitched.pos, playerPos)).toBeCloseTo(FOLLOW_DISTANCE, 5);
+    // Pos = target + offset (renormalized).
+    expect(cam.pos[0]).toBeCloseTo(11.7, 5);
+    expect(cam.pos[2]).toBeCloseTo(6.5, 5);
   });
 
   it("zero gravity → up falls back to world +Y", () => {
@@ -138,18 +131,19 @@ describe("Spherical camera around gravity-up", () => {
       d.gravity = [0, 0, 0];
       d.volumes = [];
     });
-    const cam = runCamera(reg, 0, 0);
+    const cam = runCamera(reg, {});
     expect(cam.up[0]).toBeCloseTo(0, 5);
     expect(cam.up[1]).toBeCloseTo(1, 5);
     expect(cam.up[2]).toBeCloseTo(0, 5);
   });
 
-  it("pitch is clamped near the poles", () => {
+  it("pole clamp keeps offset away from being parallel to up", () => {
     const reg = setupRegistry();
     placePlayer(reg, [0, 0, 0]);
-    const cam = runCamera(reg, 0, 99); // huge input → should clamp
-    // Pitch never reaches π/2 (capped); equivalently the camera never sits at the up pole.
-    expect(cam.pitch).toBeLessThan(Math.PI / 2 - 0.01);
-    expect(cam.pitch).toBeGreaterThan(0);
+    // Apply huge pitch delta; offset should be clamped near (but not at) the pole.
+    const cam = runCamera(reg, { dpitch: 99, offset: [0, 0, 6.5] });
+    // Up = +Y. offset shouldn't be aligned with +Y or -Y; |dot(offset_unit, up)| < 1.
+    const dot = (cam.offset[0] * cam.up[0] + cam.offset[1] * cam.up[1] + cam.offset[2] * cam.up[2]) / FOLLOW_DISTANCE;
+    expect(Math.abs(dot)).toBeLessThan(0.999);
   });
 });

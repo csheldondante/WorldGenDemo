@@ -245,11 +245,15 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   }
                 }
 
-                // Jump: edge press → switch to airborne with vertical impulse.
-                // (Direct velocity write — impulses are a separate channel from the
-                // desired-velocity loop.)
-                if (input.jumpPressed && ctrl.locomotionMode === "surfaceConstrained") {
-                  v.linear[1] = profile.jumpImpulse;
+                // Jump: edge press → switch to airborne with an impulse along the
+                // current SURFACE NORMAL (not world +Y). On flat ground N=+Y so this
+                // matches the historical behavior; on a wall (concave wall-of-death)
+                // it pushes the player AWAY from the wall toward the axis; on the
+                // side of a horizontal-axis log it pushes them outward, etc.
+                if (input.jumpPressed && ctrl.locomotionMode === "surfaceConstrained" && sample) {
+                  v.linear[0] += profile.jumpImpulse * sample.normal[0];
+                  v.linear[1] += profile.jumpImpulse * sample.normal[1];
+                  v.linear[2] += profile.jumpImpulse * sample.normal[2];
                   ctrl.locomotionMode = "volumeConstrained";
                   setState(ctrl, "airborne", "jump pressed", now);
                 }
