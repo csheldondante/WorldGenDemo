@@ -15,8 +15,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const PORT = 5180;
-const MAP_PARAM = process.env.MAP ? `?map=${encodeURIComponent(process.env.MAP)}` : "";
-const URL = `http://127.0.0.1:${PORT}/${MAP_PARAM}`;
+// MAP=<name> → ?map=<name>. SCENARIO=<name> → ?scenario=<name>. Both env vars
+// supported so the smoke harness can boot real scenes or scenario tests.
+const __smokeQuery = new URLSearchParams();
+if (process.env.MAP) __smokeQuery.set("map", process.env.MAP);
+if (process.env.SCENARIO) __smokeQuery.set("scenario", process.env.SCENARIO);
+const __smokeQs = __smokeQuery.toString();
+const URL = `http://127.0.0.1:${PORT}/${__smokeQs ? "?" + __smokeQs : ""}`;
 
 /**
  * Windows-safe process tree kill. cross-spawn returns a wrapper around the

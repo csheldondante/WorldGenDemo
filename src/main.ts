@@ -1,4 +1,4 @@
-import { startWorld } from "./app/world";
+import { startWorld, startScenarioWorld } from "./app/world";
 
 const tabs = document.querySelectorAll<HTMLButtonElement>(".tab");
 const panels: Record<string, HTMLElement> = {
@@ -18,12 +18,19 @@ function activate(name: string) {
   }
 }
 
-const world = startWorld({
+const url = new URL(location.href);
+const scenarioName = url.searchParams.get("scenario");
+
+const worldOpts = {
   hudEl: document.getElementById("hud") as HTMLElement,
   hintEl: document.getElementById("hint") as HTMLElement,
   panelEl: panels.world,
   builderPanelEl: panels.builder,
-});
+};
+
+const world = scenarioName
+  ? startScenarioWorld(worldOpts, scenarioName)
+  : startWorld(worldOpts);
 
 tabs.forEach((t) =>
   t.addEventListener("click", () => {
