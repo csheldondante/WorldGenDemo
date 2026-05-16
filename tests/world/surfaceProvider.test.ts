@@ -123,5 +123,12 @@ describe("HeightmapSurfaceProvider", () => {
       const doubled = sp.getCurvature(0.5, 0.5, 2, 0);
       expect(doubled).toBeCloseTo(4 * base, 4);
     });
+
+    it("heightmaps do not wrap", () => {
+      const hm = flatHeightmap(8, 8, 1);
+      const sp = new HeightmapSurfaceProvider("flat", hm);
+      expect(sp.wrapsU()).toBe(false);
+      expect(sp.wrapsV()).toBe(false);
+    });
   });
 });

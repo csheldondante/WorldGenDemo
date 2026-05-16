@@ -79,18 +79,23 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                   // SurfaceConstrainedVelocity already integrated UV and placed the
                   // body at sample(new_uv) + radius·N. We just check whether the new UV
                   // is out of bounds — if so, the body walked off the patch's edge and
-                  // should transition to airborne. Position stays at the clamped-UV
-                  // surface point (set by the integrator), velocity carries forward.
+                  // should transition to airborne. On wrapped axes (cylinder perimeter,
+                  // torus loops) the integrator folded the value, so we ignore that
+                  // axis here.
                   const att = sa.byEntity.get(id);
                   if (!att) continue;
                   const u = att.uv[0];
                   const v = att.uv[1];
-                  if (u < 0 || u > 1 || v < 0 || v > 1) {
+                  const uOut = !surface.wrapsU() && (u < 0 || u > 1);
+                  const vOut = !surface.wrapsV() && (v < 0 || v > 1);
+                  if (uOut || vOut) {
                     ctrl.locomotionMode = "volumeConstrained";
                     recordTransition(ctrl, "airborne", "walked off edge", now);
                     // Clamp the cached UV so future reads are well-defined. Sample
                     // was already at clamped UV by the integrator.
-                    att.uv = [Math.max(0, Math.min(1, u)), Math.max(0, Math.min(1, v))];
+                    const uClamp = surface.wrapsU() ? u : Math.max(0, Math.min(1, u));
+                    const vClamp = surface.wrapsV() ? v : Math.max(0, Math.min(1, v));
+                    att.uv = [uClamp, vClamp];
                     sa.byEntity.set(id, att);
                     cc.byEntity.set(id, ctrl);
                     continue;

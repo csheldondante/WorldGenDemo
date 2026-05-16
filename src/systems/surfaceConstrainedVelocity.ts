@@ -148,12 +148,18 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                 vel.linear[0] * sample.tangentV[0] +
                 vel.linear[1] * sample.tangentV[1] +
                 vel.linear[2] * sample.tangentV[2];
-              const u_raw = att.uv[0] + (vTanU_proj * dt) / safeTU;
-              const v_raw = att.uv[1] + (vTanV_proj * dt) / safeTV;
+              let u_raw = att.uv[0] + (vTanU_proj * dt) / safeTU;
+              let v_raw = att.uv[1] + (vTanV_proj * dt) / safeTV;
 
-              // Step 4: sample new UV (clamped for the actual sample call).
-              const u_clamped = Math.max(0, Math.min(1, u_raw));
-              const v_clamped = Math.max(0, Math.min(1, v_raw));
+              // Closed surfaces wrap. Folding here keeps the stored UV in [0, 1)
+              // and prevents surfaceConstraintSystem from interpreting "ran around
+              // the perimeter" as "walked off edge."
+              if (surface.wrapsU()) u_raw = ((u_raw % 1) + 1) % 1;
+              if (surface.wrapsV()) v_raw = ((v_raw % 1) + 1) % 1;
+
+              // Step 4: sample new UV (clamped only on non-wrapping axes for the actual sample call).
+              const u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
+              const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
               const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
 
               // Step 5: world position = new surface point + radius along new normal.

@@ -60,6 +60,14 @@ export interface SurfaceProvider {
    */
   sampleVelocityAt(u: number, v: number): [number, number, number];
   /**
+   * True if the U parameter wraps modulo 1 (closed surface in U) — e.g. cylinders, tori.
+   * When true, the integrator folds u_raw modulo 1 instead of treating out-of-bounds as
+   * walked-off-edge. Planes/heightmaps return false; v-bounds still apply for cylinders.
+   */
+  wrapsU(): boolean;
+  /** True if V wraps modulo 1 (tori only today). */
+  wrapsV(): boolean;
+  /**
    * Second fundamental form contracted with a UV direction:
    *   II(u, v, dirU, dirV) = (∂²P/∂u² · N) dirU² + 2(∂²P/∂u∂v · N) dirU·dirV + (∂²P/∂v² · N) dirV²
    *
@@ -187,6 +195,9 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
     // Heightmap is a static surface; future moving providers (platforms, vehicles) override.
     return [0, 0, 0];
   }
+
+  wrapsU(): boolean { return false; }
+  wrapsV(): boolean { return false; }
 
   /**
    * Heightmap curvature via central differences on the height field. The

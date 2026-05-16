@@ -50,6 +50,11 @@ describe("PlaneSurfaceProvider — flat horizontal plane", () => {
     expect(plane.getCurvature(0.3, 0.7, 0, 1)).toBe(0);
     expect(plane.getCurvature(0.3, 0.7, 0.5, 0.5)).toBe(0);
   });
+
+  it("planes do not wrap in either axis", () => {
+    expect(plane.wrapsU()).toBe(false);
+    expect(plane.wrapsV()).toBe(false);
+  });
 });
 
 describe("PlaneSurfaceProvider — tilted plane", () => {
@@ -145,6 +150,11 @@ describe("CylindricalSurfaceProvider — convex (horizontal-axis log)", () => {
     expect(cyl.canAttachAt(-0.01, 0.5)).toBe(false);
     expect(cyl.canAttachAt(0.5, 1.5)).toBe(false);
   });
+
+  it("wraps U (perimeter is closed), does not wrap V (axis ends)", () => {
+    expect(cyl.wrapsU()).toBe(true);
+    expect(cyl.wrapsV()).toBe(false);
+  });
 });
 
 describe("CylindricalSurfaceProvider — concave (half-pipe)", () => {
@@ -175,6 +185,11 @@ describe("CylindricalSurfaceProvider — concave (half-pipe)", () => {
     const uDot = vWorld / (2 * Math.PI * 8);
     const aCentripetal = pipe.getCurvature(0.5, 0.5, uDot, 0);
     expect(aCentripetal).toBeCloseTo(+vWorld * vWorld / 8, 4);
+  });
+
+  it("concave cylinders also wrap U", () => {
+    expect(pipe.wrapsU()).toBe(true);
+    expect(pipe.wrapsV()).toBe(false);
   });
 });
 
@@ -261,5 +276,10 @@ describe("TorusSurfaceProvider — concave (inside of tube is a saddle)", () => 
     //   II = −(−1)·(2π)²·(R + r·(−1))·(−1)·dirU² = −(2π)²·(R−r)·dirU²
     const kU = tube.getCurvature(0, 0.5, 1, 0);
     expect(kU).toBeCloseTo(-TWO_PI_SQ * (30 - 8), 6);
+  });
+
+  it("tori wrap in both directions (closed in U and V)", () => {
+    expect(tube.wrapsU()).toBe(true);
+    expect(tube.wrapsV()).toBe(true);
   });
 });

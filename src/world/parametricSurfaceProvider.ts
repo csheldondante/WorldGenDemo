@@ -152,6 +152,9 @@ export class PlaneSurfaceProvider implements SurfaceProvider {
   getCurvature(_u: number, _v: number, _dirU: number, _dirV: number): number {
     return 0;
   }
+
+  wrapsU(): boolean { return false; }
+  wrapsV(): boolean { return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +310,10 @@ export class CylindricalSurfaceProvider implements SurfaceProvider {
     const eps = this.concave ? -1 : 1; // +1 convex, −1 concave
     return -eps * (2 * Math.PI) * (2 * Math.PI) * this.radius * dirU * dirU;
   }
+
+  /** Cylinders close in U (perimeter); V is bounded (axis ends). */
+  wrapsU(): boolean { return true; }
+  wrapsV(): boolean { return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -512,4 +519,8 @@ export class TorusSurfaceProvider implements SurfaceProvider {
     const term2 = this.minorRadius * dirV * dirV;
     return -eps * k2pi * (term1 + term2);
   }
+
+  /** Tori close in both directions. */
+  wrapsU(): boolean { return true; }
+  wrapsV(): boolean { return true; }
 }

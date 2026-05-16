@@ -70,6 +70,8 @@ const FLAT_SURFACE: SurfaceProvider = {
   canAttachAt(): boolean { return true; },
   sampleVelocityAt(): [number, number, number] { return [0, 0, 0]; },
   getCurvature(): number { return 0; },
+  wrapsU(): boolean { return false; },
+  wrapsV(): boolean { return false; },
 };
 
 // Position-aware surface: returns the actual sampled XZ so the planner can
@@ -103,6 +105,8 @@ const POSITION_AWARE_SURFACE: SurfaceProvider = {
   canAttachAt(u: number, v: number): boolean { return u >= 0 && u <= 1 && v >= 0 && v <= 1; },
   sampleVelocityAt(): [number, number, number] { return [0, 0, 0]; },
   getCurvature(): number { return 0; },
+  wrapsU(): boolean { return false; },
+  wrapsV(): boolean { return false; },
 };
 
 const TWO_LEG_RIG: RigDefinition = {
