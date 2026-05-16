@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "registry": "vite-node scripts/genRegistryDoc.ts",
     "gen-maps": "tsx scripts/genSampleMaps.ts",
-    "smoke": "vite-node scripts/smokeBoot.ts"
+    "smoke": "vite-node scripts/smokeBoot.ts",
+    "scenario": "vite-node scripts/runScenario.ts"
   },
   "dependencies": {
     "three": "^0.169.0"
