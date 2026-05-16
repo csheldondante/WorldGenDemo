@@ -1,4 +1,3 @@
-import * as THREE from "three";
 import { readBuffer } from "../runtime/buffer";
 import type { SystemDescriptor } from "../runtime/system";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
@@ -35,7 +34,10 @@ export function createRenderSystem(): SystemDescriptor {
 
       const c = refs.threeCamera;
       c.position.set(camData.pos[0], camData.pos[1], camData.pos[2]);
-      c.quaternion.setFromEuler(new THREE.Euler(camData.pitch, camData.yaw, 0, "YXZ"));
+      // Spherical orbit camera: cameraFollow writes pos + target + up.
+      // THREE composes the orientation via lookAt with camera.up as the roll reference.
+      c.up.set(camData.up[0], camData.up[1], camData.up[2]);
+      c.lookAt(camData.target[0], camData.target[1], camData.target[2]);
       // Aspect / fov / near / far updates: only push when changed to avoid cost.
       if (c.fov !== camData.fov || c.aspect !== camData.aspect || c.near !== camData.near || c.far !== camData.far) {
         c.fov = camData.fov;

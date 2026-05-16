@@ -27,10 +27,13 @@ describe("RenderSystem (camera mirror)", () => {
       d.renderer = fakeRenderer;
       d.scene = fakeScene;
     });
+    // The render system now applies lookAt(target) with camera.up = up.
+    // Place the camera at (10, 20, 30) looking at the origin with up = +Y;
+    // expected forward = normalize(target - pos) = (-10, -20, -30) / |·|.
     writeBuffer(cam, (d) => {
       d.pos = [10, 20, 30];
-      d.yaw = Math.PI / 4;
-      d.pitch = -0.1;
+      d.target = [0, 0, 0];
+      d.up = [0, 1, 0];
       d.fov = 60;
       d.aspect = 16 / 9;
     });
@@ -43,10 +46,12 @@ describe("RenderSystem (camera mirror)", () => {
     expect(threeCam.position.z).toBeCloseTo(30);
     expect(threeCam.fov).toBeCloseTo(60);
     expect(threeCam.aspect).toBeCloseTo(16 / 9);
-    // Quaternion: yaw=π/4, pitch=-0.1 → camera looks toward (-sin(π/4), small, -cos(π/4))
+    // Camera forward = normalize(target - pos).
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(threeCam.quaternion);
-    expect(fwd.x).toBeCloseTo(-Math.sin(Math.PI / 4), 1);
-    expect(fwd.z).toBeCloseTo(-Math.cos(Math.PI / 4), 1);
+    const len = Math.hypot(10, 20, 30);
+    expect(fwd.x).toBeCloseTo(-10 / len, 4);
+    expect(fwd.y).toBeCloseTo(-20 / len, 4);
+    expect(fwd.z).toBeCloseTo(-30 / len, 4);
   });
 
   it("does nothing when threeCamera is null (no Three.js wired yet)", () => {
