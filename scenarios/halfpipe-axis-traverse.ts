@@ -1,32 +1,21 @@
 /**
- * Test: walk along the bottom of a half-pipe (concave horizontal cylinder).
+ * Test: rock across the bottom of a half-pipe.
  *
- * Concave cylinder (axis +X, R=8m, H=30m). On a concave cylinder the player
- * stands INSIDE — the normal points toward the axis. Spawn at uv (0.5, 0.5)
- * — radial(0.5) = -perpA = -Y, normal flips to +Y for concave → surface
- * position = (15, -8, 0), player above at world Y = -8 + radius. Forward
- * (+Z at cameraYaw=π) carries them along the axis direction NO — wait,
- * tangentAround(0.5) at the bottom is -perpB·sin(π) + perpA·... hmm.
+ * Concave cylinder (axis +X, R=8m, H=30m). Spawn at uv (0.5, 0.5) — the
+ * bottom of the half-pipe. With cameraYaw=π, camera-forward is +Z. At
+ * u=0.5 the surface tangents are tangentU = -perpB = -Z (across the curve)
+ * and tangentV = axisDir = +X (along the axis). The forward thrust (+Z)
+ * projects fully onto -tangentU, so the character pushes UP one side of
+ * the half-pipe, slides back down, and oscillates across the U-curve.
  *
- * Actually for axis=+X, perpA=+Y, perpB=+Z. radial(u=0.5) = -perpA = -Y, so
- * sample.position = (15, -8, 0). Normal (concave) = -radial = +Y. tangentU
- * at u=0.5 = -sin(π)·perpA + cos(π)·perpB = -perpB = -Z. tangentV = +X.
+ * This is the half-pipe "rocking" test, not an along-axis traversal — the
+ * along-axis direction is +X (perpendicular to camera-forward) and isn't
+ * driven by KeyW with this camera yaw. A proper "skate along the trough"
+ * test would set cameraYaw=π/2 or 3π/2 so forward is ±X.
  *
- * So at the bottom of the half-pipe, forward = +Z (camera fwd) projected
- * onto the tangent plane (normal +Y): Ft = (0, 0, 1). Walking forward
- * carries the player ALONG THE AXIS… no wait, tangentU is -Z and tangentV
- * is +X. The player's forward thrust projected onto the tangent plane is
- * (0,0,1) which is in the -tangentU direction → player walks against u
- * direction, which means up the OTHER side of the half-pipe.
- *
- * This is a "simulated input is approximate" scenario — the player just
- * walks forward; the actual path traces the curved interior. Once you have
- * Tab-override real input, replace the input with a recorded session for
- * proper half-pipe pumping.
- *
- * Tests: concave surface attachment, normal direction sign, walking through
- * the bottom + up one side. Placeholder coverage until real-input
- * recording is wired.
+ * Tests: concave surface attachment, normal direction sign, gravity-driven
+ * oscillation across a U-curve, surfaceRun ↔ surfaceSlide thresholds as
+ * the character climbs the side and loses momentum.
  */
 import type { BufferTest } from "../src/app/bufferTest";
 import { CylindricalSurfaceProvider } from "../src/world/parametricSurfaceProvider";
@@ -37,9 +26,11 @@ export const test: BufferTest = {
   name: "halfpipe-axis-traverse",
   description:
     "Concave horizontal cylinder (axis +X, R=8m, H=30m). Player spawns at uv (0.5, 0.5) " +
-    "— the bottom of the half-pipe — holds KeyW for 180 ticks (~3s). Walks the curved " +
-    "interior. PLACEHOLDER simulated input; the proper half-pipe pump-and-slide test " +
-    "should use recorded real input via the upcoming Tab-override.",
+    "— the bottom — holds KeyW for 180 ticks (~3s). Forward thrust at cameraYaw=π drives " +
+    "across the U-curve (perpendicular to the axis), so the character rocks up one side " +
+    "and back. Tests concave attachment + gravity-driven oscillation. (The name " +
+    "'axis-traverse' is a misnomer — kept for baseline stability; rename when we add " +
+    "real-input recording for actual along-axis half-pipe pumping.)",
   inputSystem: createSimulatedInputSystem(holdKeysGenerator(["KeyW"])),
   input: {
     kind: "seed",
