@@ -28,7 +28,8 @@ import { CHARACTER_CONTROLLER_SYSTEM_ID } from "../systems/characterController";
 import { SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/surfaceConstrainedVelocity";
 import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/volumetricConstrainedVelocity";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
-import { CAMERA_FOLLOW_SYSTEM_ID } from "../systems/cameraFollow";
+import { CAMERA_PIVOT_SYSTEM_ID } from "../systems/cameraPivot";
+import { CAMERA_ORBIT_SYSTEM_ID } from "../systems/cameraOrbit";
 import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
 import { BODY_LEAN_SYSTEM_ID } from "../systems/bodyLean";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "../systems/chainDynamics";
@@ -82,7 +83,8 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID,
       VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID,
       SURFACE_CONSTRAINT_SYSTEM_ID,
-      CAMERA_FOLLOW_SYSTEM_ID,
+      CAMERA_PIVOT_SYSTEM_ID,
+      CAMERA_ORBIT_SYSTEM_ID,
       CHARACTER_RENDER_SYNC_SYSTEM_ID,
       BODY_LEAN_SYSTEM_ID,
       CHAIN_DYNAMICS_SYSTEM_ID,

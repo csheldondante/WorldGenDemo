@@ -31,7 +31,7 @@ import { pickGravity, sortVolumesByPriority } from "../lib/math/gravityVolume";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
 import { SKELETON_WORLD_SYSTEM_ID } from "./skeletonWorld";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "./chainDynamics";
-import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
+import { CAMERA_ORBIT_SYSTEM_ID } from "./cameraOrbit";
 
 export const BODY_LEAN_SYSTEM_ID = "bodyLeanSystem";
 
@@ -70,10 +70,10 @@ export function createBodyLeanSystem(): SystemDescriptor {
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "readwrite" },
       { id: SKELETON_BUFFER_ID, access: "readwrite" },
     ],
-    // CameraFollow reads characterController and runs earlier in the graph
+    // CameraOrbit reads characterController and runs earlier in the graph
     // (after SurfaceConstraint, before us). The hazard checker requires the
     // edge to be explicit.
-    runsAfter: [STATE_MACHINE_SYSTEM_ID, SURFACE_CONSTRAINT_SYSTEM_ID, CAMERA_FOLLOW_SYSTEM_ID],
+    runsAfter: [STATE_MACHINE_SYSTEM_ID, SURFACE_CONSTRAINT_SYSTEM_ID, CAMERA_ORBIT_SYSTEM_ID],
     runsBefore: [CHAIN_DYNAMICS_SYSTEM_ID, SKELETON_WORLD_SYSTEM_ID],
     execute: ({ buffer, dt }) => {
       const transforms = readBuffer(buffer<TransformBufferData>(TRANSFORM_BUFFER_ID));

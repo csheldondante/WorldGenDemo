@@ -45,7 +45,7 @@ export const HEADLESS_GAMEPLAY_SYSTEMS = [
   "tangentInputMapperSystem", "characterOrientationSystem",
   "forceFieldSystem", "characterControllerSystem",
   "surfaceConstrainedVelocitySystem", "volumetricConstrainedVelocitySystem",
-  "surfaceConstraintSystem", "cameraFollowSystem",
+  "surfaceConstraintSystem", "cameraPivotSystem", "cameraOrbitSystem",
   "bodyLeanSystem", "chainDynamicsSystem", "footPlannerSystem",
   "footIkSystem", "skeletonWorldSystem",
 ];
@@ -55,7 +55,7 @@ export const HEADLESS_GAMEPLAY_SYSTEMS = [
  */
 export const HEADLESS_INPUT_CAMERA_SYSTEMS = [
   "stateMachineSystem",
-  "inputSystem", "inputMapperSystem", "cameraFollowSystem",
+  "inputSystem", "inputMapperSystem", "cameraPivotSystem", "cameraOrbitSystem",
 ];
 
 export interface SeedPlayerOpts {
@@ -92,6 +92,10 @@ export function seedPlayerOnSurface(
   writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
     d.yaw = cameraYaw;
     d.pitch = 0;
+    // target tracks rendered state — keep them in agreement at spawn so
+    // CameraOrbitSystem doesn't snap to a stale target on the first tick.
+    d.target.yaw = cameraYaw;
+    d.target.pitch = 0;
   });
   writeBuffer(reg.getBuffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID), (d) => {
     d.heightmap = provider;

@@ -27,7 +27,7 @@ import {
 } from "../buffers/footLock";
 import { fromYaw, mul, rotate, type Vec3 } from "../lib/math/quat";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
-import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
+import { CAMERA_ORBIT_SYSTEM_ID } from "./cameraOrbit";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "./chainDynamics";
 
 export const FOOT_PLANNER_SYSTEM_ID = "footPlannerSystem";
@@ -77,7 +77,7 @@ export function createFootPlannerSystem(): SystemDescriptor {
     runsAfter: [
       STATE_MACHINE_SYSTEM_ID,
       SURFACE_CONSTRAINT_SYSTEM_ID,
-      CAMERA_FOLLOW_SYSTEM_ID,
+      CAMERA_ORBIT_SYSTEM_ID,
       CHAIN_DYNAMICS_SYSTEM_ID,
     ],
     execute: ({ buffer, dt }) => {

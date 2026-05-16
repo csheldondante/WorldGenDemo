@@ -4,7 +4,7 @@
  * Drives the REAL bootstrap with `holdKeysGenerator(["KeyW"])`. The full real
  * input pipeline runs (inputSystem → inputMapper → characterInput →
  * tangentInputMapper → characterController → surfaceConstrainedVelocity →
- * volumetricConstrainedVelocity → surfaceConstraint → cameraFollow → body
+ * volumetricConstrainedVelocity → surfaceConstraint → cameraPivot → cameraOrbit → body
  * lean → chain dynamics → foot planner → foot IK → skeleton FK). Render
  * excluded from the test step (headless).
  *
