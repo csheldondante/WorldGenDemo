@@ -21,28 +21,29 @@ const FOLLOW_DISTANCE = 6.5; // meters; constant orbit radius
 const PITCH_LIMIT = Math.PI / 2 - 0.08; // clamp polar phi (~0.08 rad away from the up/down poles)
 
 /**
- * Spherical-orbit third-person camera. The camera lives on a sphere of constant
- * `FOLLOW_DISTANCE` around the player, with `up` axis = local gravity-up.
+ * Spherical-orbit third-person camera with parallel-transported forward.
  *
- *   yaw   — azimuth around `up`. Rotates the camera around the player. Distance
- *           is invariant under yaw.
- *   pitch — elevation above the orbit horizon. 0 = level with the player, +π/2 =
- *           directly above. Clamped to (−π/2+ε, π/2−ε) so we never hit the
- *           poles where the yaw axis degenerates.
+ *   up   — `-normalize(gravity)` at the player; fallback world +Y.
+ *   fwd  — the camera's actual world-space forward, persisted across ticks. Each
+ *          tick we re-project last frame's fwd onto the new up-tangent plane
+ *          (parallel transport) so the camera frame stays continuous as up
+ *          rotates around the player on curved gravity scenes. User look-delta
+ *          rotates fwd around up (yaw axis); pitch tilts the camera above the
+ *          horizon plane.
+ *   pos  — player + (cos(pitch)·(-fwd) + sin(pitch)·up) · FOLLOW_DISTANCE.
  *
- * `up` comes from `-normalize(gravity)` at the player's position (so the orbit
- * stays correctly oriented inside radial gravity volumes like the cylinder gym).
- * Falls back to world +Y when gravity is effectively zero.
+ * Eliminates the fixed-reference-axis flip that snapped the camera when up
+ * crossed certain orientations (e.g., walking around the side of a horizontal
+ * cylinder, where up rotates through world ±Z and the old code switched its
+ * reference forward at the threshold).
  *
- * RenderSystem applies the result via `camera.up.set(up); camera.lookAt(target)`,
- * which is the canonical "billboard-up at this axis, look at this point" setup
- * and avoids the YXZ-Euler vs gravity-up mismatch that breaks the old camera.
+ * RenderSystem applies via `camera.up = up; camera.lookAt(target)`.
  */
 export function createCameraFollowSystem(): SystemDescriptor {
   return {
     id: CAMERA_FOLLOW_SYSTEM_ID,
     description:
-      "Spherical-orbit third-person camera. Orbits the player at constant radius around an `up` axis equal to local gravity-up (or world +Y as fallback). Reads InputMap.lookDelta, TransformBuffer, VolumeFieldBuffer. Writes CameraBuffer pos/target/up; render system applies via lookAt.",
+      "Spherical-orbit camera. Persists camera-forward across ticks and parallel-transports it as gravity-up rotates so the camera frame stays continuous on curved gravity scenes. Reads InputMap.lookDelta, TransformBuffer, VolumeFieldBuffer; writes CameraBuffer pos/target/up/fwd.",
     buffers: [
       { id: INPUT_MAP_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
@@ -64,22 +65,22 @@ export function createCameraFollowSystem(): SystemDescriptor {
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
       const vf = readBuffer(buffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID));
 
-      // Accumulate look-delta into yaw/pitch; clamp pitch.
-      writeBuffer(cam, (c) => {
-        c.yaw += im.lookDelta.yaw;
-        c.pitch += im.lookDelta.pitch;
-        if (c.pitch > PITCH_LIMIT) c.pitch = PITCH_LIMIT;
-        if (c.pitch < -PITCH_LIMIT) c.pitch = -PITCH_LIMIT;
-      });
-
-      // Pick the first character entity as the focus target.
+      // Pick the focus target. With no character, keep the buffer state untouched.
       const targetId = cc.byEntity.keys().next().value as number | undefined;
-      if (targetId === undefined) return;
+      if (targetId === undefined) {
+        // Still accumulate look input so the camera "spins in place" doesn't reset on respawn.
+        writeBuffer(cam, (c) => {
+          c.yaw += im.lookDelta.yaw;
+          c.pitch += im.lookDelta.pitch;
+          if (c.pitch > PITCH_LIMIT) c.pitch = PITCH_LIMIT;
+          if (c.pitch < -PITCH_LIMIT) c.pitch = -PITCH_LIMIT;
+        });
+        return;
+      }
       const t = transforms.byEntity.get(targetId);
       if (!t) return;
 
-      const c = readBuffer(cam);
-      // Gravity at the player position → gravity-up. Fallback world +Y on zero gravity.
+      // Gravity at the player position → up. Fallback world +Y on zero gravity.
       const sortedVolumes = vf.volumes.length > 0 ? sortVolumesByPriority(vf.volumes) : vf.volumes;
       const g = pickGravity(sortedVolumes, vf.gravity, t.position);
       const gLen = Math.hypot(g[0], g[1], g[2]);
@@ -88,58 +89,68 @@ export function createCameraFollowSystem(): SystemDescriptor {
         upX = -g[0] / gLen; upY = -g[1] / gLen; upZ = -g[2] / gLen;
       }
 
-      // Reference horizontal forward in the up-tangent plane. Start from world -Z;
-      // if that's nearly parallel to up (camera looking along the gravity axis,
-      // e.g. cylinder axis pointing into the screen), fall back to world +X.
-      let refX = 0, refY = 0, refZ = -1;
-      if (Math.abs(refX * upX + refY * upY + refZ * upZ) > 0.95) {
-        refX = 1; refY = 0; refZ = 0;
-      }
-      // Project off up, normalize.
-      let dotRefUp = refX * upX + refY * upY + refZ * upZ;
-      let fwdX = refX - dotRefUp * upX;
-      let fwdY = refY - dotRefUp * upY;
-      let fwdZ = refZ - dotRefUp * upZ;
+      const c = readBuffer(cam);
+      // Parallel transport: project last tick's fwd onto the new up-tangent plane.
+      // For small frame-to-frame changes in `up` this is the correct minimal-rotation
+      // update; the camera frame "rolls" smoothly with up rather than snapping.
+      let fwdX = c.fwd[0], fwdY = c.fwd[1], fwdZ = c.fwd[2];
+      const fDotUp = fwdX * upX + fwdY * upY + fwdZ * upZ;
+      fwdX -= fDotUp * upX;
+      fwdY -= fDotUp * upY;
+      fwdZ -= fDotUp * upZ;
       let fwdLen = Math.hypot(fwdX, fwdY, fwdZ);
       if (fwdLen < 1e-6) {
-        // Truly degenerate (shouldn't be reachable after the +X swap). Best effort.
-        fwdX = 1; fwdY = 0; fwdZ = 0; fwdLen = 1;
+        // Persisted fwd was (nearly) parallel to new up — pick a fresh tangent
+        // direction. Try world -Z; if that's also nearly parallel, world +X.
+        const wzDot = -upZ;
+        if (Math.abs(wzDot) < 0.95) {
+          fwdX = -upX * wzDot;
+          fwdY = -upY * wzDot;
+          fwdZ = -1 - upZ * wzDot;
+        } else {
+          const wxDot = upX;
+          fwdX = 1 - upX * wxDot;
+          fwdY = -upY * wxDot;
+          fwdZ = -upZ * wxDot;
+        }
+        fwdLen = Math.hypot(fwdX, fwdY, fwdZ) || 1;
       }
       fwdX /= fwdLen; fwdY /= fwdLen; fwdZ /= fwdLen;
 
-      // "side" = up × fwd, completes the right-handed frame in the up-tangent plane.
+      // Apply look-delta yaw as a rotation of fwd around up: fwd' = cos(δ)·fwd + sin(δ)·(up×fwd).
       const sideX = upY * fwdZ - upZ * fwdY;
       const sideY = upZ * fwdX - upX * fwdZ;
       const sideZ = upX * fwdY - upY * fwdX;
+      const dy = im.lookDelta.yaw;
+      const cdy = Math.cos(dy);
+      const sdy = Math.sin(dy);
+      const newFwdX = cdy * fwdX + sdy * sideX;
+      const newFwdY = cdy * fwdY + sdy * sideY;
+      const newFwdZ = cdy * fwdZ + sdy * sideZ;
 
-      // Yawed forward in the horizon plane:
-      //   yawedFwd(θ) = cos(θ)·fwd + sin(θ)·side
-      const cy = Math.cos(c.yaw);
-      const sy = Math.sin(c.yaw);
-      const yawedX = cy * fwdX + sy * sideX;
-      const yawedY = cy * fwdY + sy * sideY;
-      const yawedZ = cy * fwdZ + sy * sideZ;
+      // Accumulate look-delta pitch and clamp.
+      let pitch = c.pitch + im.lookDelta.pitch;
+      if (pitch > PITCH_LIMIT) pitch = PITCH_LIMIT;
+      if (pitch < -PITCH_LIMIT) pitch = -PITCH_LIMIT;
 
-      // Camera position is "behind" the player along yawedFwd, then lifted by pitch
-      // toward `up`. cosφ·(-yawedFwd) + sinφ·up, scaled by FOLLOW_DISTANCE.
-      //   pitch =  0   → camera in the horizon plane behind the player.
-      //   pitch = +π/2 → camera directly above the player (capped).
-      //   pitch = -π/2 → camera directly below the player (capped).
-      // Distance is constant: no shift with yaw.
-      const cp = Math.cos(c.pitch);
-      const sp = Math.sin(c.pitch);
-      const camDirX = -cp * yawedX + sp * upX;
-      const camDirY = -cp * yawedY + sp * upY;
-      const camDirZ = -cp * yawedZ + sp * upZ;
+      // Camera direction from player = cos(pitch)·(-fwd) + sin(pitch)·up. Constant radius.
+      const cp = Math.cos(pitch);
+      const sp = Math.sin(pitch);
+      const dirX = -cp * newFwdX + sp * upX;
+      const dirY = -cp * newFwdY + sp * upY;
+      const dirZ = -cp * newFwdZ + sp * upZ;
 
       writeBuffer(cam, (next) => {
+        next.yaw += dy; // back-compat: minimap still reads cam.yaw as accumulated azimuth
+        next.pitch = pitch;
         next.pos = [
-          t.position[0] + camDirX * FOLLOW_DISTANCE,
-          t.position[1] + camDirY * FOLLOW_DISTANCE,
-          t.position[2] + camDirZ * FOLLOW_DISTANCE,
+          t.position[0] + dirX * FOLLOW_DISTANCE,
+          t.position[1] + dirY * FOLLOW_DISTANCE,
+          t.position[2] + dirZ * FOLLOW_DISTANCE,
         ];
         next.target = [t.position[0], t.position[1], t.position[2]];
         next.up = [upX, upY, upZ];
+        next.fwd = [newFwdX, newFwdY, newFwdZ];
       });
     },
   };

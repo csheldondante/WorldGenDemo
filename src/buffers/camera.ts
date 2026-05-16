@@ -21,6 +21,15 @@ export interface CameraBufferData {
   target: [number, number, number];
   /** Local up direction the camera's "head" stays aligned with (gravity-up by default). */
   up: [number, number, number];
+  /**
+   * Camera's actual world-space forward direction, in the up-tangent plane. Persisted
+   * across ticks so cameraFollowSystem can parallel-transport it as `up` rotates (e.g.
+   * traversing a horizontal-axis cylinder), avoiding the reference-axis flip that snaps
+   * the camera when up nearly aligns with the fallback reference. Read by gameplay
+   * systems (tangentInputMapperSystem etc.) so player input tracks the visible camera
+   * frame, not a stale world-Y-yaw reconstruction.
+   */
+  fwd: [number, number, number];
   fov: number;
   aspect: number;
   near: number;
@@ -40,6 +49,7 @@ export function createCameraBuffer(): Buffer<CameraBufferData> {
       pitch: 0.35, // ~20° above horizon by default — camera starts above the player
       target: [0, 0, 0],
       up: [0, 1, 0],
+      fwd: [0, 0, -1],
       fov: 70,
       aspect: 1,
       near: 0.1,

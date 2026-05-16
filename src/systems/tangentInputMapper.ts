@@ -25,9 +25,11 @@ import {
   FORCE_ACCUMULATOR_BUFFER_ID,
   type ForceAccumulatorBufferData,
 } from "../buffers/forceAccumulator";
+import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { CHARACTER_INPUT_SYSTEM_ID } from "./characterInput";
 import { CHARACTER_ORIENTATION_SYSTEM_ID } from "./characterOrientation";
 import { FORCE_FIELD_SYSTEM_ID } from "./forceField";
+import { CAMERA_FOLLOW_SYSTEM_ID } from "./cameraFollow";
 import { xInterceptShifted } from "../lib/math/accelCurve";
 
 export const TANGENT_INPUT_MAPPER_SYSTEM_ID = "tangentInputMapperSystem";
@@ -61,6 +63,7 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
       { id: FORCE_ACCUMULATOR_BUFFER_ID, access: "read" },
+      { id: CAMERA_BUFFER_ID, access: "read" },
       { id: CHARACTER_TANGENT_INPUT_BUFFER_ID, access: "readwrite" },
     ],
     // Ordering:
@@ -70,18 +73,24 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
     //    itself `runsBefore` forceField).
     //  - after FORCE_FIELD_SYSTEM_ID so the accumulator's external accel is populated
     //    and the shifted x-intercept reflects current gravity / volume / wind / etc.
+    //  - BEFORE CAMERA_FOLLOW_SYSTEM_ID. cameraFollow runs after surfaceConstraint
+    //    (needs the post-snap player position), and the controller chain runs before
+    //    surfaceConstraint, so we read cam.fwd written last tick. One-frame camera
+    //    lag in the input direction is invisible at 60Hz.
     runsAfter: [
       STATE_MACHINE_SYSTEM_ID,
       CHARACTER_INPUT_SYSTEM_ID,
       CHARACTER_ORIENTATION_SYSTEM_ID,
       FORCE_FIELD_SYSTEM_ID,
     ],
+    runsBefore: [CAMERA_FOLLOW_SYSTEM_ID],
     execute: ({ buffer }) => {
       const ci = readBuffer(buffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID));
       const cc = readBuffer(buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
       const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       const sa = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const fa = readBuffer(buffer<ForceAccumulatorBufferData>(FORCE_ACCUMULATOR_BUFFER_ID));
+      const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
       const tiBuf = buffer<CharacterTangentInputBufferData>(CHARACTER_TANGENT_INPUT_BUFFER_ID);
 
       writeBuffer(tiBuf, (d) => {
@@ -94,10 +103,14 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
           const sample = att.sample;
           if (!sample) continue;
 
-          // Camera forward in world XZ. The negation convention matches yaw=0 → forward = -Z.
-          const sy = Math.sin(input.cameraYaw);
-          const cy = Math.cos(input.cameraYaw);
-          const FwX = -sy, FwY = 0, FwZ = -cy;
+          // Camera forward in WORLD space (post-parallel-transport, already in the
+          // gravity-up tangent plane). Reading cam.fwd directly tracks the user's
+          // visible camera; deriving from `input.cameraYaw` as a world-Y angle is
+          // wrong on curved gravity scenes (it caused the projection onto the surface
+          // tangent plane to flip sign as the player crossed certain orbital
+          // positions on a horizontal-axis cylinder).
+          const FwX = cam.fwd[0], FwY = cam.fwd[1], FwZ = cam.fwd[2];
+          void input.cameraYaw; // still on the input buffer for back-compat (minimap etc.)
 
           // Project camera forward onto the tangent plane: Ft = Fw − (Fw·N)·N. Normalize.
           const Nx = sample.normal[0], Ny = sample.normal[1], Nz = sample.normal[2];

@@ -23,6 +23,7 @@ import {
   type CharacterControllerBufferData,
 } from "../../src/buffers/characterController";
 import { CHARACTER_INPUT_BUFFER_ID, type CharacterInputBufferData, emptyInput } from "../../src/buffers/characterInput";
+import { CAMERA_BUFFER_ID, type CameraBufferData } from "../../src/buffers/camera";
 import { TRANSFORM_BUFFER_ID, type TransformBufferData } from "../../src/buffers/transform";
 import { VELOCITY_BUFFER_ID, type VelocityBufferData } from "../../src/buffers/velocity";
 import { SURFACE_ATTACHMENT_BUFFER_ID, type SurfaceAttachmentBufferData } from "../../src/buffers/surfaceAttachment";
@@ -88,13 +89,21 @@ function runScenario(opts: ScenarioOpts): CapturedFrame[] {
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });
+  const cameraYaw = opts.input.cameraYaw ?? Math.PI;
   writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
     d.byEntity.set(id, {
       ...emptyInput(0),
       moveX: opts.input.moveX ?? 0,
       moveY: opts.input.moveY ?? 0,
-      cameraYaw: opts.input.cameraYaw ?? Math.PI,
+      cameraYaw,
     });
+  });
+  // Seed CameraBuffer.fwd to match the legacy cameraYaw convention so
+  // tangentInputMapperSystem (which now reads cam.fwd directly) sees the same
+  // forward direction the test intends. `Fw = (-sin yaw, 0, -cos yaw)`.
+  writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+    d.fwd = [-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)];
+    d.up = [0, 1, 0];
   });
   writeBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID), (d) => {
     d.byEntity.set(id, {
