@@ -1,0 +1,357 @@
+{
+  "name": "cliff-runoff",
+  "buffers": {
+    "entity": {
+      "alive": {
+        "__set__": true,
+        "values": [
+          1
+        ]
+      },
+      "nextId": 2
+    },
+    "transform": {
+      "byEntity": {
+        "1": {
+          "position": [
+            -4.776610767100275e-16,
+            4.7479000000000005,
+            2.2585978242887075
+          ],
+          "scale": 1,
+          "yaw": 3.141592653589793
+        },
+        "__map__": true
+      }
+    },
+    "velocity": {
+      "byEntity": {
+        "1": {
+          "linear": [
+            -1.4695761589768238e-15,
+            -3.7605,
+            12
+          ],
+          "prevLinear": [
+            -1.4695761589768238e-15,
+            -3.597,
+            12
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "characterController": {
+      "byEntity": {
+        "1": {
+          "bodyUpCurrent": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "bodyUpWorld": [
+            0,
+            1,
+            0
+          ],
+          "lastTransitionReason": "detach: departing vN=4.25 pull=287.10 > grip 5.00",
+          "locomotionMode": "volumeConstrained",
+          "orientation": {
+            "current": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "target": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "profileId": "player",
+          "state": "airborne",
+          "targetYaw": 3.141592653589793,
+          "timeInState": 0.36666666666666664,
+          "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 66.66666666666667,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: centripetal apparent_N=12.80 (v²·κ=-22.61, aExN=-9.81) > grip 5.00",
+              "t": 2533.333333333333,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2533.333333333333,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: centripetal apparent_N=26.80 (v²·κ=-36.61, aExN=-9.81) > grip 5.00",
+              "t": 2550,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2550,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: centripetal apparent_N=40.81 (v²·κ=-50.62, aExN=-9.81) > grip 5.00",
+              "t": 2566.6666666666665,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2566.6666666666665,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=1.49 pull=138.78 > grip 5.00",
+              "t": 2583.3333333333335,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2583.3333333333335,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=3.02 pull=225.77 > grip 5.00",
+              "t": 2600,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2600,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=4.25 pull=287.10 > grip 5.00",
+              "t": 2616.6666666666665,
+              "to": "airborne"
+            }
+          ],
+          "yawVel": 0
+        },
+        "__map__": true
+      }
+    },
+    "characterInput": {
+      "byEntity": {
+        "1": {
+          "cameraYaw": 3.141592653589793,
+          "jumpHeld": false,
+          "jumpHoldSec": 0,
+          "jumpPressed": false,
+          "jumpReleased": false,
+          "moveX": 0,
+          "moveY": 1
+        },
+        "__map__": true
+      }
+    },
+    "characterTangentInput": {
+      "byEntity": {
+        "1": {
+          "forwardTangent": [
+            -1.4452877871563244e-16,
+            -0.5310544770923951,
+            0.8473376790631483
+          ],
+          "rightTangent": [
+            -1,
+            7.675265500563266e-17,
+            -1.2246467991473535e-16
+          ],
+          "vDesF": 9.04192888405528,
+          "vDesR": 0
+        },
+        "__map__": true
+      }
+    },
+    "forceAccumulator": {
+      "byEntity": {
+        "1": {
+          "accel": [
+            0,
+            0,
+            0
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "sphereBody": {
+      "byEntity": {
+        "1": {
+          "radius": 0.5
+        },
+        "__map__": true
+      }
+    },
+    "surfaceAttachment": {
+      "byEntity": {
+        "1": {
+          "offsetAlongNormal": 0.5,
+          "sample": {
+            "friction": 1,
+            "normal": [
+              0,
+              0.8473376790631483,
+              0.5310544770923951
+            ],
+            "normalInMax": 800,
+            "normalOutMax": 200,
+            "position": [
+              0,
+              5,
+              -1.6418008624395277
+            ],
+            "slopeRad": 0.5598445398458032,
+            "tangentU": [
+              1,
+              0,
+              0
+            ],
+            "tangentUNorm": 64,
+            "tangentV": [
+              0,
+              -0.5310544770923951,
+              0.8473376790631483
+            ],
+            "tangentVNorm": 75.53069051616005,
+            "traversable": true
+          },
+          "surfaceId": "terrace",
+          "uv": [
+            0.5,
+            0.4743468615243824
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "skeleton": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "footLock": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "input": {
+      "gamepadAxes": {
+        "leftX": 0,
+        "leftY": 0,
+        "rightX": 0,
+        "rightY": 0
+      },
+      "gamepadButtons": {
+        "__set__": true,
+        "values": []
+      },
+      "gamepadConnected": false,
+      "keys": {
+        "__set__": true,
+        "values": [
+          "KeyW"
+        ]
+      },
+      "mouseDx": 0,
+      "mouseDy": 0,
+      "pointerLocked": false
+    },
+    "inputMap": {
+      "actions": {
+        "jump": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
+        "toggleHud": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        }
+      },
+      "lookDelta": {
+        "pitch": 0,
+        "yaw": 0
+      },
+      "moveAxis": {
+        "x": 0,
+        "y": 1
+      }
+    },
+    "camera": {
+      "aspect": 1,
+      "far": 800,
+      "fov": 70,
+      "near": 0.1,
+      "pitch": 0,
+      "pos": [
+        2.5712700277838433e-16,
+        7.347900000000001,
+        -3.7414021757112925
+      ],
+      "yaw": 3.141592653589793
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "pendingEvents": [],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 0,
+      "state": "Running"
+    },
+    "volumeField": {
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "volumes": []
+    },
+    "events": [],
+    "timing": {
+      "stages": {},
+      "totalRebuildMs": 0,
+      "warnings": []
+    }
+  },
+  "toleranceOverrides": {}
+}

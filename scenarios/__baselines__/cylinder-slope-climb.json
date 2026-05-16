@@ -1,0 +1,357 @@
+{
+  "name": "cylinder-slope-climb",
+  "buffers": {
+    "entity": {
+      "alive": {
+        "__set__": true,
+        "values": [
+          1
+        ]
+      },
+      "nextId": 2
+    },
+    "transform": {
+      "byEntity": {
+        "1": {
+          "position": [
+            15,
+            8.373005192569627,
+            1.4197849265898321
+          ],
+          "scale": 1,
+          "yaw": 3.141592653589793
+        },
+        "__map__": true
+      }
+    },
+    "velocity": {
+      "byEntity": {
+        "1": {
+          "linear": [
+            -1.9236750762050002e-15,
+            0,
+            5.327122735227773
+          ],
+          "prevLinear": [
+            -1.9236750762050002e-15,
+            0,
+            5.327122735227773
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "characterController": {
+      "byEntity": {
+        "1": {
+          "bodyUpCurrent": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "bodyUpWorld": [
+            0,
+            1,
+            0
+          ],
+          "lastTransitionReason": "landed",
+          "locomotionMode": "surfaceConstrained",
+          "orientation": {
+            "current": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "target": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "profileId": "player",
+          "state": "surfaceRun",
+          "targetYaw": 3.141592653589793,
+          "timeInState": 0,
+          "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=0.95 pull=50.75 > grip 5.00",
+              "t": 2900,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2900,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=0.95 pull=50.70 > grip 5.00",
+              "t": 2916.6666666666665,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2916.6666666666665,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=0.95 pull=50.66 > grip 5.00",
+              "t": 2933.333333333333,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2933.333333333333,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=0.95 pull=50.62 > grip 5.00",
+              "t": 2950,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2950,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=0.95 pull=50.58 > grip 5.00",
+              "t": 2966.666666666667,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2966.666666666667,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=0.95 pull=50.54 > grip 5.00",
+              "t": 2983.3333333333335,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2983.3333333333335,
+              "to": "surfaceRun"
+            }
+          ],
+          "yawVel": 0
+        },
+        "__map__": true
+      }
+    },
+    "characterInput": {
+      "byEntity": {
+        "1": {
+          "cameraYaw": 3.141592653589793,
+          "jumpHeld": false,
+          "jumpHoldSec": 0,
+          "jumpPressed": false,
+          "jumpReleased": false,
+          "moveX": 0,
+          "moveY": 1
+        },
+        "__map__": true
+      }
+    },
+    "characterTangentInput": {
+      "byEntity": {
+        "1": {
+          "forwardTangent": [
+            -1.2444254632315863e-16,
+            -0.17758099645788494,
+            0.9841061882220966
+          ],
+          "rightTangent": [
+            -1,
+            2.2098631377823016e-17,
+            -1.2246467991473532e-16
+          ],
+          "vDesF": 8.34841391505037,
+          "vDesR": 0
+        },
+        "__map__": true
+      }
+    },
+    "forceAccumulator": {
+      "byEntity": {
+        "1": {
+          "accel": [
+            0,
+            0,
+            0
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "sphereBody": {
+      "byEntity": {
+        "1": {
+          "radius": 0.5
+        },
+        "__map__": true
+      }
+    },
+    "surfaceAttachment": {
+      "byEntity": {
+        "1": {
+          "offsetAlongNormal": 0.5,
+          "sample": {
+            "friction": 1,
+            "normal": [
+              0,
+              0.9841256490712034,
+              0.17747311582372902
+            ],
+            "normalInMax": 800,
+            "normalOutMax": 200,
+            "position": [
+              15,
+              7.873005192569627,
+              1.4197849265898321
+            ],
+            "slopeRad": 0.17841820983237924,
+            "tangentU": [
+              0,
+              -0.17747311582372902,
+              0.9841256490712034
+            ],
+            "tangentUNorm": 50.26548245743669,
+            "tangentV": [
+              1,
+              0,
+              0
+            ],
+            "tangentVNorm": 30,
+            "traversable": true
+          },
+          "surfaceId": "log-slope",
+          "uv": [
+            0.028396140032430184,
+            0.5
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "skeleton": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "footLock": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "input": {
+      "gamepadAxes": {
+        "leftX": 0,
+        "leftY": 0,
+        "rightX": 0,
+        "rightY": 0
+      },
+      "gamepadButtons": {
+        "__set__": true,
+        "values": []
+      },
+      "gamepadConnected": false,
+      "keys": {
+        "__set__": true,
+        "values": [
+          "KeyW"
+        ]
+      },
+      "mouseDx": 0,
+      "mouseDy": 0,
+      "pointerLocked": false
+    },
+    "inputMap": {
+      "actions": {
+        "jump": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
+        "toggleHud": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        }
+      },
+      "lookDelta": {
+        "pitch": 0,
+        "yaw": 0
+      },
+      "moveAxis": {
+        "x": 0,
+        "y": 1
+      }
+    },
+    "camera": {
+      "aspect": 1,
+      "far": 800,
+      "fov": 70,
+      "near": 0.1,
+      "pitch": 0,
+      "pos": [
+        15,
+        10.973005192569627,
+        -4.580215073410168
+      ],
+      "yaw": 3.141592653589793
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "pendingEvents": [],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 0,
+      "state": "Running"
+    },
+    "volumeField": {
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "volumes": []
+    },
+    "events": [],
+    "timing": {
+      "stages": {},
+      "totalRebuildMs": 0,
+      "warnings": []
+    }
+  },
+  "toleranceOverrides": {}
+}

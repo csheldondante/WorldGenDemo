@@ -1,5 +1,5 @@
 {
-  "name": "camera-look-input",
+  "name": "steep-hill-stuck",
   "buffers": {
     "entity": {
       "alive": {
@@ -14,12 +14,12 @@
       "byEntity": {
         "1": {
           "position": [
-            0,
-            0.5,
-            0
+            -0.042507428751373984,
+            7.240156528524971,
+            -5.489985878491844
           ],
           "scale": 1,
-          "yaw": 2.6465926524396193
+          "yaw": 3.141592653589793
         },
         "__map__": true
       }
@@ -28,14 +28,14 @@
       "byEntity": {
         "1": {
           "linear": [
-            0,
-            0,
-            0
+            0.3807923526274844,
+            -1.7502446528164488,
+            -0.785187164046825
           ],
           "prevLinear": [
-            0,
-            0,
-            0
+            0.3662230491125743,
+            -1.676654670597892,
+            -0.751352729853202
           ]
         },
         "__map__": true
@@ -55,7 +55,7 @@
             1,
             0
           ],
-          "lastTransitionReason": "spawn",
+          "lastTransitionReason": "grip exceeded",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
             "current": [
@@ -72,11 +72,47 @@
             ]
           },
           "profileId": "player",
-          "state": "surfaceRun",
-          "targetYaw": 2.617992653589798,
-          "timeInState": 1.9999999999999978,
-          "transitions": [],
-          "yawVel": -0.26399998938296676
+          "state": "surfaceSlide",
+          "targetYaw": 3.141592653589793,
+          "timeInState": 3.9166666666666576,
+          "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 0,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 16.666666666666668,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 33.333333333333336,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 50,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 66.66666666666667,
+              "to": "surfaceSlide"
+            }
+          ],
+          "yawVel": 0
         },
         "__map__": true
       }
@@ -84,13 +120,13 @@
     "characterInput": {
       "byEntity": {
         "1": {
-          "cameraYaw": 2.617992653589798,
+          "cameraYaw": 3.141592653589793,
           "jumpHeld": false,
           "jumpHoldSec": 0,
           "jumpPressed": false,
           "jumpReleased": false,
           "moveX": 0,
-          "moveY": 0
+          "moveY": 1
         },
         "__map__": true
       }
@@ -99,16 +135,16 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            -0.5000010603625987,
-            0,
-            0.8660247915829413
+            -0.1947459113590562,
+            0.8951149207220401,
+            0.40105275053252787
           ],
           "rightTangent": [
-            -0.8660247915829413,
-            0,
-            -0.5000010603625987
+            -0.9771410657451428,
+            -0.21259195101048847,
+            -1.1102230246251565e-16
           ],
-          "vDesF": 0,
+          "vDesF": 6.243784525543357,
           "vDesR": 0
         },
         "__map__": true
@@ -141,36 +177,36 @@
           "sample": {
             "friction": 1,
             "normal": [
-              0,
-              1,
-              0
+              -0.08501485750274797,
+              0.3923762480905116,
+              -0.9158675416992355
             ],
             "normalInMax": 800,
             "normalOutMax": 200,
             "position": [
               0,
-              0,
-              0
+              7.043968404479715,
+              -5.032052107642226
             ],
-            "slopeRad": 0,
+            "slopeRad": 1.1675827267189653,
             "tangentU": [
-              1,
-              0,
+              0.9773231380938834,
+              0.21175335592694652,
               0
             ],
-            "tangentUNorm": 50,
+            "tangentUNorm": 65.48499416970935,
             "tangentV": [
               0,
-              0,
-              -1
+              0.9191953195372587,
+              0.39380193567426386
             ],
-            "tangentVNorm": 50,
+            "tangentVNorm": 162.5182463626539,
             "traversable": true
           },
-          "surfaceId": "flat-50",
+          "surfaceId": "steepHill",
           "uv": [
             0.5,
-            0.5
+            0.4213741858180902
           ]
         },
         "__map__": true
@@ -200,11 +236,13 @@
       "gamepadConnected": false,
       "keys": {
         "__set__": true,
-        "values": []
+        "values": [
+          "KeyW"
+        ]
       },
       "mouseDx": 0,
       "mouseDy": 0,
-      "pointerLocked": true
+      "pointerLocked": false
     },
     "inputMap": {
       "actions": {
@@ -222,12 +260,12 @@
         }
       },
       "lookDelta": {
-        "pitch": -0.0022,
-        "yaw": -0.0044
+        "pitch": 0,
+        "yaw": 0
       },
       "moveAxis": {
         "x": 0,
-        "y": 0
+        "y": 1
       }
     },
     "camera": {
@@ -235,13 +273,13 @@
       "far": 800,
       "fov": 70,
       "near": 0.1,
-      "pitch": -0.2640000000000001,
+      "pitch": 0,
       "pos": [
-        2.9181107587777246,
-        3.1,
-        -5.003331389771998
+        -0.04250742875137325,
+        9.840156528524972,
+        -11.489985878491844
       ],
-      "yaw": 2.613592653589798
+      "yaw": 3.141592653589793
     },
     "stateMachine": {
       "activeGraph": "Running",

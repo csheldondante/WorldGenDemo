@@ -9,11 +9,21 @@ import type { BufferTest } from "../src/app/bufferTest";
 import { test as flatPlaneForward } from "./flat-plane-forward";
 import { test as heightmapHillTraverse } from "./heightmap-hill-traverse";
 import { test as cameraLookInput } from "./camera-look-input";
+import { test as steepHillStuck } from "./steep-hill-stuck";
+import { test as cliffRunoff } from "./cliff-runoff";
+import { test as circleRunning } from "./circle-running";
+import { test as cylinderSlopeClimb } from "./cylinder-slope-climb";
+import { test as halfpipeAxisTraverse } from "./halfpipe-axis-traverse";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
   [heightmapHillTraverse.name]: heightmapHillTraverse,
   [cameraLookInput.name]: cameraLookInput,
+  [steepHillStuck.name]: steepHillStuck,
+  [cliffRunoff.name]: cliffRunoff,
+  [circleRunning.name]: circleRunning,
+  [cylinderSlopeClimb.name]: cylinderSlopeClimb,
+  [halfpipeAxisTraverse.name]: halfpipeAxisTraverse,
 };
 
 export function getScenario(name: string): BufferTest {

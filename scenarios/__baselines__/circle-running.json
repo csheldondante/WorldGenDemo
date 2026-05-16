@@ -1,5 +1,5 @@
 {
-  "name": "camera-look-input",
+  "name": "circle-running",
   "buffers": {
     "entity": {
       "alive": {
@@ -14,12 +14,12 @@
       "byEntity": {
         "1": {
           "position": [
-            0,
+            -28.56688342112949,
             0.5,
-            0
+            28.624750007626204
           ],
           "scale": 1,
-          "yaw": 2.6465926524396193
+          "yaw": 2.356194490192346
         },
         "__map__": true
       }
@@ -28,14 +28,14 @@
       "byEntity": {
         "1": {
           "linear": [
+            -7.999999585681049,
             0,
-            0,
-            0
+            7.999999958402415
           ],
           "prevLinear": [
+            -7.999999553094166,
             0,
-            0,
-            0
+            7.999999954620817
           ]
         },
         "__map__": true
@@ -55,7 +55,7 @@
             1,
             0
           ],
-          "lastTransitionReason": "spawn",
+          "lastTransitionReason": "grip exceeded",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
             "current": [
@@ -72,11 +72,33 @@
             ]
           },
           "profileId": "player",
-          "state": "surfaceRun",
-          "targetYaw": 2.617992653589798,
-          "timeInState": 1.9999999999999978,
-          "transitions": [],
-          "yawVel": -0.26399998938296676
+          "state": "surfaceSlide",
+          "targetYaw": 2.356194490192345,
+          "timeInState": 3.949999999999991,
+          "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 0,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 16.666666666666668,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 33.333333333333336,
+              "to": "surfaceSlide"
+            }
+          ],
+          "yawVel": -1.4210854715202004e-14
         },
         "__map__": true
       }
@@ -84,13 +106,13 @@
     "characterInput": {
       "byEntity": {
         "1": {
-          "cameraYaw": 2.617992653589798,
+          "cameraYaw": 3.141592653589793,
           "jumpHeld": false,
           "jumpHoldSec": 0,
           "jumpPressed": false,
           "jumpReleased": false,
-          "moveX": 0,
-          "moveY": 0
+          "moveX": 1,
+          "moveY": 1
         },
         "__map__": true
       }
@@ -99,17 +121,17 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            -0.5000010603625987,
+            -1.2246467991473532e-16,
             0,
-            0.8660247915829413
+            1
           ],
           "rightTangent": [
-            -0.8660247915829413,
+            -1,
             0,
-            -0.5000010603625987
+            -1.2246467991473532e-16
           ],
-          "vDesF": 0,
-          "vDesR": 0
+          "vDesF": 8,
+          "vDesR": 8
         },
         "__map__": true
       }
@@ -148,9 +170,9 @@
             "normalInMax": 800,
             "normalOutMax": 200,
             "position": [
+              -28.56688342112949,
               0,
-              0,
-              0
+              28.624750007626204
             ],
             "slopeRad": 0,
             "tangentU": [
@@ -158,19 +180,19 @@
               0,
               0
             ],
-            "tangentUNorm": 50,
+            "tangentUNorm": 200,
             "tangentV": [
               0,
               0,
               -1
             ],
-            "tangentVNorm": 50,
+            "tangentVNorm": 200,
             "traversable": true
           },
-          "surfaceId": "flat-50",
+          "surfaceId": "flat-circle",
           "uv": [
-            0.5,
-            0.5
+            0.3571655828943525,
+            0.35687624996186895
           ]
         },
         "__map__": true
@@ -200,11 +222,14 @@
       "gamepadConnected": false,
       "keys": {
         "__set__": true,
-        "values": []
+        "values": [
+          "KeyD",
+          "KeyW"
+        ]
       },
       "mouseDx": 0,
       "mouseDy": 0,
-      "pointerLocked": true
+      "pointerLocked": false
     },
     "inputMap": {
       "actions": {
@@ -222,12 +247,12 @@
         }
       },
       "lookDelta": {
-        "pitch": -0.0022,
-        "yaw": -0.0044
+        "pitch": 0,
+        "yaw": 0
       },
       "moveAxis": {
-        "x": 0,
-        "y": 0
+        "x": 1,
+        "y": 1
       }
     },
     "camera": {
@@ -235,13 +260,13 @@
       "far": 800,
       "fov": 70,
       "near": 0.1,
-      "pitch": -0.2640000000000001,
+      "pitch": 0,
       "pos": [
-        2.9181107587777246,
+        -28.56688342112949,
         3.1,
-        -5.003331389771998
+        22.624750007626204
       ],
-      "yaw": 2.613592653589798
+      "yaw": 3.141592653589793
     },
     "stateMachine": {
       "activeGraph": "Running",

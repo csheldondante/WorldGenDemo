@@ -1,14 +1,13 @@
 /**
- * Test: walk forward over a heightmap hill for ~4 seconds.
+ * Test: walk into a hill steep enough to stop the player.
  *
- * 64×64 heightmap with a Gaussian hill (peak 3.5m, σ≈8m). Player spawns
- * north of the hill at uv (0.5, 0.05), holds KeyW. At cameraYaw=π, forward
- * maps to +Z which increases v. Player traverses up + over + down the back
- * side; ends at uv.v≈0.48, having crested the peak at uv.v≈0.31.
+ * 64×64 heightmap with a steep central pyramid (peak 18m, σ≈4m). The slope
+ * at mid-height exceeds slopeRunMaxRad — player walks up, hits the steep
+ * section, transitions to surfaceSlide, slides back down.
  *
- * Catches the "momentum dies on hills" regression class — any strict
- * detach/land check that fails on bumps will produce different terminal
- * vel/pos than the recorded baseline.
+ * Catches regressions in the grip/slope-too-steep detection: if the
+ * threshold drifts, the player either climbs an impossible slope (rendering
+ * is broken) or gets stuck on a normal hill.
  */
 import type { BufferTest } from "../src/app/bufferTest";
 import type { Heightmap } from "../src/map/heightmap";
@@ -16,10 +15,10 @@ import { HeightmapSurfaceProvider } from "../src/world/surfaceProvider";
 import { holdKeysGenerator, createSimulatedInputSystem } from "../src/systems/testing/simulatedInput";
 import { seedPlayerOnSurface, GAMEPLAY_OUTPUT_BUFFERS, HEADLESS_GAMEPLAY_SYSTEMS } from "./_helpers";
 
-function buildHillHeightmap(): Heightmap {
+function buildSteepHillHeightmap(): Heightmap {
   const W = 64, H = 64;
   const data = new Float32Array(W * H);
-  const peakCol = 32, peakRow = 20, peakElev = 3.5, sigma = 8.0;
+  const peakCol = 32, peakRow = 32, peakElev = 18.0, sigma = 4.0;
   for (let r = 0; r < H; r++) {
     for (let c = 0; c < W; c++) {
       const dx = c - peakCol;
@@ -31,17 +30,19 @@ function buildHillHeightmap(): Heightmap {
 }
 
 export const test: BufferTest = {
-  name: "heightmap-hill-traverse",
+  name: "steep-hill-stuck",
   description:
-    "64×64 heightmap with a Gaussian hill (peak 3.5m, σ≈8m). Player holds KeyW for 240 " +
-    "ticks (~4s) walking up + over + down. Tests momentum preservation across surface " +
-    "curvature.",
+    "64×64 heightmap with a sharp peak (18m, σ≈4m). Player holds KeyW for 240 ticks (~4s); " +
+    "expected to walk into the steep section, transition surfaceRun → surfaceSlide, slide " +
+    "back, oscillate between sliding and running. Catches grip/slope threshold drift.",
   inputSystem: createSimulatedInputSystem(holdKeysGenerator(["KeyW"])),
   input: {
     kind: "seed",
     fn: (reg) => {
-      const provider = new HeightmapSurfaceProvider("hill", buildHillHeightmap());
-      seedPlayerOnSurface(reg, provider, { uv: [0.5, 0.05] });
+      const provider = new HeightmapSurfaceProvider("steepHill", buildSteepHillHeightmap());
+      // Spawn at uv.v=0.2 (north of center). Player walks south (+Z at yaw=π)
+      // toward the peak at uv.v=0.5.
+      seedPlayerOnSurface(reg, provider, { uv: [0.5, 0.2] });
     },
   },
   steps: [
