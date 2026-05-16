@@ -80,15 +80,19 @@ describe("Virtual input system", () => {
     expect(ci.cameraYaw).toBe(Math.PI);
   });
 
-  it("pressing KeyA and KeyW together gives moveAxis = (-1, 1)", () => {
+  it("pressing KeyA and KeyW together gives a unit-length diagonal move axis", () => {
     const { reg, vi, g, id } = setup();
     vi.keys.add("KeyA");
     vi.keys.add("KeyW");
     tick(reg, g);
 
+    // Raw key contributions are (-1, 1) → magnitude √2. inputMapper
+    // normalizes vectors with |v|>1 so diagonals aren't faster than straight.
     const ci = readBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID)).byEntity.get(id)!;
-    expect(ci.moveX).toBe(-1);
-    expect(ci.moveY).toBe(1);
+    const inv = 1 / Math.SQRT2;
+    expect(ci.moveX).toBeCloseTo(-inv, 12);
+    expect(ci.moveY).toBeCloseTo(inv, 12);
+    expect(Math.hypot(ci.moveX, ci.moveY)).toBeCloseTo(1, 12);
   });
 
   it("Space press → InputMapBuffer.actions.jump.pressed=true on the press tick, then held=true after", () => {

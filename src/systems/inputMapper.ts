@@ -75,10 +75,20 @@ export function createInputMapperSystem(): SystemDescriptor {
       const prevMap = readBuffer(imBuf);
 
       // Move axis: keyboard direction + left stick (Y inverted so stick-up = forward).
+      // Per-axis clamp prevents stick + key sums exceeding unit deflection on a
+      // single axis. We then scale the *vector* to unit length when its
+      // magnitude exceeds 1 so diagonal input (W+D held → raw |v|=√2) isn't
+      // faster than straight forward. Magnitudes under 1 (partial stick
+      // deflection) are preserved.
       const keyDx = (input.keys.has("KeyD") ? 1 : 0) - (input.keys.has("KeyA") ? 1 : 0);
       const keyDy = (input.keys.has("KeyW") ? 1 : 0) - (input.keys.has("KeyS") ? 1 : 0);
-      const moveX = clamp(keyDx + input.gamepadAxes.leftX, -1, 1);
-      const moveY = clamp(keyDy + -input.gamepadAxes.leftY, -1, 1);
+      let moveX = clamp(keyDx + input.gamepadAxes.leftX, -1, 1);
+      let moveY = clamp(keyDy + -input.gamepadAxes.leftY, -1, 1);
+      const moveMag = Math.hypot(moveX, moveY);
+      if (moveMag > 1) {
+        moveX /= moveMag;
+        moveY /= moveMag;
+      }
 
       // Look delta: mouse delta (px × rad/px) + right stick (axis × rad/s × dt).
       // Negative signs match the existing "mouse right → yaw decreases" convention.
