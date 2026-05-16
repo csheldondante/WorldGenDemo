@@ -1,4 +1,3 @@
-import * as THREE from "three";
 import { readBuffer } from "../runtime/buffer";
 import type { SystemDescriptor } from "../runtime/system";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
@@ -35,7 +34,10 @@ export function createRenderSystem(): SystemDescriptor {
 
       const c = refs.threeCamera;
       c.position.set(camData.pos[0], camData.pos[1], camData.pos[2]);
-      c.quaternion.setFromEuler(new THREE.Euler(camData.pitch, camData.yaw, 0, "YXZ"));
+      // CameraBuffer.quaternion is built by cameraFollow from gravity-up + yaw + pitch.
+      // We mirror it directly instead of re-deriving from world-Y yaw/pitch so the
+      // camera follows the gravity-tangent frame on curved gravity scenes.
+      c.quaternion.set(camData.quaternion[0], camData.quaternion[1], camData.quaternion[2], camData.quaternion[3]);
       // Aspect / fov / near / far updates: only push when changed to avoid cost.
       if (c.fov !== camData.fov || c.aspect !== camData.aspect || c.near !== camData.near || c.far !== camData.far) {
         c.fov = camData.fov;

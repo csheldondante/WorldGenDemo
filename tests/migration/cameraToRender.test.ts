@@ -27,10 +27,12 @@ describe("RenderSystem (camera mirror)", () => {
       d.renderer = fakeRenderer;
       d.scene = fakeScene;
     });
+    // Quaternion mirroring world-Y yaw=π/4, pitch=0 (camera looking down (-sin π/4, 0, -cos π/4))
+    // is the y-axis rotation by half-angle: q = [0, sin(π/8), 0, cos(π/8)].
+    const halfYaw = Math.PI / 8;
     writeBuffer(cam, (d) => {
       d.pos = [10, 20, 30];
-      d.yaw = Math.PI / 4;
-      d.pitch = -0.1;
+      d.quaternion = [0, Math.sin(halfYaw), 0, Math.cos(halfYaw)];
       d.fov = 60;
       d.aspect = 16 / 9;
     });
@@ -43,10 +45,12 @@ describe("RenderSystem (camera mirror)", () => {
     expect(threeCam.position.z).toBeCloseTo(30);
     expect(threeCam.fov).toBeCloseTo(60);
     expect(threeCam.aspect).toBeCloseTo(16 / 9);
-    // Quaternion: yaw=π/4, pitch=-0.1 → camera looks toward (-sin(π/4), small, -cos(π/4))
+    // Quaternion comes through verbatim: forward (camera-local -Z) maps to
+    // (-sin(π/4), 0, -cos(π/4)) in world space.
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(threeCam.quaternion);
-    expect(fwd.x).toBeCloseTo(-Math.sin(Math.PI / 4), 1);
-    expect(fwd.z).toBeCloseTo(-Math.cos(Math.PI / 4), 1);
+    expect(fwd.x).toBeCloseTo(-Math.sin(Math.PI / 4), 5);
+    expect(fwd.y).toBeCloseTo(0, 5);
+    expect(fwd.z).toBeCloseTo(-Math.cos(Math.PI / 4), 5);
   });
 
   it("does nothing when threeCamera is null (no Three.js wired yet)", () => {
