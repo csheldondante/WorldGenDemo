@@ -11,10 +11,6 @@ import { attachBuilderListeners } from "../systems/builderInput";
 import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
 import { bootstrapApp } from "./bootstrap";
-import { createInputPlaybackSystem, type InputRecording } from "../systems/testing/inputPlayback";
-import { createSimulatedInputSystem, type SimulatedInputGenerator } from "../systems/testing/simulatedInput";
-import type { SystemDescriptor } from "../runtime/system";
-import type { ScenarioDescriptor } from "../lib/testing/scenarioHarness";
 import { SCENARIOS } from "../../scenarios/index";
 
 export interface WorldOptions {
@@ -145,9 +141,12 @@ export function startWorld(opts: WorldOptions): WorldHandle {
  * URL-routed via `?scenario=<name>` from main.ts.
  */
 export function startScenarioWorld(opts: WorldOptions, scenarioName: string): WorldHandle {
-  const scenario = SCENARIOS[scenarioName];
-  if (!scenario) {
+  const test = SCENARIOS[scenarioName];
+  if (!test) {
     throw new Error(`unknown scenario "${scenarioName}". Available: ${Object.keys(SCENARIOS).sort().join(", ")}`);
+  }
+  if (test.input.kind !== "seed") {
+    throw new Error(`scenario "${scenarioName}" uses input.kind="${test.input.kind}" which browser play mode does not yet support`);
   }
 
   const canvas = document.createElement("canvas");
@@ -155,9 +154,8 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   opts.panelEl.insertBefore(canvas, opts.panelEl.firstChild);
   const { scene, renderer } = createSceneBundle(canvas);
 
-  const inputSystem = buildScenarioInputSystem(scenario);
   const app = bootstrapApp({
-    inputSystem,
+    inputSystem: test.inputSystem,
     rendering: {
       scene,
       renderer,
@@ -168,7 +166,7 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
     },
     sceneName: null, // scenarios seed scene state directly
   });
-  scenario.seed(app.registry);
+  test.input.fn(app.registry);
   const reg = app.registry;
 
   // Resize observer (same as real world).
@@ -183,8 +181,9 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   window.addEventListener("resize", applyResize);
   new ResizeObserver(applyResize).observe(opts.panelEl);
 
-  console.log(`[scenario] ${scenario.name}: ${scenario.description}`);
-  console.log(`[scenario] inputSource=${scenario.inputSource.kind}, ticks=${scenario.durationTicks}`);
+  console.log(`[scenario] ${test.name}: ${test.description}`);
+  const totalTicks = test.steps.reduce((a, s) => a + s.ticks, 0);
+  console.log(`[scenario] steps=${test.steps.length} total-ticks=${totalTicks}`);
 
   startLoop(reg);
 
@@ -193,11 +192,3 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   };
 }
 
-function buildScenarioInputSystem(scenario: ScenarioDescriptor): SystemDescriptor {
-  const src = scenario.inputSource;
-  if (src.kind === "playback") return createInputPlaybackSystem(src.recording as InputRecording);
-  if (src.kind === "simulated") return createSimulatedInputSystem(src.generator as SimulatedInputGenerator);
-  const _exhaustive: never = src;
-  void _exhaustive;
-  throw new Error(`unknown scenario input source`);
-}

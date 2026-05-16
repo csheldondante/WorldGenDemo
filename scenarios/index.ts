@@ -1,18 +1,18 @@
 /**
- * Scenario registry. Each scenario is a TS module exporting `scenario`
- * (a `ScenarioDescriptor`). The runner imports by name through this table.
+ * Scenario registry. Each scenario is a TS module exporting `test`
+ * (a `BufferTest`). The runner imports by name through this table.
  *
- * Convention: scenario name = filename stem. Keep names kebab-case.
+ * Convention: scenario name = filename stem. Kebab-case.
  */
-import type { ScenarioDescriptor } from "../src/lib/testing/scenarioHarness";
+import type { BufferTest } from "../src/app/bufferTest";
 
-import { scenario as flatPlaneForward } from "./flat-plane-forward";
+import { test as flatPlaneForward } from "./flat-plane-forward";
 
-export const SCENARIOS: Record<string, ScenarioDescriptor> = {
+export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
 };
 
-export function getScenario(name: string): ScenarioDescriptor {
+export function getScenario(name: string): BufferTest {
   const s = SCENARIOS[name];
   if (!s) {
     const available = Object.keys(SCENARIOS).sort().join(", ");

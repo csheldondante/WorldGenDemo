@@ -1,43 +1,308 @@
 {
   "name": "flat-plane-forward",
-  "frames": 180,
-  "channels": {
-    "pos.x": {
-      "kind": "numeric",
-      "min": -0.1,
-      "max": 0.1
+  "buffers": {
+    "entity": {
+      "alive": {
+        "__set__": true,
+        "values": [
+          1
+        ]
+      },
+      "nextId": 2
     },
-    "pos.y": {
-      "kind": "numeric",
-      "min": 0.4,
-      "max": 0.6
+    "transform": {
+      "byEntity": {
+        "1": {
+          "position": [
+            0,
+            0.5,
+            20.624751411312445
+          ],
+          "scale": 1,
+          "yaw": 3.141592653589793
+        },
+        "__map__": true
+      }
     },
-    "pos.z": {
-      "kind": "numeric",
-      "min": -2.0597501411312464,
-      "max": 22.68722655244369
+    "velocity": {
+      "byEntity": {
+        "1": {
+          "linear": [
+            -9.797164965764394e-16,
+            0,
+            7.999992301931922
+          ],
+          "prevLinear": [
+            -9.79716410872672e-16,
+            0,
+            7.999991602107551
+          ]
+        },
+        "__map__": true
+      }
     },
-    "vel.x": {
-      "kind": "numeric",
-      "min": -0.10000000000000099,
-      "max": 0.09999999999999999
+    "characterController": {
+      "byEntity": {
+        "1": {
+          "bodyUpCurrent": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "bodyUpWorld": [
+            0,
+            1,
+            0
+          ],
+          "lastTransitionReason": "grip exceeded",
+          "locomotionMode": "surfaceConstrained",
+          "orientation": {
+            "current": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "target": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "profileId": "player",
+          "state": "surfaceSlide",
+          "targetYaw": 3.141592653589793,
+          "timeInState": 2.916666666666661,
+          "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 0,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 16.666666666666668,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 33.333333333333336,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 50,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 66.66666666666667,
+              "to": "surfaceSlide"
+            }
+          ],
+          "yawVel": 0
+        },
+        "__map__": true
+      }
     },
-    "vel.z": {
-      "kind": "numeric",
-      "min": -0.6364992301931922,
-      "max": 8.799991532125114
+    "characterInput": {
+      "byEntity": {
+        "1": {
+          "cameraYaw": 3.141592653589793,
+          "jumpHeld": false,
+          "jumpHoldSec": 0,
+          "jumpPressed": false,
+          "jumpReleased": false,
+          "moveX": 0,
+          "moveY": 1
+        },
+        "__map__": true
+      }
     },
-    "locomotionMode": {
-      "kind": "categorical",
-      "allowed": [
-        "surfaceConstrained"
-      ]
+    "characterTangentInput": {
+      "byEntity": {
+        "1": {
+          "forwardTangent": [
+            -1.2246467991473532e-16,
+            0,
+            1
+          ],
+          "rightTangent": [
+            -1,
+            0,
+            -1.2246467991473532e-16
+          ],
+          "vDesF": 8,
+          "vDesR": 0
+        },
+        "__map__": true
+      }
     },
-    "activeGraph": {
-      "kind": "categorical",
-      "allowed": [
-        "Running"
-      ]
+    "forceAccumulator": {
+      "byEntity": {
+        "1": {
+          "accel": [
+            0,
+            0,
+            0
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "sphereBody": {
+      "byEntity": {
+        "1": {
+          "radius": 0.5
+        },
+        "__map__": true
+      }
+    },
+    "surfaceAttachment": {
+      "byEntity": {
+        "1": {
+          "offsetAlongNormal": 0.5,
+          "sample": {
+            "friction": 1,
+            "normal": [
+              0,
+              1,
+              0
+            ],
+            "normalInMax": 800,
+            "normalOutMax": 200,
+            "position": [
+              0,
+              0,
+              20.624751411312445
+            ],
+            "slopeRad": 0,
+            "tangentU": [
+              1,
+              0,
+              0
+            ],
+            "tangentUNorm": 200,
+            "tangentV": [
+              0,
+              0,
+              -1
+            ],
+            "tangentVNorm": 200,
+            "traversable": true
+          },
+          "surfaceId": "flat",
+          "uv": [
+            0.5,
+            0.39687624294343776
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "skeleton": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "footLock": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "input": {
+      "gamepadAxes": {
+        "leftX": 0,
+        "leftY": 0,
+        "rightX": 0,
+        "rightY": 0
+      },
+      "gamepadButtons": {
+        "__set__": true,
+        "values": []
+      },
+      "gamepadConnected": false,
+      "keys": {
+        "__set__": true,
+        "values": [
+          "KeyW"
+        ]
+      },
+      "mouseDx": 0,
+      "mouseDy": 0,
+      "pointerLocked": false
+    },
+    "inputMap": {
+      "actions": {
+        "jump": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
+        "toggleHud": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        }
+      },
+      "lookDelta": {
+        "pitch": 0,
+        "yaw": 0
+      },
+      "moveAxis": {
+        "x": 0,
+        "y": 1
+      }
+    },
+    "camera": {
+      "aspect": 1,
+      "far": 800,
+      "fov": 70,
+      "near": 0.1,
+      "pitch": 0,
+      "pos": [
+        7.347880794884119e-16,
+        3.1,
+        14.624751411312445
+      ],
+      "yaw": 3.141592653589793
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "pendingEvents": [],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 0,
+      "state": "Running"
+    },
+    "volumeField": {
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "volumes": []
+    },
+    "events": [],
+    "timing": {
+      "stages": {},
+      "totalRebuildMs": 0,
+      "warnings": []
     }
-  }
+  },
+  "toleranceOverrides": {}
 }
