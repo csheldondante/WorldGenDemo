@@ -254,22 +254,75 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   setState(ctrl, "airborne", "jump pressed", now);
                 }
               } else {
-                // Air states: simple horizontal-XZ velocity targeting.
-                // Vertical comes from gravity (in the accumulator) + VelocityIntegration.
-                const sy = Math.sin(input.cameraYaw), cy = Math.cos(input.cameraYaw);
-                const fwdX = -sy, fwdZ = -cy;
-                const rightX = cy, rightZ = -sy;
-                let desiredX = input.moveX * rightX + input.moveY * fwdX;
-                let desiredZ = input.moveX * rightZ + input.moveY * fwdZ;
-                const moveLen = Math.hypot(desiredX, desiredZ);
-                if (moveLen > 0) {
-                  desiredX /= moveLen;
-                  desiredZ /= moveLen;
+                // Air states: thrust in the plane PERPENDICULAR TO GRAVITY, not world XZ.
+                // World-XZ targeting fights radial gravity volumes — the character would
+                // hammer its velocity back into the world-XZ plane each tick, cancelling
+                // gravity's horizontal component (e.g. on a horizontal-axis cylinder where
+                // gravity points -Y near the top but -X near the side, the body would
+                // never orbit). Gravity already lives in `accelEntry.accel`; build the
+                // air-thrust basis around `up = -normalize(gravity)`.
+                const gx = accelEntry.accel[0];
+                const gy = accelEntry.accel[1];
+                const gz = accelEntry.accel[2];
+                const gLen = Math.hypot(gx, gy, gz);
+                let upX = 0, upY = 1, upZ = 0;
+                if (gLen > 1e-6) {
+                  upX = -gx / gLen; upY = -gy / gLen; upZ = -gz / gLen;
                 }
-                const desiredVX = desiredX * profile.airSpeedCap;
-                const desiredVZ = desiredZ * profile.airSpeedCap;
-                v.linear[0] = approach(v.linear[0], desiredVX, profile.airAccel, dt);
-                v.linear[2] = approach(v.linear[2], desiredVZ, profile.airAccel, dt);
+
+                // Camera forward in world XZ (same convention as the surface branch).
+                const sy = Math.sin(input.cameraYaw), cy = Math.cos(input.cameraYaw);
+                let FwX = -sy, FwY = 0, FwZ = -cy;
+                // Project camera forward onto the plane perpendicular to `up`, normalize.
+                const FdotUp = FwX * upX + FwY * upY + FwZ * upZ;
+                FwX -= FdotUp * upX;
+                FwY -= FdotUp * upY;
+                FwZ -= FdotUp * upZ;
+                let FwLen = Math.hypot(FwX, FwY, FwZ);
+                if (FwLen < 1e-6) {
+                  // Degenerate: camera-fwd is parallel to up (looking straight up/down).
+                  // Pick any consistent perpendicular — fall back to world +X minus its
+                  // up-component, normalized.
+                  FwX = 1; FwY = 0; FwZ = 0;
+                  const FdotUp2 = FwX * upX + FwY * upY + FwZ * upZ;
+                  FwX -= FdotUp2 * upX; FwY -= FdotUp2 * upY; FwZ -= FdotUp2 * upZ;
+                  FwLen = Math.hypot(FwX, FwY, FwZ) || 1;
+                }
+                FwX /= FwLen; FwY /= FwLen; FwZ /= FwLen;
+                // Right = Fw × up (unit since both are unit and orthogonal).
+                const RtX = FwY * upZ - FwZ * upY;
+                const RtY = FwZ * upX - FwX * upZ;
+                const RtZ = FwX * upY - FwY * upX;
+
+                // Desired velocity vector in the air-thrust plane.
+                const desiredVX = (FwX * input.moveY + RtX * input.moveX) * profile.airSpeedCap;
+                const desiredVY = (FwY * input.moveY + RtY * input.moveX) * profile.airSpeedCap;
+                const desiredVZ = (FwZ * input.moveY + RtZ * input.moveX) * profile.airSpeedCap;
+
+                // Project current velocity onto the same plane (drop the gravity-aligned
+                // component); thrust closes the gap between projected velocity and
+                // desired, capped at airAccel. ADD to accumulator — let volumetric
+                // integrate it together with gravity.
+                const vDotUp = v.linear[0] * upX + v.linear[1] * upY + v.linear[2] * upZ;
+                const vHorizX = v.linear[0] - vDotUp * upX;
+                const vHorizY = v.linear[1] - vDotUp * upY;
+                const vHorizZ = v.linear[2] - vDotUp * upZ;
+                const dvX = desiredVX - vHorizX;
+                const dvY = desiredVY - vHorizY;
+                const dvZ = desiredVZ - vHorizZ;
+                // accel = clamp(dv/dt, airAccel). Cap the magnitude of the (3D) thrust
+                // vector, not per-axis, so diagonal thrust isn't √2 stronger than axial.
+                let aThX = dvX / dt;
+                let aThY = dvY / dt;
+                let aThZ = dvZ / dt;
+                const aThMag = Math.hypot(aThX, aThY, aThZ);
+                if (aThMag > profile.airAccel) {
+                  const s = profile.airAccel / aThMag;
+                  aThX *= s; aThY *= s; aThZ *= s;
+                }
+                accelEntry.accel[0] += aThX;
+                accelEntry.accel[1] += aThY;
+                accelEntry.accel[2] += aThZ;
               }
 
               cc.byEntity.set(id, ctrl);
@@ -312,14 +365,6 @@ function setState(
   now: number,
 ): void {
   recordTransition(ctrl, next, reason, now);
-}
-
-function approach(current: number, target: number, accelLimit: number, dt: number): number {
-  const delta = target - current;
-  const maxStep = accelLimit * dt;
-  if (delta > maxStep) return current + maxStep;
-  if (delta < -maxStep) return current - maxStep;
-  return target;
 }
 
 /**

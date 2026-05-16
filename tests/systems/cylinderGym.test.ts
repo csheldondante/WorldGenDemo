@@ -270,31 +270,42 @@ describe("Cylinder gym — convex log (axis +X, radial-toward gravity)", () => {
     expect(radial).toBeLessThan(cyl.radius + DEFAULT_PLAYER_PROFILE.bodyRadius + 0.1);
   });
 
-  it("high-speed launch off the log re-attaches: radial gravity pulls the body back to the surface", () => {
-    // NOTE: Will FAIL until Batch 3 (air controller stops zeroing radial velocity).
+  it("airborne above the log: radial gravity reels the body toward the axis", () => {
+    // Verifies Batch 3: the air controller no longer hammers world-XZ velocity to zero
+    // each tick, so radial gravity actually accelerates the body toward the axis.
     const reg = buildRegistry();
     const cyl = convexLog();
-    // Launch tangentially at v=20 along world +Z from the top. We start airborne so the air
-    // controller drives integration; with the current world-XZ thrust logic, gravity's X
-    // component (radial toward +X) gets clamped to zero each tick and the body flies off.
+    // Place the body well above the log along world +Y at spawn (UV (0, 0.5) → world
+    // (50, R+r, 0)). Lift it another ~3m so it's clear of the surface and the gravity
+    // volume's radius (=10) still contains it.
     const id = spawn(reg, {
       cyl,
       uv: [0, 0.5],
       cameraYaw: Math.PI,
       gravityVolume: convexGravity(),
-      initialVelocity: [0, 0, 20],
+      initialVelocity: [0, 0, 0],
       startAirborne: true,
     });
+    // Lift along +Y so radial offset from the axis is purely +Y (gravity points purely −Y).
+    writeBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID), (d) => {
+      const t = d.byEntity.get(id)!;
+      t.position[1] = 8; // axis at y=0; this puts the body 8m above the axis radially.
+      d.byEntity.set(id, t);
+    });
+    // Re-attach to a sample-free state — the test only cares about volumetric.
     const g = buildGraph(reg);
-    // No move input — pure ballistic plus radial gravity.
     setInput(reg, id, 0, 0, Math.PI);
 
-    let reattached = false;
-    for (let i = 0; i < 200; i++) {
-      executeGraph(g, reg, { dt: 0.01, now: i * 0.01 });
-      const ctrl = readBuffer(reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID)).byEntity.get(id)!;
-      if (ctrl.state === "surfaceRun") { reattached = true; break; }
-    }
-    expect(reattached).toBe(true);
+    const startY = readBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID)).byEntity.get(id)!.position[1];
+    // Run 0.4s of pure ballistic; expect Y to drop by ≈ 0.5·9.81·0.16 ≈ 0.78m.
+    for (let i = 0; i < 40; i++) executeGraph(g, reg, { dt: 0.01, now: i * 0.01 });
+    const endY = readBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID)).byEntity.get(id)!.position[1];
+    const endVel = readBuffer(reg.getBuffer<VelocityBufferData>(VELOCITY_BUFFER_ID)).byEntity.get(id)!.linear;
+
+    // Body fell toward the axis (radially) — Y dropped meaningfully.
+    expect(endY).toBeLessThan(startY - 0.5);
+    // Pre-Batch 3 the air controller's approach() drained vY toward 0 each tick, so this
+    // delta could never accumulate. Now vY should be clearly negative.
+    expect(endVel[1]).toBeLessThan(-2);
   });
 });
