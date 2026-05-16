@@ -274,7 +274,7 @@
       "fov": 70,
       "near": 0.1,
       "params": {
-        "distance": 6,
+        "distance": 6.539113089708726,
         "fovDefault": 70,
         "orbitResponsiveness": 10,
         "pitchCushionStiffness": 40,
@@ -283,7 +283,7 @@
         "pitchSoftMin": 0.18,
         "pivotResponsiveness": 12
       },
-      "pitch": 0,
+      "pitch": -0.4089078289509254,
       "pivot": {
         "fwd": [
           0,
@@ -292,8 +292,8 @@
         ],
         "position": [
           0,
-          0.5,
-          20.624751411312445
+          0.4999999999999999,
+          20.022531652360342
         ],
         "up": [
           0,
@@ -304,12 +304,12 @@
       "pos": [
         7.347880794884119e-16,
         3.1,
-        14.624751411312445
+        14.022531652360342
       ],
       "target": {
-        "distance": 6,
+        "distance": 6.539113089708726,
         "fov": 70,
-        "pitch": 0,
+        "pitch": 0.4089078289509254,
         "roll": 0,
         "yaw": 3.141592653589793
       },

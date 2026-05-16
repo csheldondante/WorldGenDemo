@@ -32,7 +32,7 @@ function setup() {
 }
 
 function tick(reg: ReturnType<typeof setup>["reg"], graph: ReturnType<typeof setup>["graph"]) {
-  executeGraph(graph, reg, { now: 0, dt: 1 / 60, frame: 0 });
+  executeGraph(graph, reg, { now: 0, dt: 1 / 60 });
 }
 
 function setPivot(reg: ReturnType<typeof setup>["reg"], position: [number, number, number]) {
@@ -47,61 +47,104 @@ function setLook(reg: ReturnType<typeof setup>["reg"], yaw: number, pitch: numbe
   });
 }
 
-describe("cameraOrbitSystem (Phase 1)", () => {
-  it("accumulates lookDelta into target.yaw and target.pitch", () => {
+describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
+  it("accumulates lookDelta.yaw into target.yaw; FLIPS lookDelta.pitch sign so mouse-down (negative lookDelta.pitch) lifts the camera", () => {
     const { reg, graph } = setup();
     setPivot(reg, [0, 0, 0]);
-    setLook(reg, 0.1, -0.05);
-    tick(reg, graph);
-    setLook(reg, 0.2, 0.03);
+    // Reset target.pitch so it doesn't start at the buffer default.
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.pitch = 0;
+    });
+    setLook(reg, 0.1, -0.05);  // mouseDx>0 → yaw=0.1; mouseDy>0 → lookDelta.pitch=-0.05
     tick(reg, graph);
     const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
-    expect(cam.target.yaw).toBeCloseTo(0.3, 12);
-    expect(cam.target.pitch).toBeCloseTo(-0.02, 12);
-    expect(cam.yaw).toBeCloseTo(cam.target.yaw, 12);
-    expect(cam.pitch).toBeCloseTo(cam.target.pitch, 12);
+    expect(cam.target.yaw).toBeCloseTo(0.1, 12);
+    // target.pitch = 0 - (-0.05) = +0.05 → camera lifted ABOVE pivot
+    expect(cam.target.pitch).toBeCloseTo(0.05, 12);
   });
 
-  it("clamps target pitch to ±(π/2 − 0.05) regardless of how hard the user pushes", () => {
+  it("hard-clamps target.pitch to params.pitchMin / pitchMax (Phase 2 — no cushion yet)", () => {
     const { reg, graph } = setup();
     setPivot(reg, [0, 0, 0]);
+    // Huge negative lookDelta.pitch → mouse pushed UP → target.pitch decreases.
     setLook(reg, 0, 999);
     tick(reg, graph);
-    const camUp = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
-    expect(camUp.target.pitch).toBeCloseTo(Math.PI / 2 - 0.05, 12);
-
+    let cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    expect(cam.target.pitch).toBeCloseTo(cam.params.pitchMin, 12);
+    // Huge positive lookDelta.pitch → mouse pushed DOWN → target.pitch rises.
     setLook(reg, 0, -999);
     tick(reg, graph);
-    const camDown = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
-    expect(camDown.target.pitch).toBeCloseTo(-(Math.PI / 2 - 0.05), 12);
+    cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    expect(cam.target.pitch).toBeCloseTo(cam.params.pitchMax, 12);
   });
 
-  it("at yaw=0, pitch=0: camera sits at pivot + (0, 2.6, 6) — the legacy back-and-up offset", () => {
+  it("at flat gravity (up=+Y, fwd=-Z), yaw=0 pitch=atan(2.6/6), distance=√(6²+2.6²): camera matches the legacy (0, 2.6, 6) offset", () => {
     const { reg, graph } = setup();
     setPivot(reg, [10, 0, 20]);
-    // yaw=0, pitch=0; no look delta this tick.
+    // Buffer defaults already set target.pitch = atan(2.6/6), distance = √(6²+2.6²).
     setLook(reg, 0, 0);
     tick(reg, graph);
     const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
-    // fwd at yaw=0,pitch=0 is [0,0,-1]; pos = pivot - fwd*6 + [0, 2.6, 0]
-    expect(cam.pos[0]).toBeCloseTo(10, 12);
-    expect(cam.pos[1]).toBeCloseTo(2.6, 12);
-    expect(cam.pos[2]).toBeCloseTo(26, 12);
+    expect(cam.pos[0]).toBeCloseTo(10, 9);
+    expect(cam.pos[1]).toBeCloseTo(2.6, 9);
+    expect(cam.pos[2]).toBeCloseTo(26, 9);
   });
 
-  it("at yaw=π/2, pitch=0: camera rotates 90° around pivot's vertical axis", () => {
+  it("at flat gravity with yaw=π/2: camera rotates 90° around pivot.up to +X side (matches legacy YXZ Euler convention)", () => {
     const { reg, graph } = setup();
     setPivot(reg, [0, 0, 0]);
-    // Set target.yaw=π/2 directly (rather than accumulating from lookDelta).
     writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
       d.target.yaw = Math.PI / 2;
+      d.target.pitch = 0;       // horizon-level — needs the pitch-min floor relaxed
+      d.params.distance = 6;
+      d.params.pitchMin = -1;   // disable hard floor for this strict geometry test
     });
     setLook(reg, 0, 0);
     tick(reg, graph);
     const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
-    // At yaw=π/2: fwd = [-1, 0, 0]; pos = pivot - fwd*6 + [0, 2.6, 0] = (6, 2.6, 0)
-    expect(cam.pos[0]).toBeCloseTo(6, 10);
-    expect(cam.pos[1]).toBeCloseTo(2.6, 12);
-    expect(cam.pos[2]).toBeCloseTo(0, 10);
+    expect(cam.pos[0]).toBeCloseTo(6, 9);
+    expect(cam.pos[1]).toBeCloseTo(0, 9);
+    expect(cam.pos[2]).toBeCloseTo(0, 9);
+  });
+
+  it("on a side-pivoted up (e.g. cylinder side: up=+X), camera elevates in the +X direction with positive pitch", () => {
+    const { reg, graph } = setup();
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.pivot.position = [0, 0, 0];
+      d.pivot.up = [1, 0, 0];
+      d.pivot.fwd = [0, 0, -1];   // ⊥ up, parallel-transported
+      d.target.yaw = 0;
+      d.target.pitch = Math.PI / 4;  // 45° elevation
+      d.params.distance = 6;
+    });
+    setLook(reg, 0, 0);
+    tick(reg, graph);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // pos = pivot + (-yawedFwd·cos(p) + up·sin(p))·D
+    // yawedFwd = fwd at yaw=0 = (0,0,-1); -yawedFwd = (0,0,1)
+    // up·sin(45°) = (sin45, 0, 0); cos(45°) = √2/2
+    // pos = 0 + ((0,0,√2/2) + (√2/2, 0, 0))·6 = (3√2, 0, 3√2) ≈ (4.243, 0, 4.243)
+    const expected = 6 * Math.SQRT2 / 2;
+    expect(cam.pos[0]).toBeCloseTo(expected, 9);
+    expect(cam.pos[1]).toBeCloseTo(0, 9);
+    expect(cam.pos[2]).toBeCloseTo(expected, 9);
+  });
+
+  it("derives renderer-facing yaw/pitch (YXZ Euler around world axes) from the world-space view direction", () => {
+    const { reg, graph } = setup();
+    setPivot(reg, [0, 0, 0]);
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.yaw = 0;
+      d.target.pitch = Math.atan2(2.6, 6);  // back to default
+      d.params.distance = Math.hypot(6, 2.6);
+    });
+    setLook(reg, 0, 0);
+    tick(reg, graph);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // Camera at (0, 2.6, 6) looking at origin → view direction (0, -2.6, -6)/dist.
+    // YXZ Euler: world_pitch = asin(view.y) = asin(-2.6/dist) ≈ -0.409.
+    // world_yaw = atan2(-view.x, -view.z) = atan2(0, 6/dist) = 0.
+    expect(cam.pitch).toBeCloseTo(-Math.atan2(2.6, 6), 9);
+    expect(cam.yaw).toBeCloseTo(0, 9);
   });
 });

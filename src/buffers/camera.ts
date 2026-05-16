@@ -82,16 +82,20 @@ export function createCameraBuffer(): Buffer<CameraBufferData> {
         fwd: [0, 0, -1],
       },
       target: {
-        distance: 6,
+        // Default pitch and distance picked so that on flat gravity the
+        // camera sits at the same offset the pre-refactor camera produced:
+        // (0, 2.6, 6) relative to pivot — i.e. atan(2.6/6) above horizon
+        // at horizontal distance 6m, total radius √(6² + 2.6²) ≈ 6.54.
+        distance: Math.hypot(6, 2.6),
         yaw: 0,
-        pitch: 0,
+        pitch: Math.atan2(2.6, 6),
         roll: 0,
         fov: 70,
       },
       params: {
         pivotResponsiveness: 12.0,
         orbitResponsiveness: 10.0,
-        distance: 6.0,
+        distance: Math.hypot(6, 2.6),
         pitchMin: 0.05,
         pitchSoftMin: 0.18,
         pitchCushionStiffness: 40.0,

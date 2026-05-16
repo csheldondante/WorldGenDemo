@@ -94,8 +94,9 @@ export function seedPlayerOnSurface(
     d.pitch = 0;
     // target tracks rendered state — keep them in agreement at spawn so
     // CameraOrbitSystem doesn't snap to a stale target on the first tick.
+    // target.pitch keeps the buffer default (atan(2.6/6) ≈ 0.41 above
+    // horizon — flat-gravity equivalent of the pre-refactor +2.6m height).
     d.target.yaw = cameraYaw;
-    d.target.pitch = 0;
   });
   writeBuffer(reg.getBuffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID), (d) => {
     d.heightmap = provider;
