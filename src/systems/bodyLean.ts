@@ -27,6 +27,7 @@ import {
 import { fromYaw, rotate, type Vec3, type Quat } from "../lib/math/quat";
 import { quatFromTo } from "../lib/math/ik";
 import { solveBodyUpTarget } from "../lib/math/leanSolver";
+import { pickGravity, sortVolumesByPriority } from "../lib/math/gravityVolume";
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "./surfaceConstraint";
 import { SKELETON_WORLD_SYSTEM_ID } from "./skeletonWorld";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "./chainDynamics";
@@ -88,7 +89,9 @@ export function createBodyLeanSystem(): SystemDescriptor {
       if (skel.byEntity.size === 0) return;
 
       const alpha = 1 - Math.exp(-Math.max(0, dt) * 8.0); // fallback if profile missing
-      const gravity: Vec3 = [vfield.gravity[0], vfield.gravity[1], vfield.gravity[2]];
+      // Sort volumes once per tick so pickGravity below can short-circuit on priority.
+      const sortedVolumes =
+        vfield.volumes.length > 0 ? sortVolumesByPriority(vfield.volumes) : vfield.volumes;
 
       writeBuffer(ccBuf, (cc) => {
         writeBuffer(skelBuf, (skelW) => {
@@ -103,12 +106,21 @@ export function createBodyLeanSystem(): SystemDescriptor {
             const profile = profiles.byId.get(ctrl.profileId);
             if (!profile) continue;
 
-            // Surface normal: grounded → surface sample; airborne → world up.
+            // Per-character gravity (handles radial volumes like the cylinder gyms).
+            // gravityUp = direction opposing the local gravity vector — the body's
+            // natural "up." Falls back to world +Y when gravity is effectively zero.
+            const gravityHere = pickGravity(sortedVolumes, vfield.gravity, t.position);
+            const gravity: Vec3 = [gravityHere[0], gravityHere[1], gravityHere[2]];
+            const gMag = Math.hypot(gravity[0], gravity[1], gravity[2]);
+            const gravityUp: Vec3 =
+              gMag > 1e-6 ? [-gravity[0] / gMag, -gravity[1] / gMag, -gravity[2] / gMag] : [0, 1, 0];
+
+            // Surface normal: grounded → surface sample; airborne → gravity-up.
             const att = surfaceAttach.byEntity.get(id);
             const surfaceNormal: Vec3 =
               ctrl.locomotionMode === "surfaceConstrained" && att && att.sample
                 ? [att.sample.normal[0], att.sample.normal[1], att.sample.normal[2]]
-                : [0, 1, 0];
+                : gravityUp;
 
             // a_real includes the Y component so vertical-only jumps don't
             // tip the body sideways. The solver projects to tangent plane.
@@ -129,18 +141,24 @@ export function createBodyLeanSystem(): SystemDescriptor {
                 ctrl.locomotionMode === "surfaceConstrained" ? profile.leanGravityCounterScale : 0,
             });
 
-            // Steep-slope bias: as the support surface tilts away from world
-            // up, blend bodyUp toward world up. On flat (steepness=0) the
-            // solver result is preserved; on a wall (steepness=1) the body
-            // stays vertical against gravity.
-            const steepness = Math.max(0, 1 - surfaceNormal[1]);
+            // Steep-slope bias: as the support surface tilts away from GRAVITY-up
+            // (not absolute world-Y), blend bodyUp toward gravity-up. On flat
+            // ground or wall-of-death (steepness=0, surfaceNormal aligned with
+            // gravity-up) the solver result is preserved; on a heightmap wall
+            // where gravity is still world-Y, the body stays vertical against
+            // gravity. Backward-compatible because gravityUp = world-Y when the
+            // entity sits in universal -Y gravity.
+            const dotSN_gUp = surfaceNormal[0] * gravityUp[0]
+                            + surfaceNormal[1] * gravityUp[1]
+                            + surfaceNormal[2] * gravityUp[2];
+            const steepness = Math.max(0, 1 - dotSN_gUp);
             const upBias = steepness * profile.steepSlopeWorldUpBias;
             const biasedWorldUp: Vec3 = upBias > 0
               ? vnormalizeOr([
-                  bodyUpTarget[0] * (1 - upBias),
-                  bodyUpTarget[1] * (1 - upBias) + upBias,
-                  bodyUpTarget[2] * (1 - upBias),
-                ], [0, 1, 0])
+                  bodyUpTarget[0] * (1 - upBias) + gravityUp[0] * upBias,
+                  bodyUpTarget[1] * (1 - upBias) + gravityUp[1] * upBias,
+                  bodyUpTarget[2] * (1 - upBias) + gravityUp[2] * upBias,
+                ], gravityUp)
               : bodyUpTarget;
 
             // Pelvis-local body up (entity-yaw inverse rotation).
@@ -157,6 +175,15 @@ export function createBodyLeanSystem(): SystemDescriptor {
             const responsiveness = profile.leanResponsiveness > 0 ? profile.leanResponsiveness : 8.0;
             const a = 1 - Math.exp(-Math.max(0, dt) * responsiveness);
             ctrl.bodyUpCurrent = nlerp(ctrl.bodyUpCurrent as Quat, targetLocalRot, a);
+            // Also publish the smoothed world-space up direction. Same exponential
+            // smoothing, applied to the unit vector form — downstream consumers
+            // (foot planner, foot IK, render sync) read this instead of assuming
+            // world +Y. Renormalize each tick to absorb numerical drift.
+            const bx = ctrl.bodyUpWorld[0] + (biasedWorldUp[0] - ctrl.bodyUpWorld[0]) * a;
+            const by = ctrl.bodyUpWorld[1] + (biasedWorldUp[1] - ctrl.bodyUpWorld[1]) * a;
+            const bz = ctrl.bodyUpWorld[2] + (biasedWorldUp[2] - ctrl.bodyUpWorld[2]) * a;
+            const blen = Math.hypot(bx, by, bz) || 1;
+            ctrl.bodyUpWorld = [bx / blen, by / blen, bz / blen];
 
             // Write pelvis localRot.
             const pelvisRot = comp.bones[0].localRot;

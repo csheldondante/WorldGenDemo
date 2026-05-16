@@ -96,6 +96,7 @@ function setup() {
       yawVel: 0,
       targetYaw: 0,
       bodyUpCurrent: [0, 0, 0, 1],
+      bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
     });
   });

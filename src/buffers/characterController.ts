@@ -61,6 +61,17 @@ export interface CharacterControllerComponent {
    */
   bodyUpCurrent: [number, number, number, number];
   /**
+   * Character's smoothed "up" direction in world space as a plain unit vector.
+   * Written by BodyLeanSystem each tick (after the slerp on `bodyUpCurrent`),
+   * derived from the chased body-up target. Downstream consumers — foot
+   * planner, foot IK, render sync, future camera — should consult this as
+   * the character's local up rather than assuming world +Y. On flat ground
+   * under universal -Y gravity it equals [0, 1, 0]; on radial-gravity
+   * cylinder gyms it tracks the local gravity direction.
+   * Initialized to [0, 1, 0] on spawn.
+   */
+  bodyUpWorld: [number, number, number];
+  /**
    * Reserved for the future orientation FSM (Phase C). `target` is set by state transitions
    * (e.g. surfaceRun: head=N; wallClimb: head=worldUp, face=-N; tumble: free-rotate). `current`
    * slerps toward target at orientationSlerpRate × dt. RenderSync reads `current`; the linear
