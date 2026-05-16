@@ -179,4 +179,11 @@ export const test: BufferTest = {
   output: {
     snapshot: OUTPUT_BUFFERS,
   },
+  // Render-only: heightmap wireframe at higher resolution so the hill is
+  // recognizable; axis gizmo for orientation.
+  backdrop: {
+    surfaceDebugMesh: true,
+    surfaceMeshResolution: 48,
+    axisGizmo: true,
+  },
 };

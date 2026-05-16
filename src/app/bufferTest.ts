@@ -35,6 +35,7 @@ import {
   type Flag,
   type ToleranceOverrides,
 } from "../lib/testing/bufferTreeCompare";
+import type { ScenarioBackdrop } from "./scenarioBackdrop";
 
 /** Baseline file shape — what gets written to `__baselines__/<name>.json`. */
 export interface BaselineFile {
@@ -79,6 +80,13 @@ export interface BufferTest {
     snapshot: BufferId[];
     baseline?: BaselineFile;
   };
+  /**
+   * RENDER-ONLY visual references for browser playback. Ignored by the
+   * headless `runBufferTest`. Use this to add a surface wireframe mesh, an
+   * axis gizmo, etc. — anything that makes the recording visually identifiable
+   * without affecting the test physics.
+   */
+  backdrop?: ScenarioBackdrop;
 }
 
 export interface TestResult {

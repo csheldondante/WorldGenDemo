@@ -12,6 +12,7 @@ import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
 import { bootstrapApp } from "./bootstrap";
 import { SCENARIOS } from "../../scenarios/index";
+import { applyScenarioBackdrop } from "./scenarioBackdrop";
 
 export interface WorldOptions {
   hudEl: HTMLElement;
@@ -168,6 +169,10 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   });
   test.input.fn(app.registry);
   const reg = app.registry;
+
+  // Render-only backdrop (surface wireframe, axis gizmo). Doesn't touch test
+  // physics; just gives the human something to look at during playback.
+  applyScenarioBackdrop(scene, reg, test.backdrop);
 
   // Resize observer (same as real world).
   const cam = reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID);

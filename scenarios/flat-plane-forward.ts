@@ -196,4 +196,11 @@ export const test: BufferTest = {
   output: {
     snapshot: OUTPUT_BUFFERS,
   },
+  // Render-only: surface wireframe at the plane + an axis gizmo at origin
+  // so the camera direction is visible.
+  backdrop: {
+    surfaceDebugMesh: true,
+    surfaceMeshResolution: 16,
+    axisGizmo: true,
+  },
 };

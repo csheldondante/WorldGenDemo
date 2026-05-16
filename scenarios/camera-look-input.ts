@@ -87,4 +87,9 @@ export const test: BufferTest = {
   output: {
     snapshot: OUTPUT_BUFFERS,
   },
+  // Render-only: axis gizmo at origin so the user can see camera rotation
+  // visually. No surface in this scenario by design.
+  backdrop: {
+    axisGizmo: { size: 8 },
+  },
 };
