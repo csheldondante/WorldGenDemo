@@ -4,6 +4,7 @@
  */
 
 import type { Registry } from "../runtime/registry";
+import type { SystemDescriptor } from "../runtime/system";
 import { createStateMachineSystem } from "../runtime/stateMachine";
 import { createAccumulator, createInputSystem, type InputAccumulator } from "./input";
 import { createInputMapperSystem } from "./inputMapper";
@@ -46,16 +47,37 @@ export interface CoreSystems {
   builderDom: BuilderDom;
 }
 
+export interface RegisterCoreSystemsOptions {
+  /**
+   * Optional input-system override. Pass a SystemDescriptor with id =
+   * `INPUT_SYSTEM_ID` (the canonical id) to swap the real DOM/gamepad polling
+   * for a test-time source: virtual scripted input (`src/systems/testing/virtualInput.ts`),
+   * recorded playback, simulated random-walk, etc.
+   *
+   * All downstream systems (inputMapper, characterInput, controllers) consume
+   * the same `InputBuffer`, so swapping at this seam is transparent.
+   *
+   * Defaults to the real `createInputSystem(inputAccumulator)` which polls
+   * the DOM/gamepad listeners attached via `attachInputListeners()`.
+   */
+  inputSystem?: SystemDescriptor;
+}
+
 /**
  * Register every V0 system into `reg`. Returns shared handles (e.g. the
  * input accumulator) the app shell needs to wire DOM listeners.
+ *
+ * Accepts an optional `inputSystem` override so the scenario harness can use
+ * the real graphs + buffers + systems and just swap the input source — that
+ * preserves the data-oriented architecture (tests are differentiated by which
+ * systems they enable and the data they load, not by parallel test code).
  */
-export function registerCoreSystems(reg: Registry): CoreSystems {
+export function registerCoreSystems(reg: Registry, options: RegisterCoreSystemsOptions = {}): CoreSystems {
   const inputAccumulator = createAccumulator();
   const builderAccumulator = createBuilderAccumulator();
   const builderDom = createBuilderDom();
   reg.registerSystem(createStateMachineSystem());
-  reg.registerSystem(createInputSystem(inputAccumulator));
+  reg.registerSystem(options.inputSystem ?? createInputSystem(inputAccumulator));
   reg.registerSystem(createInputMapperSystem());
   reg.registerSystem(createLoadSceneSystem());
   reg.registerSystem(createRenderSystem());

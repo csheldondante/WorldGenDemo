@@ -32,6 +32,12 @@
       "allowed": [
         "surfaceConstrained"
       ]
+    },
+    "activeGraph": {
+      "kind": "categorical",
+      "allowed": [
+        "Running"
+      ]
     }
   }
 }

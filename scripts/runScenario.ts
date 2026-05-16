@@ -1,25 +1,30 @@
 /**
- * Scenario CLI runner.
+ * Scenario CLI runner — bootstraps the REAL runtime (via `bootstrapApp`) with
+ * the scenario's chosen input source, runs `scenario.seed(reg)` to populate
+ * synthetic state, then ticks the production graph (`reg.getGraph(sm.activeGraph)`)
+ * for `durationTicks` frames, sampling channels each tick.
  *
  *   npx vite-node scripts/runScenario.ts <name>            # run + diff vs baseline
  *   npx vite-node scripts/runScenario.ts <name> --record   # record fresh baseline
- *   npx vite-node scripts/runScenario.ts <name> --json     # print captured channels
+ *   npx vite-node scripts/runScenario.ts <name> --json     # dump captured channels
  *   npx vite-node scripts/runScenario.ts --list            # list available scenarios
  *
  * Exit code 0 = no regressions, 1 = regression(s) found, 2 = harness error.
  *
- * Baselines live in `scenarios/__baselines__/<name>.json`. The first time a
- * scenario runs, the baseline file is missing — the runner prompts the user
- * to `--record` to create it, and exits non-zero (the baseline gate). After
- * a confirmed baseline exists, silent overwrites are refused unless
- * `--record --force` is passed.
+ * Baselines live in `scenarios/__baselines__/<name>.json`. A baseline is
+ * gated: re-running `--record` over an existing baseline is refused unless
+ * `--force` is also passed.
  */
 import { resolve, dirname } from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { createRegistry } from "../src/runtime/registry";
-import { runScenario, deriveBaseline } from "../src/lib/testing/scenarioHarness";
+import { bootstrapApp } from "../src/app/bootstrap";
+import { runScenarioHeadless, deriveBaseline } from "../src/lib/testing/scenarioHarness";
 import { compareRangedBaseline, formatRegressions, type RangedBaseline } from "../src/lib/testing/rangedBaseline";
 import { getScenario, SCENARIOS } from "../scenarios/index";
+import type { ScenarioDescriptor } from "../src/lib/testing/scenarioHarness";
+import { createInputPlaybackSystem, type InputRecording } from "../src/systems/testing/inputPlayback";
+import { createSimulatedInputSystem, type SimulatedInputGenerator } from "../src/systems/testing/simulatedInput";
+import type { SystemDescriptor } from "../src/runtime/system";
 
 interface CliFlags {
   name?: string;
@@ -45,13 +50,29 @@ function baselinePath(scenarioName: string): string {
   return resolve("scenarios", "__baselines__", `${scenarioName}.json`);
 }
 
+/**
+ * Translate a scenario's `inputSource` into a SystemDescriptor with the
+ * canonical `INPUT_SYSTEM_ID`. The runner passes this to `bootstrapApp` so the
+ * scenario sees the production input pipeline (mapper → characterInput →
+ * controllers) with scripted input on top.
+ */
+function buildInputSystem(scenario: ScenarioDescriptor): SystemDescriptor {
+  const src = scenario.inputSource;
+  if (src.kind === "playback") return createInputPlaybackSystem(src.recording as InputRecording);
+  if (src.kind === "simulated") return createSimulatedInputSystem(src.generator as SimulatedInputGenerator);
+  // Make TS check exhaustiveness if we add a kind without handling it.
+  const _exhaustive: never = src;
+  void _exhaustive;
+  throw new Error(`unknown scenario input source`);
+}
+
 async function main(): Promise<number> {
   const flags = parseFlags(process.argv.slice(2));
 
   if (flags.list) {
     console.log("Available scenarios:");
     for (const name of Object.keys(SCENARIOS).sort()) {
-      console.log(`  ${name}  — ${SCENARIOS[name].scenario.description}`);
+      console.log(`  ${name}  — ${SCENARIOS[name].description}`);
     }
     return 0;
   }
@@ -61,13 +82,18 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  const { scenario, applyInput } = getScenario(flags.name);
+  const scenario = getScenario(flags.name);
   console.log(`[scenario] ${scenario.name} — ${scenario.description}`);
-  console.log(`[scenario] ticks=${scenario.durationTicks} dt=${(scenario.dt ?? 1 / 60).toFixed(5)}s channels=${scenario.channels.length}`);
+  console.log(`[scenario] ticks=${scenario.durationTicks} dt=${(scenario.dt ?? 1 / 60).toFixed(5)}s channels=${scenario.channels.length} input=${scenario.inputSource.kind}`);
 
-  const reg = createRegistry();
-  const buildResult = scenario.build(reg);
-  const result = runScenario(reg, scenario, buildResult, applyInput);
+  // Bootstrap the REAL runtime with the scenario's input source. sceneName=null
+  // means no LoadRequested event — the seed function is responsible for
+  // putting the SM into the desired state (typically forcing Running) and
+  // populating synthetic buffers.
+  const inputSystem = buildInputSystem(scenario);
+  const app = bootstrapApp({ inputSystem, sceneName: null });
+  const { entityIds } = scenario.seed(app.registry);
+  const result = runScenarioHeadless(app.registry, scenario, entityIds);
 
   if (flags.json) {
     console.log(JSON.stringify(result.channels, null, 2));
@@ -75,7 +101,6 @@ async function main(): Promise<number> {
   }
 
   const path = baselinePath(scenario.name);
-
   if (flags.record) {
     if (existsSync(path) && !flags.force) {
       console.error(`[scenario] baseline already exists at ${path}. Refuse to overwrite without --force.`);
@@ -86,6 +111,7 @@ async function main(): Promise<number> {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify(baseline, null, 2) + "\n", "utf-8");
     console.log(`[scenario] recorded baseline at ${path}`);
+    console.log(`[scenario] finalSmState=${result.finalSmState}`);
     summarizeChannels(result.channels);
     return 0;
   }
@@ -100,7 +126,7 @@ async function main(): Promise<number> {
   const baseline = JSON.parse(readFileSync(path, "utf-8")) as RangedBaseline;
   const regs = compareRangedBaseline(baseline, result.channels);
   if (regs.length === 0) {
-    console.log(`[scenario] ✅ no regressions vs ${path}`);
+    console.log(`[scenario] ✅ no regressions vs ${path} (finalSmState=${result.finalSmState})`);
     return 0;
   }
   console.log(`[scenario] ❌ regressions vs ${path}`);

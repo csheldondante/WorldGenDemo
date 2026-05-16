@@ -1,177 +1,149 @@
 /**
- * Scenario harness — runs a named scenario against the real WorldGenDemo runtime
- * (synthesized scene + scripted input + execution graph), captures per-channel
- * time-series, and emits the data for baseline diff / record.
+ * Scenario harness — runs a named scenario against the REAL WorldGenDemo
+ * runtime (`bootstrapApp` from `src/app/bootstrap.ts`). Scenarios are pure
+ * data + a `seed` callback that initializes scene state; everything else
+ * (systems, graphs, scheduler, FSM) is the production architecture.
  *
- * Pattern (see `wiki/worldgen-demo-generic-systems-test-harness.md`):
+ * What "uses the real architecture" means concretely:
+ *   - `bootstrapApp({ inputSystem })` registers every core buffer and system
+ *     and builds the real Loading/Running/Rebuilding/Builder graphs. The only
+ *     swap is the input source (real DOM → playback recording or simulated
+ *     generator).
+ *   - The runner ticks `executeGraph(reg.getGraph(sm.activeGraph), reg, ...)`
+ *     each frame, identical to `startLoop`. The graph that runs is whichever
+ *     graph the state machine has chosen — same dispatch the real game uses.
+ *   - Scenarios `seed(reg)` can either (a) force the SM into a target state +
+ *     write synthetic buffers (headless gym tests) or (b) emit a real
+ *     `LoadRequested` event and let the bitmap pipeline produce the scene
+ *     (browser play mode).
  *
- *  - A scenario declares: scene-builder, scripted input timeline, channels to
- *    sample, duration. The runner ticks the graph and writes a channel sample
- *    per tick.
- *  - Output is a `Record<channelName, number[] | string[]>` matched against a
- *    `RangedBaseline` via `compareRangedBaseline` (defined in `rangedBaseline.ts`).
- *  - In `--record` mode the runner derives per-channel envelopes (numeric:
- *    min/max with a tolerance pad; categorical: union of observed values) and
- *    writes a fresh `<name>.baseline.json`.
- *
- * No DOM / GL deps — this lives in `src/lib/testing/` and runs under vite-node.
+ * Channel capture runs after each tick. Diff or record uses
+ * `rangedBaseline.ts` (numeric envelopes + categorical sets).
  */
 
 import type { Registry } from "../../runtime/registry";
-import type { ExecutionGraph } from "../../runtime/graph";
+import { readBuffer } from "../../runtime/buffer";
 import { executeGraph } from "../../runtime/scheduler";
+import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../../runtime/stateMachine";
 import {
   type RangedBaseline,
   type Channel,
 } from "./rangedBaseline";
 
 /**
- * A scripted per-tick input. The runner walks the timeline in tick order and
- * applies the most-recent values to the active InputMap / Character input each
- * tick. Omitted fields keep their previous value (sticky).
+ * Forward-declared input source shape. The concrete types `InputRecording`
+ * and `SimulatedInputGenerator` live in `src/systems/testing/*` (which
+ * `src/lib/` cannot import per layer rules). The scenario-runner script
+ * (which lives outside `src/lib/`) is responsible for converting these
+ * sources into a SystemDescriptor before calling `bootstrapApp`.
+ *
+ * Keeping the type "opaque" here means scenario files declared in
+ * `scenarios/<name>.ts` can reference `ScenarioInputSource` without
+ * dragging system internals into the lib layer.
  */
-export interface ScenarioInputEvent {
-  /** Tick at which this event takes effect (0-based). */
-  tick: number;
-  /** Move-axis values in [-1, 1]. Sticky until the next event sets them. */
-  moveAxis?: { x: number; y: number };
-  /** Look-delta to APPLY this tick (radians). NOT sticky — applies once, then resets. */
-  lookDelta?: { yaw: number; pitch: number };
-  /** Jump pressed this tick (edge). NOT sticky. */
-  jumpPressed?: boolean;
+export type ScenarioInputSource =
+  | { kind: "playback"; recording: unknown }     // InputRecording at the runner layer
+  | { kind: "simulated"; generator: unknown };   // SimulatedInputGenerator at the runner layer
+
+/** A scenario seeds the runtime and declares what to capture. */
+export interface ScenarioDescriptor {
+  name: string;
+  description: string;
+  /** Seconds-per-tick fed to the scheduler. Default 1/60. */
+  dt?: number;
+  /** Number of ticks to run AFTER the runtime is in the target state (typically Running). */
+  durationTicks: number;
+  /**
+   * Where InputBuffer gets its values from. The scenario runner translates
+   * this into a SystemDescriptor with id = INPUT_SYSTEM_ID and feeds it to
+   * `bootstrapApp` so the real input pipeline (mapper → characterInput) sees
+   * a normal-looking InputBuffer.
+   */
+  inputSource: ScenarioInputSource;
+  /**
+   * Seed the registry. Called once, immediately after `bootstrapApp` returns.
+   * Typical responsibilities:
+   *   - Force StateMachineBuffer.state = "Running" + activeGraph = "Running"
+   *     for headless gym tests (no scene-load pipeline).
+   *   - Or emit a LoadRequested event for browser play mode (real scene boot).
+   *   - Write the SurfaceProviderBuffer with a synthetic provider.
+   *   - Spawn the player entity (Transform, Velocity, CharacterController,
+   *     SurfaceAttachment, etc.).
+   *
+   * Returns an `entityIds` table so channel samplers can refer to the player
+   * by a stable name.
+   */
+  seed: (reg: Registry) => { entityIds: Record<string, number> };
+  channels: ChannelSpec[];
+  /** Envelope-widening pad used by `--record`. Defaults to 0.05 (5%). */
+  envelopePad?: number;
 }
 
-/**
- * A single channel to sample each tick. The `sample` fn reads buffers from
- * the registry and returns either a number (numeric channel) or a string
- * (categorical channel).
- */
 export interface ChannelSpec {
   name: string;
   kind: "numeric" | "categorical";
   sample: (reg: Registry, ctx: ScenarioContext) => number | string;
 }
 
-/**
- * Context handed to scene-builder + channel samplers. `entityIds` is whatever
- * the builder put there (typical: `{ player: 1 }`). `tick` is updated each
- * frame by the runner.
- */
 export interface ScenarioContext {
   entityIds: Record<string, number>;
   tick: number;
-}
-
-/** Result returned by a scenario's `build` function. */
-export interface ScenarioBuildResult {
-  graph: ExecutionGraph;
-  entityIds: Record<string, number>;
-}
-
-/**
- * A scenario is a small TS module that declares the scene + input + channels
- * to capture. Lives in `scenarios/<name>.ts`. The companion baseline lives in
- * `scenarios/__baselines__/<name>.json`.
- */
-export interface ScenarioDescriptor {
-  name: string;
-  description: string;
-  /** Seconds-per-tick fed to the scheduler. Default 1/60. */
-  dt?: number;
-  /** Total number of ticks to run. */
-  durationTicks: number;
-  /**
-   * Build the registry: register buffers + systems, seed entity state, return
-   * an execution graph + the entity-id table the channel samplers use.
-   */
-  build: (reg: Registry) => ScenarioBuildResult;
-  /** Scripted input timeline, sorted ascending by tick. */
-  input: ScenarioInputEvent[];
-  /** Channels to capture each tick. */
-  channels: ChannelSpec[];
-  /**
-   * Tolerance pad added to numeric channel envelopes during `--record`.
-   * Example: pad=0.05 → recorded min/max widened by 5% of the observed range.
-   * Defaults to 0.05.
-   */
-  envelopePad?: number;
+  activeGraph: string;
 }
 
 export interface RunResult {
-  /** Channel data captured tick-by-tick. Length of each array = durationTicks. */
   channels: Record<string, number[] | string[]>;
+  /** Final state-machine snapshot for diagnostics. */
+  finalSmState: string;
 }
 
 /**
- * Helper: apply the matching input event to the runtime buffers for this tick.
- * The scenario format is decoupled from `InputMapBuffer` / `CharacterInputBuffer`
- * — the runner translates here so scenarios stay simple.
- */
-type InputApplier = (reg: Registry, event: ScenarioInputEvent | null) => void;
-
-/**
- * Run a scenario headless. Walks the graph for `durationTicks`, applies input
- * events from the timeline, and samples each channel per tick. Returns the
- * captured channel data; caller decides whether to diff against baseline or
- * write a new baseline.
+ * Headless scenario runner. Caller has already called `bootstrapApp` with the
+ * scenario's `inputSource` translated into a SystemDescriptor — the seed
+ * callback has run and the player entity exists in the registry.
  *
- * The runner is generic — it doesn't know how to apply input. You inject an
- * `applyInput` callback that knows how to write your project's input buffers.
+ * Each tick:
+ *   1. Read `StateMachineBuffer.activeGraph` (the real dispatcher does this).
+ *   2. `executeGraph(graph, reg, { dt, now })`.
+ *   3. Sample channels.
  */
-export function runScenario(
+export function runScenarioHeadless(
   reg: Registry,
   scenario: ScenarioDescriptor,
-  buildResult: ScenarioBuildResult,
-  applyInput: InputApplier,
+  entityIds: Record<string, number>,
 ): RunResult {
   const dt = scenario.dt ?? 1 / 60;
   const channels: Record<string, number[] | string[]> = {};
   for (const ch of scenario.channels) {
     channels[ch.name] = ch.kind === "numeric" ? ([] as number[]) : ([] as string[]);
   }
-  const ctx: ScenarioContext = { entityIds: buildResult.entityIds, tick: 0 };
-
-  // Pre-compute tick-indexed events for sticky-value resolution.
-  // Sticky values (moveAxis): carry forward until next event sets them.
-  // Non-sticky values (lookDelta, jumpPressed): apply on the matching tick only.
-  const eventByTick = new Map<number, ScenarioInputEvent>();
-  for (const ev of scenario.input) eventByTick.set(ev.tick, ev);
-
-  let stickyMoveAxis = { x: 0, y: 0 };
+  const ctx: ScenarioContext = { entityIds, tick: 0, activeGraph: "" };
 
   for (let i = 0; i < scenario.durationTicks; i++) {
+    const sm = readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
+    ctx.activeGraph = sm.activeGraph;
     ctx.tick = i;
-    const event = eventByTick.get(i) ?? null;
-    if (event?.moveAxis) stickyMoveAxis = event.moveAxis;
-    // Build the per-tick "effective event" — combines sticky moveAxis with any
-    // one-shot fields from this tick's event.
-    const effective: ScenarioInputEvent = {
-      tick: i,
-      moveAxis: stickyMoveAxis,
-      lookDelta: event?.lookDelta,
-      jumpPressed: event?.jumpPressed,
-    };
-    applyInput(reg, effective);
-
-    executeGraph(buildResult.graph, reg, { dt, now: i * dt * 1000 });
-
+    const graph = reg.getGraph(sm.activeGraph);
+    executeGraph(graph, reg, { dt, now: i * dt * 1000 });
     for (const ch of scenario.channels) {
       const v = ch.sample(reg, ctx);
       if (ch.kind === "numeric") (channels[ch.name] as number[]).push(v as number);
       else (channels[ch.name] as string[]).push(v as string);
     }
   }
-  return { channels };
+  const finalSm = readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
+  return { channels, finalSmState: finalSm.state };
 }
 
 /**
- * Build a fresh RangedBaseline from captured channel data. Numeric channels
- * get [min, max] derived from the samples, widened by `envelopePad` × range
- * on each side; categorical channels get the observed set as `allowed`.
+ * Build a `RangedBaseline` from captured channel data. Numeric channels get
+ * [min, max] derived from the samples, widened by `envelopePad`; categorical
+ * channels get the observed set as `allowed`.
  *
- * The pad gives the baseline some tolerance to per-run jitter (different RNG
- * seed, slightly different scheduling). Don't make it too large — too tolerant
- * a baseline catches nothing.
+ * Widening uses two rules together — proportional × pad (catches changes that
+ * scale with the channel's dynamic range) and an absolute floor (keeps
+ * numerically-degenerate channels like vel.x ≈ 1e-15 from producing baselines
+ * future FP jitter immediately trips).
  */
 export function deriveBaseline(
   scenario: ScenarioDescriptor,
@@ -181,36 +153,20 @@ export function deriveBaseline(
   const channels: Record<string, Channel> = {};
   for (const spec of scenario.channels) {
     const data = result.channels[spec.name];
-    if (!data) {
-      throw new Error(`scenario ${scenario.name}: channel ${spec.name} produced no data`);
-    }
+    if (!data) throw new Error(`scenario ${scenario.name}: channel ${spec.name} produced no data`);
     if (spec.kind === "numeric") {
       const nums = data as number[];
       let min = Infinity, max = -Infinity;
       for (const v of nums) { if (v < min) min = v; if (v > max) max = v; }
       const range = max - min;
-      // Two widening rules. The proportional rule (range × pad) catches changes
-      // that scale with the dynamic range of the channel. The absolute floor
-      // (max(1, |peak|) × pad) keeps numerically-degenerate channels (e.g.
-      // vel.x that hovers near 1e-15 from FP round-off) from generating an
-      // impossibly tight envelope that future float jitter would trip.
       const peak = Math.max(Math.abs(min), Math.abs(max));
       const absoluteFloor = Math.max(1, peak) * pad;
       const widen = Math.max(range * pad, absoluteFloor);
-      channels[spec.name] = {
-        kind: "numeric",
-        min: min - widen,
-        max: max + widen,
-      };
+      channels[spec.name] = { kind: "numeric", min: min - widen, max: max + widen };
     } else {
       const strs = data as string[];
-      const allowed = Array.from(new Set(strs)).sort();
-      channels[spec.name] = { kind: "categorical", allowed };
+      channels[spec.name] = { kind: "categorical", allowed: Array.from(new Set(strs)).sort() };
     }
   }
-  return {
-    name: scenario.name,
-    frames: scenario.durationTicks,
-    channels,
-  };
+  return { name: scenario.name, frames: scenario.durationTicks, channels };
 }

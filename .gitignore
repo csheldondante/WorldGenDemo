@@ -18,3 +18,4 @@ Thumbs.db
 coverage/
 .cache/
 smoke-out/
+.claude/settings.local.json

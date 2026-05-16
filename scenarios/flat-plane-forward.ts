@@ -1,55 +1,65 @@
 /**
- * Scenario: character runs forward on a flat 200×200m plane at full stick for
- * 3 seconds. Surface-frame physics regression baseline — converges to
- * desiredRunSpeed and walks along the camera-forward axis without drift.
+ * Scenario: hold "forward" on a flat plane for 3 seconds. Bootstraps the
+ * REAL runtime (`bootstrapApp` with `inputSource: simulated`), seeds a
+ * synthetic plane + player, forces SM to Running, ticks the production
+ * Running graph and captures channels.
  *
- * Captures position + velocity + locomotion mode + surface UV.
+ * The only thing different from a real game session: input comes from a
+ * deterministic `holdKeysGenerator(["KeyW"])` instead of a player's keyboard.
+ * Every other system in the Running graph runs exactly as in production.
  */
 import type { ScenarioDescriptor } from "../src/lib/testing/scenarioHarness";
 import type { Registry } from "../src/runtime/registry";
-import { createRegistry } from "../src/runtime/registry";
 import { writeBuffer, readBuffer } from "../src/runtime/buffer";
-import { buildExecutionGraph } from "../src/runtime/graph";
-import { registerCoreBuffers } from "../src/buffers";
-import {
-  CHARACTER_CONTROLLER_BUFFER_ID,
-  type CharacterControllerBufferData,
-} from "../src/buffers/characterController";
-import { CHARACTER_INPUT_BUFFER_ID, type CharacterInputBufferData, emptyInput } from "../src/buffers/characterInput";
+import { CHARACTER_CONTROLLER_BUFFER_ID, type CharacterControllerBufferData } from "../src/buffers/characterController";
 import { TRANSFORM_BUFFER_ID, type TransformBufferData } from "../src/buffers/transform";
 import { VELOCITY_BUFFER_ID, type VelocityBufferData } from "../src/buffers/velocity";
 import { SURFACE_ATTACHMENT_BUFFER_ID, type SurfaceAttachmentBufferData } from "../src/buffers/surfaceAttachment";
 import { SURFACE_PROVIDER_BUFFER_ID, type SurfaceProviderBufferData } from "../src/buffers/surfaceProvider";
+import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../src/buffers/stateMachine";
+import { CAMERA_BUFFER_ID, type CameraBufferData } from "../src/buffers/camera";
+import { ENTITY_BUFFER_ID, type EntityBufferData, spawnEntity } from "../src/buffers/entity";
+import { CHARACTER_INPUT_BUFFER_ID, type CharacterInputBufferData, emptyInput } from "../src/buffers/characterInput";
+import { SPHERE_BODY_BUFFER_ID, type SphereBodyBufferData } from "../src/buffers/sphereBody";
+import { FORCE_ACCUMULATOR_BUFFER_ID, type ForceAccumulatorBufferData } from "../src/buffers/forceAccumulator";
 import { DEFAULT_PLAYER_PROFILE } from "../src/buffers/characterControllerProfile";
-import { createCharacterControllerSystem } from "../src/systems/characterController";
-import { createForceFieldSystem } from "../src/systems/forceField";
-import { createSurfaceConstrainedVelocitySystem } from "../src/systems/surfaceConstrainedVelocity";
-import { createVolumetricConstrainedVelocitySystem } from "../src/systems/volumetricConstrainedVelocity";
-import { createSurfaceConstraintSystem } from "../src/systems/surfaceConstraint";
-import { createTangentInputMapperSystem } from "../src/systems/tangentInputMapper";
 import { PlaneSurfaceProvider } from "../src/world/parametricSurfaceProvider";
-
-const PLAYER = 1;
+import { holdKeysGenerator } from "../src/systems/testing/simulatedInput";
 
 export const scenario: ScenarioDescriptor = {
   name: "flat-plane-forward",
   description:
-    "200×200m flat plane. Character spawns at the center, cameraYaw=π (forward = +Z). " +
-    "Holds moveY=1 (forward) for 180 ticks at dt=0.0167 ≈ 3 seconds. Verifies the surface-" +
-    "frame solver converges to desiredRunSpeed along Ft with no lateral drift.",
+    "200×200m flat plane. Player holds KeyW for 180 ticks (~3s at 60Hz). Drives " +
+    "the REAL Running graph via simulated input. Verifies the full input → mapper → " +
+    "controller → integrator → constraint pipeline produces convergent forward speed " +
+    "with no lateral or vertical drift.",
   dt: 1 / 60,
   durationTicks: 180,
   envelopePad: 0.1,
-  build(reg: Registry) {
-    registerCoreBuffers(reg);
-    reg.registerSystem(createForceFieldSystem());
-    reg.registerSystem(createTangentInputMapperSystem());
-    reg.registerSystem(createCharacterControllerSystem());
-    reg.registerSystem(createSurfaceConstrainedVelocitySystem());
-    reg.registerSystem(createVolumetricConstrainedVelocitySystem());
-    reg.registerSystem(createSurfaceConstraintSystem());
+  inputSource: {
+    kind: "simulated",
+    generator: holdKeysGenerator(["KeyW"]),
+  },
+  seed(reg: Registry) {
+    // Force SM to Running so the real Running graph drives every tick.
+    writeBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID), (d) => {
+      d.state = "Running";
+      d.activeGraph = "Running";
+      d.pendingEvents = [];
+      d.pendingLoad = null;
+      d.pendingRebuild = null;
+    });
 
-    // 200×200m plane centered at world origin, on the y=0 surface; tangentU=+X, tangentV=−Z.
+    // Seed camera yaw = π so KeyW (forward) projects onto +Z on the tangent
+    // plane. tangentInputMapperSystem builds Fw from cam.yaw via the real
+    // pipeline: (-sin yaw, 0, -cos yaw). At yaw=π → Fw = (0, 0, +1).
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.yaw = Math.PI;
+      d.pitch = 0;
+    });
+
+    // Synthetic 200×200m plane centered at world origin. tangentU=+X, tangentV=−Z;
+    // surface normal = +Y; uv (0.5, 0.5) → world (0, 0, 0).
     const PATCH = 200;
     const provider = new PlaneSurfaceProvider({
       id: "flat",
@@ -66,8 +76,35 @@ export const scenario: ScenarioDescriptor = {
     writeBuffer(reg.getBuffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID), (d) => {
       d.heightmap = provider;
     });
+
+    // Spawn one player entity.
+    let playerId = -1;
+    writeBuffer(reg.getBuffer<EntityBufferData>(ENTITY_BUFFER_ID), (d) => {
+      playerId = spawnEntity(d);
+    });
+
+    writeBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID), (d) => {
+      d.byEntity.set(playerId, {
+        position: [
+          sample.position[0] + sample.normal[0] * radius,
+          sample.position[1] + sample.normal[1] * radius,
+          sample.position[2] + sample.normal[2] * radius,
+        ],
+        yaw: Math.PI, // facing +Z so KeyW drives the player forward
+        scale: 1,
+      });
+    });
+    writeBuffer(reg.getBuffer<VelocityBufferData>(VELOCITY_BUFFER_ID), (d) => {
+      d.byEntity.set(playerId, { linear: [0, 0, 0], prevLinear: [0, 0, 0] });
+    });
+    writeBuffer(reg.getBuffer<SphereBodyBufferData>(SPHERE_BODY_BUFFER_ID), (d) => {
+      d.byEntity.set(playerId, { radius });
+    });
+    writeBuffer(reg.getBuffer<ForceAccumulatorBufferData>(FORCE_ACCUMULATOR_BUFFER_ID), (d) => {
+      d.byEntity.set(playerId, { accel: [0, 0, 0] });
+    });
     writeBuffer(reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID), (d) => {
-      d.byEntity.set(PLAYER, {
+      d.byEntity.set(playerId, {
         state: "surfaceRun",
         locomotionMode: "surfaceConstrained",
         profileId: DEFAULT_PLAYER_PROFILE.id,
@@ -75,31 +112,17 @@ export const scenario: ScenarioDescriptor = {
         transitions: [],
         timeInState: 0,
         yawVel: 0,
-        targetYaw: 0,
+        targetYaw: Math.PI,
         bodyUpCurrent: [0, 0, 0, 1],
         bodyUpWorld: [0, 1, 0],
         orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
       });
     });
     writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
-      d.byEntity.set(PLAYER, emptyInput(Math.PI)); // cameraYaw=π → forward=+Z
-    });
-    writeBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID), (d) => {
-      d.byEntity.set(PLAYER, {
-        position: [
-          sample.position[0] + sample.normal[0] * radius,
-          sample.position[1] + sample.normal[1] * radius,
-          sample.position[2] + sample.normal[2] * radius,
-        ],
-        yaw: 0,
-        scale: 1,
-      });
-    });
-    writeBuffer(reg.getBuffer<VelocityBufferData>(VELOCITY_BUFFER_ID), (d) => {
-      d.byEntity.set(PLAYER, { linear: [0, 0, 0], prevLinear: [0, 0, 0] });
+      d.byEntity.set(playerId, emptyInput(Math.PI));
     });
     writeBuffer(reg.getBuffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID), (d) => {
-      d.byEntity.set(PLAYER, {
+      d.byEntity.set(playerId, {
         surfaceId: provider.id,
         uv: [0.5, 0.5],
         offsetAlongNormal: radius,
@@ -107,25 +130,8 @@ export const scenario: ScenarioDescriptor = {
       });
     });
 
-    const graph = buildExecutionGraph({
-      id: "flat-plane-forward",
-      nodes: [
-        "forceFieldSystem",
-        "tangentInputMapperSystem",
-        "characterControllerSystem",
-        "surfaceConstrainedVelocitySystem",
-        "volumetricConstrainedVelocitySystem",
-        "surfaceConstraintSystem",
-      ],
-      registry: reg,
-    });
-
-    return { graph, entityIds: { player: PLAYER } };
+    return { entityIds: { player: playerId } };
   },
-  input: [
-    // Hold forward from tick 0 onward.
-    { tick: 0, moveAxis: { x: 0, y: 1 } },
-  ],
   channels: [
     { name: "pos.x", kind: "numeric", sample: (reg, ctx) =>
         readBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID)).byEntity.get(ctx.entityIds.player)!.position[0],
@@ -145,38 +151,6 @@ export const scenario: ScenarioDescriptor = {
     { name: "locomotionMode", kind: "categorical", sample: (reg, ctx) =>
         readBuffer(reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID)).byEntity.get(ctx.entityIds.player)!.locomotionMode,
     },
+    { name: "activeGraph", kind: "categorical", sample: (_reg, ctx) => ctx.activeGraph },
   ],
 };
-
-/**
- * Apply a scenario input event to the runtime input buffers. The scenario
- * format is independent of the project's input shape — this adapter knows how
- * to translate moveAxis/lookDelta/jumpPressed onto `CharacterInputBuffer`
- * (and, in future scenarios, `InputMapBuffer` for camera-look input).
- */
-export function applyScenarioInput(reg: Registry, event: {
-  tick: number;
-  moveAxis?: { x: number; y: number };
-  lookDelta?: { yaw: number; pitch: number };
-  jumpPressed?: boolean;
-} | null): void {
-  if (!event) return;
-  const ciBuf = reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID);
-  const prev = readBuffer(ciBuf).byEntity.get(PLAYER);
-  if (!prev) return;
-  writeBuffer(ciBuf, (d) => {
-    d.byEntity.set(PLAYER, {
-      ...prev,
-      moveX: event.moveAxis?.x ?? prev.moveX,
-      moveY: event.moveAxis?.y ?? prev.moveY,
-      jumpPressed: event.jumpPressed ?? false,
-      jumpReleased: false,
-      jumpHeld: event.jumpPressed ?? prev.jumpHeld,
-      jumpHoldSec: prev.jumpHoldSec,
-      cameraYaw: prev.cameraYaw,
-    });
-  });
-  // lookDelta would feed InputMapBuffer.lookDelta for camera scenarios.
-  // Not used by this scenario (no camera scrubbing); left as TODO when the
-  // first camera scenario lands.
-}
