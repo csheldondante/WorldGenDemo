@@ -5,6 +5,16 @@ import type { ExecutionGraph } from "./graph";
 export interface Registry {
   registerBuffer<T>(buf: Buffer<T>): void;
   registerSystem(sys: SystemDescriptor): void;
+  /**
+   * Replace an already-registered system descriptor with a new one for the
+   * same id. The scheduler resolves systems by id per-tick, so swapping the
+   * descriptor takes effect next tick. Caller is responsible for keeping
+   * `buffers` access + `runsAfter` ordering compatible with the
+   * already-validated graphs — otherwise hazard guarantees no longer hold.
+   * Used by the scenario harness to swap a playback/simulated inputSystem
+   * for the real DOM inputSystem when the user clicks "play."
+   */
+  replaceSystem(sys: SystemDescriptor): void;
   registerGraph(graph: ExecutionGraph): void;
   getBuffer<T>(id: BufferId): Buffer<T>;
   hasBuffer(id: BufferId): boolean;
@@ -36,6 +46,11 @@ export function createRegistry(): Registry {
       if (systems.has(sys.id)) throw new Error(`duplicate system id: ${sys.id}`);
       systems.set(sys.id, sys);
       systemOrder.push(sys.id);
+    },
+    replaceSystem(sys) {
+      if (!systems.has(sys.id)) throw new Error(`replaceSystem: ${sys.id} is not registered`);
+      systems.set(sys.id, sys);
+      // systemOrder unchanged — id stays in the same slot.
     },
     registerGraph(graph) {
       if (graphs.has(graph.id)) throw new Error(`duplicate graph id: ${graph.id}`);

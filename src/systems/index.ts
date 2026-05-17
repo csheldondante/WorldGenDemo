@@ -34,6 +34,11 @@ import { createVolumetricConstrainedVelocitySystem } from "./volumetricConstrain
 import { createSurfaceConstraintSystem } from "./surfaceConstraint";
 import { createCameraPivotSystem } from "./cameraPivot";
 import { createCameraOrbitSystem } from "./cameraOrbit";
+import {
+  createInputRecordingSystem,
+  createInputRecordingState,
+  type InputRecordingState,
+} from "./testing/inputRecording";
 import { createCharacterRenderSyncSystem } from "./characterRenderSync";
 import { createBodyLeanSystem } from "./bodyLean";
 import { createChainDynamicsSystem } from "./chainDynamics";
@@ -46,6 +51,13 @@ export interface CoreSystems {
   inputAccumulator: InputAccumulator;
   builderAccumulator: BuilderInputAccumulator;
   builderDom: BuilderDom;
+  /**
+   * State for the always-registered InputRecordingSystem. `.active` is
+   * false by default; the scenario menu's Record button flips it on,
+   * Esc/Stop flips it off. Normal play never touches it, costing zero
+   * per-tick work beyond a single flag check.
+   */
+  inputRecordingState: InputRecordingState;
 }
 
 export interface RegisterCoreSystemsOptions {
@@ -106,6 +118,9 @@ export function registerCoreSystems(reg: Registry, options: RegisterCoreSystemsO
   reg.registerSystem(createSurfaceConstraintSystem());
   reg.registerSystem(createCameraPivotSystem());
   reg.registerSystem(createCameraOrbitSystem());
+  // Always-registered input recording system; inert until state.active=true.
+  const inputRecordingState = createInputRecordingState();
+  reg.registerSystem(createInputRecordingSystem(inputRecordingState));
   reg.registerSystem(createCharacterRenderSyncSystem());
   reg.registerSystem(createBodyLeanSystem());
   reg.registerSystem(createChainDynamicsSystem());
@@ -113,7 +128,7 @@ export function registerCoreSystems(reg: Registry, options: RegisterCoreSystemsO
   reg.registerSystem(createFootIkSystem());
   reg.registerSystem(createSkeletonWorldSystem());
   reg.registerSystem(createSkeletonDebugRenderSystem());
-  return { inputAccumulator, builderAccumulator, builderDom };
+  return { inputAccumulator, builderAccumulator, builderDom, inputRecordingState };
 }
 
 export * from "./input";
@@ -143,6 +158,7 @@ export * from "./volumetricConstrainedVelocity";
 export * from "./surfaceConstraint";
 export * from "./cameraPivot";
 export * from "./cameraOrbit";
+export * from "./testing/inputRecording";
 export * from "./characterRenderSync";
 export * from "./bodyLean";
 export * from "./chainDynamics";

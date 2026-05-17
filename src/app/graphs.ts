@@ -30,6 +30,7 @@ import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/volumetric
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
 import { CAMERA_PIVOT_SYSTEM_ID } from "../systems/cameraPivot";
 import { CAMERA_ORBIT_SYSTEM_ID } from "../systems/cameraOrbit";
+import { INPUT_RECORDING_SYSTEM_ID } from "../systems/testing/inputRecording";
 import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
 import { BODY_LEAN_SYSTEM_ID } from "../systems/bodyLean";
 import { CHAIN_DYNAMICS_SYSTEM_ID } from "../systems/chainDynamics";
@@ -74,6 +75,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
       INPUT_SYSTEM_ID,
+      INPUT_RECORDING_SYSTEM_ID,
       INPUT_MAPPER_SYSTEM_ID,
       CHARACTER_INPUT_SYSTEM_ID,
       TANGENT_INPUT_MAPPER_SYSTEM_ID,

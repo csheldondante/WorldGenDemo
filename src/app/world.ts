@@ -6,8 +6,16 @@ import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers
 import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { BUILDER_BUFFER_ID, type BuilderBufferData } from "../buffers/builder";
-import { attachInputListeners } from "../systems/input";
+import {
+  attachInputListeners,
+  createAccumulator,
+  createInputSystem,
+  type InputAccumulator,
+} from "../systems/input";
 import { attachBuilderListeners } from "../systems/builderInput";
+import { resetInputRecording, type InputRecordingState } from "../systems/testing/inputRecording";
+import type { Registry } from "../runtime/registry";
+import type { SystemDescriptor } from "../runtime/system";
 import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
 import { bootstrapApp } from "./bootstrap";
@@ -80,7 +88,11 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     });
   }
 
-  // 4. Start the runtime loop.
+  // 4. Top-bar with scenario selector — visible in normal play so the user
+  // can jump straight to a scenario without manually typing the URL param.
+  attachTopMenu(opts.panelEl, { mode: "normal" });
+
+  // 5. Start the runtime loop.
   startLoop(reg);
 
   // 7. Debug snapshot.
@@ -155,6 +167,14 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   opts.panelEl.insertBefore(canvas, opts.panelEl.firstChild);
   const { scene, renderer } = createSceneBundle(canvas);
 
+  // Live DOM input accumulator. Listeners attached unconditionally so the
+  // accumulator is current whenever the user clicks "play" — at that point
+  // we just swap the registered inputSystem (via `reg.replaceSystem`) to a
+  // real-DOM inputSystem reading from this accumulator. Pointer lock is
+  // requested on canvas click by attachInputListeners.
+  const liveAccumulator = createAccumulator();
+  attachInputListeners(liveAccumulator, { pointerLockTarget: canvas });
+
   const app = bootstrapApp({
     inputSystem: test.inputSystem,
     rendering: {
@@ -169,6 +189,8 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   });
   test.input.fn(app.registry);
   const reg = app.registry;
+  const recordingState = app.coreSystems.inputRecordingState;
+  const scenarioInputSystem = test.inputSystem;
 
   // Render-only backdrop (surface wireframe, axis gizmo). Doesn't touch test
   // physics; just gives the human something to look at during playback.
@@ -190,7 +212,14 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   const totalTicks = test.steps.reduce((a, s) => a + s.ticks, 0);
   console.log(`[scenario] steps=${test.steps.length} total-ticks=${totalTicks}`);
 
-  attachScenarioMenu(opts.panelEl, test.name);
+  attachTopMenu(opts.panelEl, {
+    mode: "scenario",
+    scenarioName: test.name,
+    registry: reg,
+    liveAccumulator,
+    scenarioInputSystem,
+    recordingState,
+  });
 
   // Match startWorld's __runtimeDebug surface so debugging tools work the
   // same way in scenario mode (used by the smoke harness's state.json capture).
@@ -214,12 +243,41 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
 }
 
 /**
- * Top-of-panel banner shown in scenario playback mode: scenario name +
- * dropdown to switch to another scenario + a "play normal" link back to the
- * regular game. Lightweight DOM, fixed position so it doesn't fight the
- * Three.js canvas underneath.
+ * Top-of-panel banner shown in both normal play and scenario playback.
+ *
+ * In NORMAL play: dropdown picks a scenario; selecting one navigates to
+ * `?scenario=<name>`. No play/record buttons (input is already real).
+ *
+ * In SCENARIO playback: dropdown still works, plus three buttons:
+ *   ▶ play     — flips the input override to "real DOM" so the user
+ *                drives the player with their own keyboard + mouse.
+ *                The scenario's simulated input is paused; the user
+ *                can return to playback by reloading.
+ *   ⏺ record   — like play, plus arms the input recording system to
+ *                capture the takeover into an InputRecording. The
+ *                recording auto-stops at frameCap (default 1800 = ~30s
+ *                @ 60 Hz), or on Esc / Stop, whichever comes first.
+ *   ⏹ stop     — only shown while recording; ends + dumps JSON to
+ *                console. Esc has the same effect anywhere on the page.
+ *
+ * Lightweight DOM. Pointer-lock is requested on canvas click (already
+ * wired by attachInputListeners), so the user gets mouse-look once they
+ * click into the scene.
  */
-function attachScenarioMenu(panelEl: HTMLElement, currentName: string): void {
+interface TopMenuOptions {
+  mode: "normal" | "scenario";
+  scenarioName?: string;
+  /** Registry — used to swap the active inputSystem when the user clicks play/record. */
+  registry?: Registry;
+  /** Live DOM accumulator (always collecting). The real inputSystem reads from this. */
+  liveAccumulator?: InputAccumulator;
+  /** The scenario's original inputSystem; we swap back to it when the user "stops" without recording. */
+  scenarioInputSystem?: SystemDescriptor;
+  /** State for the always-registered InputRecordingSystem. We toggle .active and reset to start. */
+  recordingState?: InputRecordingState;
+}
+
+function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
   const bar = document.createElement("div");
   bar.style.cssText = [
     "position:absolute",
@@ -238,34 +296,158 @@ function attachScenarioMenu(panelEl: HTMLElement, currentName: string): void {
     "align-items:center",
     "pointer-events:auto",
   ].join(";");
+
   const label = document.createElement("span");
-  label.textContent = "scenario:";
+  label.textContent = opts.mode === "scenario" ? "scenario:" : "play:";
   label.style.color = "#888";
   bar.appendChild(label);
 
   const select = document.createElement("select");
   select.style.cssText = "background:#1a2030;color:#dadce0;border:1px solid #444;padding:2px 6px;font:inherit;border-radius:3px;cursor:pointer";
+  if (opts.mode === "normal") {
+    const optNormal = document.createElement("option");
+    optNormal.value = "";
+    optNormal.textContent = "(normal play)";
+    optNormal.selected = true;
+    select.appendChild(optNormal);
+  }
   for (const name of Object.keys(SCENARIOS).sort()) {
     const opt = document.createElement("option");
     opt.value = name;
     opt.textContent = name;
-    if (name === currentName) opt.selected = true;
+    if (opts.mode === "scenario" && name === opts.scenarioName) opt.selected = true;
     select.appendChild(opt);
   }
   select.addEventListener("change", () => {
     const next = new URL(location.href);
-    next.searchParams.set("scenario", select.value);
+    if (select.value === "") next.searchParams.delete("scenario");
+    else next.searchParams.set("scenario", select.value);
     location.href = next.toString();
   });
   bar.appendChild(select);
 
-  const playNormal = document.createElement("a");
-  playNormal.href = location.pathname; // strips ?scenario=...
-  playNormal.textContent = "← play normal";
-  playNormal.style.cssText = "color:#7ab; text-decoration:none";
-  playNormal.addEventListener("mouseenter", () => { playNormal.style.textDecoration = "underline"; });
-  playNormal.addEventListener("mouseleave", () => { playNormal.style.textDecoration = "none"; });
-  bar.appendChild(playNormal);
+  if (opts.mode === "scenario") {
+    const playNormal = document.createElement("a");
+    playNormal.href = location.pathname;
+    playNormal.textContent = "← play normal";
+    playNormal.style.cssText = "color:#7ab; text-decoration:none";
+    playNormal.addEventListener("mouseenter", () => { playNormal.style.textDecoration = "underline"; });
+    playNormal.addEventListener("mouseleave", () => { playNormal.style.textDecoration = "none"; });
+    bar.appendChild(playNormal);
+  }
+
+  if (
+    opts.mode === "scenario" &&
+    opts.registry && opts.liveAccumulator && opts.recordingState && opts.scenarioInputSystem
+  ) {
+    const sep = document.createElement("span");
+    sep.textContent = "│";
+    sep.style.color = "#444";
+    bar.appendChild(sep);
+
+    const status = document.createElement("span");
+    status.textContent = "▶ playback";
+    status.style.color = "#9b9";
+    bar.appendChild(status);
+
+    function makeBtn(text: string, bg: string): HTMLButtonElement {
+      const b = document.createElement("button");
+      b.textContent = text;
+      b.style.cssText = `background:${bg};color:#fff;border:1px solid #444;padding:2px 8px;font:inherit;border-radius:3px;cursor:pointer`;
+      return b;
+    }
+    const playBtn = makeBtn("▶ play", "#2a4");
+    const recBtn = makeBtn("⏺ record", "#a33");
+    const stopBtn = makeBtn("⏹ stop", "#666");
+    stopBtn.style.display = "none";
+    bar.appendChild(playBtn);
+    bar.appendChild(recBtn);
+    bar.appendChild(stopBtn);
+
+    const reg = opts.registry;
+    const liveAcc = opts.liveAccumulator;
+    const recording = opts.recordingState;
+    const scenarioInput = opts.scenarioInputSystem;
+    // The live inputSystem is constructed once and reused across swaps.
+    const liveInput = createInputSystem(liveAcc);
+    let currentMode: "playback" | "live" = "playback";
+
+    function setStatus(text: string, color: string): void {
+      status.textContent = text;
+      status.style.color = color;
+    }
+    function swapToLive(): void {
+      if (currentMode === "live") return;
+      reg.replaceSystem(liveInput);
+      currentMode = "live";
+    }
+    function swapToPlayback(): void {
+      if (currentMode === "playback") return;
+      reg.replaceSystem(scenarioInput);
+      currentMode = "playback";
+    }
+
+    function startFreePlay(): void {
+      swapToLive();
+      setStatus("● live input", "#fa3");
+      playBtn.style.display = "none";
+      recBtn.style.display = "none";
+      stopBtn.style.display = "";
+      stopBtn.textContent = "⏹ back to playback";
+    }
+    function startRecording(): void {
+      swapToLive();
+      resetInputRecording(recording);
+      recording.active = true;
+      setStatus(`⏺ recording 0/${recording.frameCap}`, "#f44");
+      playBtn.style.display = "none";
+      recBtn.style.display = "none";
+      stopBtn.style.display = "";
+      stopBtn.textContent = "⏹ stop + dump";
+    }
+    function stop(): void {
+      const wasRecording = recording.active;
+      recording.active = false;
+      swapToPlayback();
+      if (wasRecording) {
+        const blob = JSON.stringify(recording.recording, null, 2);
+        // eslint-disable-next-line no-console
+        console.log(`[record] scenario=${opts.scenarioName} frames=${recording.cursor}/${recording.frameCap} events=${recording.recording.events.length}`);
+        // eslint-disable-next-line no-console
+        console.log(blob);
+        setStatus(`saved ${recording.cursor}f → console`, "#9d9");
+      } else {
+        setStatus("▶ playback", "#9b9");
+      }
+      playBtn.style.display = "";
+      recBtn.style.display = "";
+      stopBtn.style.display = "none";
+    }
+
+    playBtn.addEventListener("click", startFreePlay);
+    recBtn.addEventListener("click", startRecording);
+    stopBtn.addEventListener("click", stop);
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Escape" && (currentMode === "live" || recording.active)) {
+        e.preventDefault();
+        stop();
+      }
+    });
+
+    // Live status: update the frame counter while recording. rAF-driven so
+    // it doesn't add per-tick work to the runtime loop.
+    function tickStatus() {
+      if (recording.active) {
+        setStatus(`⏺ recording ${recording.cursor}/${recording.frameCap}`, "#f44");
+        if (recording.cursor >= recording.frameCap) {
+          // Recording system auto-stopped at cap; mirror UI + swap back.
+          stop();
+        }
+      }
+      requestAnimationFrame(tickStatus);
+    }
+    requestAnimationFrame(tickStatus);
+  }
 
   panelEl.appendChild(bar);
 }
