@@ -12,6 +12,10 @@ import {
   CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
   type CharacterControllerProfileBufferData,
 } from "../buffers/characterControllerProfile";
+import {
+  SURFACE_ATTACHMENT_BUFFER_ID,
+  type SurfaceAttachmentBufferData,
+} from "../buffers/surfaceAttachment";
 import { CHARACTER_INPUT_SYSTEM_ID } from "./characterInput";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { FORCE_FIELD_SYSTEM_ID } from "./forceField";
@@ -60,6 +64,7 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
       { id: INPUT_MAP_BUFFER_ID, access: "read" },
       { id: CAMERA_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
+      { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "readwrite" },
       { id: TRANSFORM_BUFFER_ID, access: "readwrite" },
     ],
@@ -69,6 +74,7 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
       const im = readBuffer(buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID));
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
       const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
+      const sa = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const ccBuf = buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
       const tBuf = buffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
 
@@ -79,6 +85,12 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
         Math.abs(im.lookDelta.yaw) > LOOK_INPUT_EPSILON ||
         Math.abs(im.lookDelta.pitch) > LOOK_INPUT_EPSILON;
 
+      // Camera-forward in world XZ (same convention as tangentInputMapper).
+      const cyaw = cam.yaw;
+      const camFwX = -Math.sin(cyaw);
+      const camFwY = 0;
+      const camFwZ = -Math.cos(cyaw);
+
       writeBuffer(ccBuf, (cc) => {
         writeBuffer(tBuf, (transforms) => {
           for (const [id, ctrl] of cc.byEntity) {
@@ -87,13 +99,67 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
             const t = transforms.byEntity.get(id);
             if (!t) continue;
 
-            // Two-tier latch: movement aims body; look-input fills the
-            // standing-still case so the player can turn to look at things
-            // without walking. Idle player + idle camera → body holds.
-            if (moveMagSq > 0.01) {
-              ctrl.targetYaw = cam.yaw - Math.atan2(moveX, moveY);
-            } else if (lookActive) {
-              ctrl.targetYaw = cam.yaw;
+            // Surface normal at this entity's puck position. Falls back to
+            // world +Y if airborne — on flat-Y gravity the projection below
+            // is a no-op and the math reduces to the legacy `cam.yaw -
+            // atan2(moveX, moveY)` form.
+            const att = sa.byEntity.get(id);
+            let Nx = 0, Ny = 1, Nz = 0;
+            if (att && att.sample) {
+              Nx = att.sample.normal[0];
+              Ny = att.sample.normal[1];
+              Nz = att.sample.normal[2];
+            }
+
+            // Project camera-forward onto the tangent plane perpendicular to N.
+            // Same math as tangentInputMapper.ts:97-114 — keeps the body's
+            // yaw frame consistent with where the controller is pushing the
+            // puck, instead of using world-Y yaw on a sphere/cylinder where
+            // it's meaningless.
+            const FdotN = camFwX * Nx + camFwY * Ny + camFwZ * Nz;
+            let FtX = camFwX - FdotN * Nx;
+            let FtY = camFwY - FdotN * Ny;
+            let FtZ = camFwZ - FdotN * Nz;
+            const FtLen = Math.hypot(FtX, FtY, FtZ);
+            if (FtLen < 1e-6) {
+              // Camera looking straight along the surface normal — no
+              // well-defined tangent forward. Hold previous targetYaw.
+            } else {
+              FtX /= FtLen; FtY /= FtLen; FtZ /= FtLen;
+              // Right-tangent = Ft × N (right-handed; matches tangentInputMapper).
+              // Only x and z components feed the world-Y Euler conversion below;
+              // y is computed for completeness but discarded.
+              const RtX = FtY * Nz - FtZ * Ny;
+              const RtZ = FtX * Ny - FtY * Nx;
+
+              // Desired tangent facing: rotate Ft toward Rt by the input angle.
+              // atan2(moveX, moveY) = 0 for pure forward, π/2 for pure right.
+              // If no move input but look is active, face Ft directly (α=0).
+              let useTangent = false;
+              let alpha = 0;
+              if (moveMagSq > 0.01) {
+                useTangent = true;
+                alpha = Math.atan2(moveX, moveY);
+              } else if (lookActive) {
+                useTangent = true;
+                alpha = 0;
+              }
+              if (useTangent) {
+                const ca = Math.cos(alpha);
+                const sina = Math.sin(alpha);
+                const dFx = FtX * ca + RtX * sina;
+                const dFz = FtZ * ca + RtZ * sina;
+                const xzMag = Math.hypot(dFx, dFz);
+                if (xzMag > 1e-6) {
+                  // R_Y(yaw)·(0,0,-1) = (-sin(yaw), 0, -cos(yaw)). Match dFwd's
+                  // XZ components: sin(yaw) = -dFx, cos(yaw) = -dFz.
+                  ctrl.targetYaw = Math.atan2(-dFx, -dFz);
+                }
+                // else: desired facing is nearly parallel to world-Y (e.g.
+                // facing straight up on a horizontal wall). Hold previous
+                // targetYaw rather than emit noisy spin — analogous to the
+                // camera's gimbal-lock guard.
+              }
             }
 
             const offset = wrapPi(ctrl.targetYaw - t.yaw);

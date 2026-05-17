@@ -27,6 +27,7 @@ import {
   createCharacterControllerProfileBuffer,
   DEFAULT_PLAYER_PROFILE,
 } from "../../src/buffers/characterControllerProfile";
+import { createSurfaceAttachmentBuffer } from "../../src/buffers/surfaceAttachment";
 import {
   createCharacterOrientationSystem,
   CHARACTER_ORIENTATION_SYSTEM_ID,
@@ -39,6 +40,11 @@ function setup() {
   reg.registerBuffer(createTransformBuffer());
   reg.registerBuffer(createCharacterControllerBuffer());
   reg.registerBuffer(createCharacterControllerProfileBuffer());
+  // SurfaceAttachmentBuffer is read by characterOrientation to project camera
+  // yaw onto the surface tangent plane. With no entry seeded for entity 1,
+  // the system falls back to N = +Y, reducing to the legacy flat-Y math —
+  // exactly what these tests pin.
+  reg.registerBuffer(createSurfaceAttachmentBuffer());
   reg.registerSystem(createCharacterOrientationSystem());
 
   const cc = reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);

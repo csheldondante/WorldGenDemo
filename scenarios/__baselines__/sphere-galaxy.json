@@ -19,7 +19,7 @@
             16.187727051070446
           ],
           "scale": 1,
-          "yaw": 0.6598900624368095
+          "yaw": 0.9602305568689868
         },
         "__map__": true
       }
@@ -73,7 +73,7 @@
           },
           "profileId": "player",
           "state": "surfaceSlide",
-          "targetYaw": 0.6165567285614926,
+          "targetYaw": 0.9168972235356523,
           "timeInState": 5.916666666666651,
           "transitions": [
             {
@@ -112,7 +112,7 @@
               "to": "surfaceSlide"
             }
           ],
-          "yawVel": -0.40000000500292554
+          "yawVel": -0.400000000000011
         },
         "__map__": true
       }
