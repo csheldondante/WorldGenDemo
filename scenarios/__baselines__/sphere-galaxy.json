@@ -1,0 +1,365 @@
+{
+  "name": "sphere-galaxy",
+  "buffers": {
+    "entity": {
+      "alive": {
+        "__set__": true,
+        "values": [
+          1
+        ]
+      },
+      "nextId": 2
+    },
+    "transform": {
+      "byEntity": {
+        "1": {
+          "position": [
+            -12.578056007191341,
+            0,
+            16.187727051070446
+          ],
+          "scale": 1,
+          "yaw": 0.6598900624368095
+        },
+        "__map__": true
+      }
+    },
+    "velocity": {
+      "byEntity": {
+        "1": {
+          "linear": [
+            -6.3173021683199835,
+            0,
+            -4.908618747820167
+          ],
+          "prevLinear": [
+            -6.349885666932382,
+            0,
+            -4.866394631983598
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "characterController": {
+      "byEntity": {
+        "1": {
+          "bodyUpCurrent": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "bodyUpWorld": [
+            0,
+            1,
+            0
+          ],
+          "lastTransitionReason": "grip exceeded",
+          "locomotionMode": "surfaceConstrained",
+          "orientation": {
+            "current": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "target": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "profileId": "player",
+          "state": "surfaceSlide",
+          "targetYaw": 0.6165567285614926,
+          "timeInState": 5.916666666666651,
+          "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 0,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 16.666666666666668,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 33.333333333333336,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.00",
+              "t": 50,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 66.66666666666667,
+              "to": "surfaceSlide"
+            }
+          ],
+          "yawVel": -0.40000000500292554
+        },
+        "__map__": true
+      }
+    },
+    "characterInput": {
+      "byEntity": {
+        "1": {
+          "cameraYaw": 0.6165567285614926,
+          "jumpHeld": false,
+          "jumpHoldSec": 0,
+          "jumpPressed": false,
+          "jumpReleased": false,
+          "moveX": 0,
+          "moveY": 1
+        },
+        "__map__": true
+      }
+    },
+    "characterTangentInput": {
+      "byEntity": {
+        "1": {
+          "forwardTangent": [
+            -0.7937180688152384,
+            0,
+            -0.6082858104840261
+          ],
+          "rightTangent": [
+            0,
+            1,
+            0
+          ],
+          "vDesF": 8,
+          "vDesR": 0
+        },
+        "__map__": true
+      }
+    },
+    "forceAccumulator": {
+      "byEntity": {
+        "1": {
+          "accel": [
+            0,
+            0,
+            0
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "sphereBody": {
+      "byEntity": {
+        "1": {
+          "radius": 0.5
+        },
+        "__map__": true
+      }
+    },
+    "surfaceAttachment": {
+      "byEntity": {
+        "1": {
+          "offsetAlongNormal": 0.5,
+          "sample": {
+            "friction": 1,
+            "normal": [
+              -0.6135637076678703,
+              0,
+              0.7896452220034363
+            ],
+            "normalInMax": 800,
+            "normalOutMax": 200,
+            "position": [
+              -12.271274153357405,
+              0,
+              15.792904440068726
+            ],
+            "slopeRad": 1.5707963267948966,
+            "tangentU": [
+              -0.7896452220034363,
+              0,
+              -0.6135637076678703
+            ],
+            "tangentUNorm": 125.66370614359172,
+            "tangentV": [
+              0,
+              1,
+              0
+            ],
+            "tangentVNorm": 62.83185307179586,
+            "traversable": true
+          },
+          "surfaceId": "planetoid",
+          "uv": [
+            0.35513230752101244,
+            0.5
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "skeleton": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "footLock": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "input": {
+      "gamepadAxes": {
+        "leftX": 0,
+        "leftY": 0,
+        "rightX": 0,
+        "rightY": 0
+      },
+      "gamepadButtons": {
+        "__set__": true,
+        "values": []
+      },
+      "gamepadConnected": false,
+      "keys": {
+        "__set__": true,
+        "values": [
+          "KeyW"
+        ]
+      },
+      "mouseDx": 0,
+      "mouseDy": 0,
+      "pointerLocked": false
+    },
+    "inputMap": {
+      "actions": {
+        "jump": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
+        "toggleHud": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        }
+      },
+      "lookDelta": {
+        "pitch": 0,
+        "yaw": 0
+      },
+      "moveAxis": {
+        "x": 0,
+        "y": 1
+      }
+    },
+    "camera": {
+      "aspect": 1,
+      "far": 800,
+      "fov": 70,
+      "near": 0.1,
+      "params": {
+        "distance": 6.539113089708726,
+        "fovDefault": 70,
+        "orbitResponsiveness": 10,
+        "pitchCushionStiffness": 40,
+        "pitchMax": 1.5207963267948965,
+        "pitchMin": 0.05,
+        "pitchSoftMin": 0.18,
+        "pivotResponsiveness": 12
+      },
+      "pitch": -0.002946916265014703,
+      "pivot": {
+        "fwd": [
+          0.8077569795408547,
+          0.0035513127178524694,
+          0.5895049195562452
+        ],
+        "position": [
+          -12.078516945286749,
+          0,
+          16.549759933670884
+        ],
+        "up": [
+          -0.5895086369569703,
+          1.0367244898959695e-31,
+          0.8077620732326661
+        ]
+      },
+      "pos": [
+        -7.937531189873642,
+        0.02130526580010912,
+        22.47599212275943
+      ],
+      "target": {
+        "distance": 6.539113089708726,
+        "fov": 70,
+        "pitch": 0.4089078289509254,
+        "roll": 0,
+        "yaw": 3.141592653589793
+      },
+      "yaw": 0.6098900618114163
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "pendingEvents": [],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 0,
+      "state": "Running"
+    },
+    "volumeField": {
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "volumes": [
+        {
+          "field": {
+            "center": [
+              0,
+              0,
+              0
+            ],
+            "direction": "toward",
+            "magnitude": 9.81,
+            "type": "point"
+          },
+          "priority": 1,
+          "shape": {
+            "center": [
+              0,
+              0,
+              0
+            ],
+            "radius": 40,
+            "type": "sphere"
+          }
+        }
+      ]
+    },
+    "events": [],
+    "timing": {
+      "stages": {},
+      "totalRebuildMs": 0,
+      "warnings": []
+    }
+  },
+  "toleranceOverrides": {}
+}

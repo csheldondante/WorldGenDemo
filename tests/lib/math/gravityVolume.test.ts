@@ -108,6 +108,80 @@ describe("evaluateGravityField", () => {
     expect(g[1]).toBeCloseTo(-6, 9);
     expect(g[2]).toBeCloseTo(0, 9);
   });
+
+  it("point toward: gravity vector points from query toward centre (Mario-Galaxy sphere)", () => {
+    const f: GravityField = {
+      type: "point",
+      center: [0, 0, 0],
+      direction: "toward",
+      magnitude: 10,
+    };
+    // Query at (3, 0, 4): r=5, unit = (3/5, 0, 4/5). toward → −10·unit = (−6, 0, −8).
+    const g = evaluateGravityField(f, [3, 0, 4]);
+    expect(g[0]).toBeCloseTo(-6, 9);
+    expect(g[1]).toBeCloseTo(0, 9);
+    expect(g[2]).toBeCloseTo(-8, 9);
+  });
+
+  it("point at centre: returns zero (no defined direction)", () => {
+    const f: GravityField = {
+      type: "point",
+      center: [10, -3, 2],
+      direction: "toward",
+      magnitude: 9.81,
+    };
+    const g = evaluateGravityField(f, [10, -3, 2]);
+    expect(g).toEqual([0, 0, 0]);
+  });
+
+  it("circle toward spine: gravity at a point above the spine pulls straight down onto it", () => {
+    // Axis +Y, axisOrigin origin, major radius 8. Query directly above the spine
+    // at (8, 5, 0): nearest spine point = (8, 0, 0). offset to spine = (0, -5, 0)
+    // already at distance 5. toward → gravity unit = (0, -1, 0), magnitude 9.81.
+    const f: GravityField = {
+      type: "circle",
+      axisOrigin: [0, 0, 0],
+      axisDirection: [0, 1, 0],
+      majorRadius: 8,
+      direction: "toward",
+      magnitude: 9.81,
+    };
+    const g = evaluateGravityField(f, [8, 5, 0]);
+    expect(g[0]).toBeCloseTo(0, 9);
+    expect(g[1]).toBeCloseTo(-9.81, 9);
+    expect(g[2]).toBeCloseTo(0, 9);
+  });
+
+  it("circle toward spine: gravity at a point outside the spine (in the same plane) pulls inward toward it", () => {
+    // Axis +Y, axisOrigin origin, major radius 8. Query at (10, 0, 0) in the
+    // spine plane. Nearest spine point = (8, 0, 0). offset = (-2, 0, 0).
+    // toward → unit = (-1, 0, 0), magnitude 6.
+    const f: GravityField = {
+      type: "circle",
+      axisOrigin: [0, 0, 0],
+      axisDirection: [0, 1, 0],
+      majorRadius: 8,
+      direction: "toward",
+      magnitude: 6,
+    };
+    const g = evaluateGravityField(f, [10, 0, 0]);
+    expect(g[0]).toBeCloseTo(-6, 9);
+    expect(g[1]).toBeCloseTo(0, 9);
+    expect(g[2]).toBeCloseTo(0, 9);
+  });
+
+  it("circle on axis: returns zero (radial direction undefined)", () => {
+    const f: GravityField = {
+      type: "circle",
+      axisOrigin: [0, 0, 0],
+      axisDirection: [0, 1, 0],
+      majorRadius: 8,
+      direction: "toward",
+      magnitude: 9.81,
+    };
+    const g = evaluateGravityField(f, [0, 3, 0]); // on the axis line
+    expect(g).toEqual([0, 0, 0]);
+  });
 });
 
 describe("pickGravity", () => {

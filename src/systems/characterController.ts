@@ -132,6 +132,21 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   const aExF = accelEntry.accel[0] * FtX + accelEntry.accel[1] * FtY + accelEntry.accel[2] * FtZ;
                   const aExR = accelEntry.accel[0] * RtX + accelEntry.accel[1] * RtY + accelEntry.accel[2] * RtZ;
 
+                  // Slope relative to LOCAL GRAVITY, not world-Y. `sample.slopeRad`
+                  // would tell us "how steep is this surface compared to flat
+                  // ground" — which is wrong under radial / cylindrical gravity
+                  // where "flat ground" rotates with the gravity field. cos(slope)
+                  // = (−gravityUnit · N) = −aExN / |aEx|, computed from the
+                  // accumulator that ForceField just wrote (gravity is its dominant
+                  // contributor; per-tick external impulses average out). On the
+                  // Mario-Galaxy sphere this returns slope=0 at the equator instead
+                  // of π/2; on flat-gravity worlds it collapses back to
+                  // sample.slopeRad's value.
+                  const aExMag = Math.hypot(accelEntry.accel[0], accelEntry.accel[1], accelEntry.accel[2]);
+                  const slopeRad_local = aExMag > 1e-6
+                    ? Math.acos(Math.max(-1, Math.min(1, -aExN / aExMag)))
+                    : sample.slopeRad;
+
                   // ----- Required VOLUNTARY accel to reach desired (this tick) -----
                   // aReqNet = (vDes − v)/dt; aReqVoluntary = aReqNet − aEx.
                   const aReqF = (vDesF - vF) / dt - aExF;
@@ -226,14 +241,14 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                     }
                   } else if (slipMag > gripBudget * profile.slideGripScale && ctrl.state === "surfaceRun") {
                     setState(ctrl, "surfaceSlide", "grip exceeded", now);
-                  } else if (sample.slopeRad > profile.slopeRunMaxRad && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", `slope ${sample.slopeRad.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)}`, now);
+                  } else if (slopeRad_local > profile.slopeRunMaxRad && ctrl.state === "surfaceRun") {
+                    setState(ctrl, "surfaceSlide", `slope ${slopeRad_local.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)}`, now);
                   } else if (
                     ctrl.state === "surfaceSlide" &&
-                    sample.slopeRad < profile.slopeStandMaxRad &&
+                    slopeRad_local < profile.slopeStandMaxRad &&
                     Math.abs(vF) + Math.abs(vR) < 0.5
                   ) {
-                    setState(ctrl, "surfaceRun", `slope eased to ${sample.slopeRad.toFixed(2)}`, now);
+                    setState(ctrl, "surfaceRun", `slope eased to ${slopeRad_local.toFixed(2)}`, now);
                   }
 
                   // ----- Add tangent control + surface reaction to the accumulator -----

@@ -158,6 +158,144 @@ export class PlaneSurfaceProvider implements SurfaceProvider {
 }
 
 // ---------------------------------------------------------------------------
+// SphericalSurfaceProvider
+// ---------------------------------------------------------------------------
+
+export interface SphericalSurfaceProviderOpts extends SampleDefaults {
+  id: SurfaceId;
+  center: Vec3;
+  radius: number;
+  /**
+   * False → standing on the OUTSIDE of the sphere (Mario-Galaxy planetoid, normal outward).
+   * True  → standing on the INSIDE (interior of a hollow shell, normal inward).
+   */
+  concave: boolean;
+}
+
+/**
+ * Sphere patch. UV parameterization (longitude / latitude):
+ *   u ∈ [0, 1] maps around longitude (u·2π radians, +X reference at u=0).
+ *   v ∈ [0, 1] maps from south pole (v=0) through equator (v=0.5) to north pole (v=1).
+ *
+ *   lat = π·v − π/2,  lon = 2π·u
+ *   P(u, v) = center + R · (cos lat · cos lon, sin lat, cos lat · sin lon)
+ *
+ * Poles are coordinate singularities (tangentU → 0 as v → 0 or 1) — keep
+ * scenarios on the equatorial band. The curvature is constant magnitude
+ * 1/R everywhere on the sphere; the directional formula below scales by the
+ * UV-parameter rate squared in each direction.
+ */
+export class SphericalSurfaceProvider implements SurfaceProvider {
+  readonly id: SurfaceId;
+  readonly center: Vec3;
+  readonly radius: number;
+  readonly concave: boolean;
+  private readonly friction: number;
+  private readonly normalInMax: number;
+  private readonly normalOutMax: number;
+
+  constructor(opts: SphericalSurfaceProviderOpts) {
+    this.id = opts.id;
+    this.center = opts.center;
+    this.radius = opts.radius;
+    this.concave = opts.concave;
+    this.friction = opts.friction ?? DEFAULT_FRICTION;
+    this.normalInMax = opts.normalInMax ?? DEFAULT_NORMAL_IN_MAX;
+    this.normalOutMax = opts.normalOutMax ?? DEFAULT_NORMAL_OUT_MAX;
+  }
+
+  private latLon(u: number, v: number): { lat: number; lon: number; cl: number; sl: number; co: number; so: number } {
+    const lat = Math.PI * v - Math.PI / 2;
+    const lon = 2 * Math.PI * u;
+    return {
+      lat,
+      lon,
+      cl: Math.cos(lat),
+      sl: Math.sin(lat),
+      co: Math.cos(lon),
+      so: Math.sin(lon),
+    };
+  }
+
+  sampleAtUV(u: number, v: number): SurfaceSample {
+    const { cl, sl, co, so } = this.latLon(u, v);
+    const outward: Vec3 = [cl * co, sl, cl * so];
+    const position = add(this.center, scale(outward, this.radius));
+    const sign = this.concave ? -1 : 1;
+    const normal = scale(outward, sign);
+    // Longitudinal tangent (unit, around the sphere east). Degenerates at poles.
+    const tangentU: Vec3 = [-so, 0, co];
+    // Latitudinal tangent (unit, toward north pole).
+    const tangentV: Vec3 = [-sl * co, cl, -sl * so];
+    const slopeRad = slopeFromNormal(normal);
+    return {
+      position,
+      normal,
+      tangentU,
+      tangentV,
+      // Arc length: |∂P/∂u| = 2π·R·cos(lat); |∂P/∂v| = π·R.
+      tangentUNorm: 2 * Math.PI * this.radius * cl,
+      tangentVNorm: Math.PI * this.radius,
+      slopeRad,
+      friction: this.friction,
+      normalInMax: this.normalInMax,
+      normalOutMax: this.normalOutMax,
+      traversable: u >= 0 && u <= 1 && v >= 0 && v <= 1,
+    };
+  }
+
+  worldToUV(x: number, y: number, z: number): [number, number] {
+    const dx = x - this.center[0];
+    const dy = y - this.center[1];
+    const dz = z - this.center[2];
+    const r = Math.hypot(dx, dy, dz) || 1;
+    const nx = dx / r;
+    const ny = dy / r;
+    const nz = dz / r;
+    const lat = Math.asin(Math.max(-1, Math.min(1, ny)));
+    const lon = Math.atan2(nz, nx);
+    const v = (lat + Math.PI / 2) / Math.PI;
+    const u = ((lon / (2 * Math.PI)) + 1) % 1;
+    return [u, v];
+  }
+
+  uvToWorld(u: number, v: number): [number, number, number] {
+    return this.sampleAtUV(u, v).position;
+  }
+
+  canAttachAt(u: number, v: number): boolean {
+    return u >= 0 && u <= 1 && v >= 0 && v <= 1;
+  }
+
+  sampleVelocityAt(_u: number, _v: number): [number, number, number] {
+    return [0, 0, 0];
+  }
+
+  /**
+   * Sphere has constant curvature 1/R in every tangent direction. Matches the
+   * cylinder/torus sign convention (`−ε`, where ε = +1 convex / −1 concave),
+   * scaled by the UV-parameter rate squared:
+   *
+   *   κ_uv(dirU, dirV) = −ε · ((2π·R·cos lat)²·dirU² + (π·R)²·dirV²) / R
+   *                    = −ε · ((2π)²·R·cos²(lat)·dirU² + π²·R·dirV²)
+   *
+   * Convex → negative curvature (centripetal away from body, toward sphere
+   * centre). Concave → positive.
+   */
+  getCurvature(_u: number, v: number, dirU: number, dirV: number): number {
+    const eps = this.concave ? -1 : 1;
+    const cl = Math.cos(Math.PI * v - Math.PI / 2);
+    return -eps * (
+      Math.PI * Math.PI * (4 * cl * cl) * this.radius * dirU * dirU +
+      Math.PI * Math.PI * this.radius * dirV * dirV
+    );
+  }
+
+  wrapsU(): boolean { return true; }
+  wrapsV(): boolean { return false; }
+}
+
+// ---------------------------------------------------------------------------
 // CylindricalSurfaceProvider
 // ---------------------------------------------------------------------------
 

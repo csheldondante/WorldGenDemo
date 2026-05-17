@@ -3,6 +3,7 @@ import {
   CylindricalSurfaceProvider,
   PlaneSurfaceProvider,
   TorusSurfaceProvider,
+  SphericalSurfaceProvider,
 } from "../../src/world/parametricSurfaceProvider";
 import { dot, length } from "../../src/lib/math/vec3";
 
@@ -281,5 +282,91 @@ describe("TorusSurfaceProvider — concave (inside of tube is a saddle)", () => 
   it("tori wrap in both directions (closed in U and V)", () => {
     expect(tube.wrapsU()).toBe(true);
     expect(tube.wrapsV()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SphericalSurfaceProvider
+// ---------------------------------------------------------------------------
+
+describe("SphericalSurfaceProvider — convex (Mario-Galaxy planetoid)", () => {
+  const sphere = new SphericalSurfaceProvider({
+    id: "planetoid",
+    center: [0, 0, 0],
+    radius: 20,
+    concave: false,
+  });
+
+  it("at equator longitude 0 (u=0, v=0.5), position is +X·R and normal is +X", () => {
+    const s = sphere.sampleAtUV(0, 0.5);
+    expect(s.position[0]).toBeCloseTo(20, 6);
+    expect(s.position[1]).toBeCloseTo(0, 6);
+    expect(s.position[2]).toBeCloseTo(0, 6);
+    expect(s.normal[0]).toBeCloseTo(1, 6);
+    expect(s.normal[1]).toBeCloseTo(0, 6);
+    expect(s.normal[2]).toBeCloseTo(0, 6);
+  });
+
+  it("at equator longitude π/2 (u=0.25, v=0.5), normal is +Z", () => {
+    const s = sphere.sampleAtUV(0.25, 0.5);
+    expect(s.normal[0]).toBeCloseTo(0, 6);
+    expect(s.normal[2]).toBeCloseTo(1, 6);
+  });
+
+  it("at equator, tangentU is east (perpendicular to outward) and tangentV is north", () => {
+    const s = sphere.sampleAtUV(0, 0.5);
+    // outward=+X; tangentU at lon=0 is (-sin 0, 0, cos 0) = (0, 0, 1)
+    expect(s.tangentU[0]).toBeCloseTo(0, 6);
+    expect(s.tangentU[2]).toBeCloseTo(1, 6);
+    // tangentV at lat=0 is (-sin·cos, cos, -sin·sin) = (0, 1, 0)
+    expect(s.tangentV[1]).toBeCloseTo(1, 6);
+  });
+
+  it("worldToUV round-trips through uvToWorld at the equator", () => {
+    const want: [number, number] = [0.37, 0.5];
+    const world = sphere.uvToWorld(want[0], want[1]);
+    const [u, v] = sphere.worldToUV(world[0], world[1], world[2]);
+    expect(u).toBeCloseTo(want[0], 6);
+    expect(v).toBeCloseTo(want[1], 6);
+  });
+
+  it("centripetal accel running east at the equator with v=10 m/s matches -v²/R", () => {
+    const vWorld = 10;
+    // |∂P/∂u| at equator = 2π·R; uDot = vWorld / (2π·R)
+    const uDot = vWorld / (2 * Math.PI * 20);
+    const aN = sphere.getCurvature(0, 0.5, uDot, 0);
+    // Convex sphere: κ = −v²/R (negative — centripetal points inward, away from body normal).
+    expect(aN).toBeCloseTo(-vWorld * vWorld / 20, 4);
+  });
+
+  it("convex sign convention: curvature is NEGATIVE in both directions (matches cylinder/torus)", () => {
+    // ε=+1 convex → formula returns −. Both directions on a convex sphere have negative κ.
+    expect(sphere.getCurvature(0, 0.5, 1, 0)).toBeLessThan(0);
+    expect(sphere.getCurvature(0, 0.5, 0, 1)).toBeLessThan(0);
+  });
+
+  it("sphere wraps in longitude (U) but not latitude (V)", () => {
+    expect(sphere.wrapsU()).toBe(true);
+    expect(sphere.wrapsV()).toBe(false);
+  });
+});
+
+describe("SphericalSurfaceProvider — concave (inside of a hollow ball)", () => {
+  const shell = new SphericalSurfaceProvider({
+    id: "shell",
+    center: [0, 0, 0],
+    radius: 20,
+    concave: true,
+  });
+
+  it("normal flips to point inward (toward center) at the equator", () => {
+    const s = shell.sampleAtUV(0, 0.5);
+    expect(s.normal[0]).toBeCloseTo(-1, 6);
+  });
+
+  it("concave sign: curvature is POSITIVE in both directions (centripetal toward outward)", () => {
+    // ε=−1 concave → formula returns +. Matches cylinder/torus sign convention.
+    expect(shell.getCurvature(0, 0.5, 1, 0)).toBeGreaterThan(0);
+    expect(shell.getCurvature(0, 0.5, 0, 1)).toBeGreaterThan(0);
   });
 });

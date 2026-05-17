@@ -12,10 +12,12 @@ import { test as cameraLookInput } from "./camera-look-input";
 import { test as steepHillStuck } from "./steep-hill-stuck";
 import { test as cliffRunoff } from "./cliff-runoff";
 import { test as circleRunning } from "./circle-running";
-import { test as cylinderSlopeClimb } from "./cylinder-slope-climb";
 import { test as halfpipeAxisTraverse } from "./halfpipe-axis-traverse";
 import { test as cameraHillCrest } from "./camera-hill-crest";
 import { test as cameraStareDown } from "./camera-stare-down";
+import { test as cylinderGalaxy } from "./cylinder-galaxy";
+import { test as sphereGalaxy } from "./sphere-galaxy";
+import { test as torusGalaxy } from "./torus-galaxy";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
@@ -24,10 +26,12 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [steepHillStuck.name]: steepHillStuck,
   [cliffRunoff.name]: cliffRunoff,
   [circleRunning.name]: circleRunning,
-  [cylinderSlopeClimb.name]: cylinderSlopeClimb,
   [halfpipeAxisTraverse.name]: halfpipeAxisTraverse,
   [cameraHillCrest.name]: cameraHillCrest,
   [cameraStareDown.name]: cameraStareDown,
+  [cylinderGalaxy.name]: cylinderGalaxy,
+  [sphereGalaxy.name]: sphereGalaxy,
+  [torusGalaxy.name]: torusGalaxy,
 };
 
 export function getScenario(name: string): BufferTest {

@@ -21,9 +21,34 @@ import { addScaled, dot, scale, sub } from "./vec3";
 export type GravityField =
   | { type: "constant"; vector: Vec3 }
   | {
+      // Radial-to-/from-axis: gravity perpendicular to an infinite line. Cylinder
+      // worlds — outside-the-cylinder play uses "toward" so gravity pulls onto
+      // the surface; inside-the-cylinder (centrifuge feel) uses "away".
       type: "radial";
       axisOrigin: Vec3;
       axisDirection: Vec3; // expected unit-normalized by caller
+      direction: "toward" | "away";
+      magnitude: number; // m/s²
+    }
+  | {
+      // Point-radial: gravity toward/from a single world point. Mario-Galaxy-
+      // style sphere worlds use "toward center" so the player can walk anywhere
+      // on the sphere with gravity always pulling them down onto its surface.
+      type: "point";
+      center: Vec3;
+      direction: "toward" | "away";
+      magnitude: number; // m/s²
+    }
+  | {
+      // Toroidal-spine: gravity toward the nearest point on a major-radius
+      // circle in the plane perpendicular to `axisDirection` at `axisOrigin`.
+      // Torus worlds use "toward" so the player on the torus surface is pulled
+      // onto the tube. On-axis (degenerate radial) is a discontinuity — caller
+      // should keep the player off the axis.
+      type: "circle";
+      axisOrigin: Vec3;
+      axisDirection: Vec3; // unit; normal to the major-radius plane
+      majorRadius: number;
       direction: "toward" | "away";
       magnitude: number; // m/s²
     };
@@ -91,6 +116,45 @@ export function evaluateGravityField(field: GravityField, p: Vec3): Vec3 {
       const sign = field.direction === "toward" ? -1 : 1;
       const s = (sign * field.magnitude) / r;
       return [radial[0] * s, radial[1] * s, radial[2] * s];
+    }
+    case "point": {
+      // Sphere worlds: gravity toward/from a single point in space.
+      const dx = p[0] - field.center[0];
+      const dy = p[1] - field.center[1];
+      const dz = p[2] - field.center[2];
+      const r = Math.hypot(dx, dy, dz);
+      if (r < 1e-9) return [0, 0, 0]; // exactly at the centre — no defined direction
+      const sign = field.direction === "toward" ? -1 : 1;
+      const s = (sign * field.magnitude) / r;
+      return [dx * s, dy * s, dz * s];
+    }
+    case "circle": {
+      // Torus worlds: gravity toward the nearest point on a circle of radius
+      // `majorRadius` lying in the plane through `axisOrigin` perpendicular to
+      // `axisDirection`.
+      //
+      // 1. Project p onto the major-radius plane (subtract the axis component).
+      // 2. From the axis, walk `majorRadius` in the planar direction of p → that
+      //    is the nearest point on the spine.
+      // 3. Gravity vector points from p toward (or away from) that nearest
+      //    point, scaled by magnitude.
+      const offset: Vec3 = sub(p, field.axisOrigin);
+      const along = dot(offset, field.axisDirection);
+      const radial: Vec3 = sub(offset, scale(field.axisDirection, along));
+      const r = Math.hypot(radial[0], radial[1], radial[2]);
+      if (r < 1e-9) return [0, 0, 0]; // on the axis — radial direction undefined
+      // Nearest spine point = axisOrigin + (majorRadius / r) · radial
+      const spineX = field.axisOrigin[0] + (radial[0] * field.majorRadius) / r;
+      const spineY = field.axisOrigin[1] + (radial[1] * field.majorRadius) / r;
+      const spineZ = field.axisOrigin[2] + (radial[2] * field.majorRadius) / r;
+      const dx = p[0] - spineX;
+      const dy = p[1] - spineY;
+      const dz = p[2] - spineZ;
+      const d = Math.hypot(dx, dy, dz);
+      if (d < 1e-9) return [0, 0, 0]; // exactly on the spine
+      const sign = field.direction === "toward" ? -1 : 1;
+      const s = (sign * field.magnitude) / d;
+      return [dx * s, dy * s, dz * s];
     }
   }
 }
