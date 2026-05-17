@@ -29,6 +29,14 @@ export interface CameraBufferData {
   aspect: number;
   near: number;
   far: number;
+  /**
+   * Unit world-space look direction (pivot − pos, normalized). Written by
+   * CameraOrbitSystem. Gameplay systems that need the camera's *actual*
+   * forward direction in world space read this — using the world-Y yaw is
+   * lossy on non-flat-Y gravity because R_Y(yaw)·(0,0,-1) discards the
+   * camera's vertical component.
+   */
+  lookDir: [number, number, number];
 
   // ───── Pivot state ─────
   pivot: {
@@ -76,6 +84,7 @@ export function createCameraBuffer(): Buffer<CameraBufferData> {
       aspect: 1,
       near: 0.1,
       far: 800,
+      lookDir: [0, 0, -1],
       pivot: {
         position: [0, 0, 0],
         up: [0, 1, 0],

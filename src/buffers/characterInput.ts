@@ -16,8 +16,16 @@ export interface CharacterInputComponent {
   jumpReleased: boolean;    // edge: true on the tick the button went up
   jumpHeld: boolean;        // held this tick
   jumpHoldSec: number;      // accumulated time held; reset on release
-  /** Camera-yaw-only frame, in radians, used to project move{X,Y} into world XZ. */
+  /** Camera-yaw-only frame, in radians. Legacy; used by airborne path which
+   *  still operates in world XZ. Surface-attached path should prefer
+   *  `cameraLookDir` since the yaw reconstruction loses the camera's
+   *  vertical component (and thus its actual forward on curved gravity). */
   cameraYaw: number;
+  /** Unit world-space camera look direction (where the camera is looking).
+   *  Surface-attached projections should use this; projecting it onto the
+   *  tangent plane recovers the screen-forward direction on the puck's
+   *  surface, regardless of how the camera is oriented to world-Y. */
+  cameraLookDir: [number, number, number];
 }
 
 export interface CharacterInputBufferData {
@@ -36,5 +44,10 @@ export function createCharacterInputBuffer(): Buffer<CharacterInputBufferData> {
 }
 
 export function emptyInput(cameraYaw = 0): CharacterInputComponent {
-  return { moveX: 0, moveY: 0, jumpPressed: false, jumpReleased: false, jumpHeld: false, jumpHoldSec: 0, cameraYaw };
+  return {
+    moveX: 0, moveY: 0,
+    jumpPressed: false, jumpReleased: false, jumpHeld: false, jumpHoldSec: 0,
+    cameraYaw,
+    cameraLookDir: [0, 0, -1],
+  };
 }

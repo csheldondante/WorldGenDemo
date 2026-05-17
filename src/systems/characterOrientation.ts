@@ -85,11 +85,16 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
         Math.abs(im.lookDelta.yaw) > LOOK_INPUT_EPSILON ||
         Math.abs(im.lookDelta.pitch) > LOOK_INPUT_EPSILON;
 
-      // Camera-forward in world XZ (same convention as tangentInputMapper).
-      const cyaw = cam.yaw;
-      const camFwX = -Math.sin(cyaw);
-      const camFwY = 0;
-      const camFwZ = -Math.cos(cyaw);
+      // Camera's world-space look direction. Using the full 3D direction
+      // (not R_Y(cam.yaw)·(0,0,-1) which has y=0) is essential on non-flat-Y
+      // gravity — on a surface where the normal isn't world-Y, the yaw-
+      // reconstructed forward projected onto the tangent plane collapses
+      // to a degenerate line (or zero). cam.lookDir keeps the camera's
+      // vertical component, which on projection recovers the actual
+      // screen-forward direction on the puck's surface.
+      const camFwX = cam.lookDir[0];
+      const camFwY = cam.lookDir[1];
+      const camFwZ = cam.lookDir[2];
 
       writeBuffer(ccBuf, (cc) => {
         writeBuffer(tBuf, (transforms) => {

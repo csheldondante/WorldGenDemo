@@ -190,6 +190,7 @@ export function createCameraOrbitSystem(): SystemDescriptor {
         c.pitch = worldPitch;
         c.pos = pos;
         c.fov = fov;
+        c.lookDir = [viewX, viewY, viewZ];
       });
     },
   };

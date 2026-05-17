@@ -14,12 +14,12 @@
       "byEntity": {
         "1": {
           "position": [
-            -4.776610767100275e-16,
-            4.7479000000000005,
-            2.2585978242887075
+            -4.0995974427264284e-16,
+            4.870525,
+            1.8558378207097177
           ],
           "scale": 1,
-          "yaw": 3.1415926535897922
+          "yaw": -3.1415926535896967
         },
         "__map__": true
       }
@@ -29,13 +29,13 @@
         "1": {
           "linear": [
             -1.4695761589768238e-15,
-            -3.7605,
+            -3.4335,
             12
           ],
           "prevLinear": [
-            -1.4695761589768238e-15,
-            -3.597,
-            12
+            -1.4399000253393827e-15,
+            -3.27,
+            11.801112051595126
           ]
         },
         "__map__": true
@@ -55,7 +55,7 @@
             1,
             0
           ],
-          "lastTransitionReason": "detach: departing vN=4.25 pull=287.10 > grip 5.00",
+          "lastTransitionReason": "detach: departing vN=4.23 pull=286.05 > grip 5.00",
           "locomotionMode": "volumeConstrained",
           "orientation": {
             "current": [
@@ -74,47 +74,19 @@
           "profileId": "player",
           "state": "airborne",
           "targetYaw": 3.141592653589793,
-          "timeInState": 0.36666666666666664,
+          "timeInState": 0.3333333333333333,
           "transitions": [
             {
               "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
               "reason": "grip exceeded",
-              "t": 66.66666666666667,
+              "t": 100,
               "to": "surfaceSlide"
             },
             {
               "from": "surfaceSlide",
               "locomotion": "surfaceConstrained",
-              "reason": "detach: centripetal apparent_N=12.80 (v²·κ=-22.61, aExN=-9.81) > grip 5.00",
-              "t": 2533.333333333333,
-              "to": "airborne"
-            },
-            {
-              "from": "airborne",
-              "locomotion": "surfaceConstrained",
-              "reason": "landed",
-              "t": 2533.333333333333,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "detach: centripetal apparent_N=26.80 (v²·κ=-36.61, aExN=-9.81) > grip 5.00",
-              "t": 2550,
-              "to": "airborne"
-            },
-            {
-              "from": "airborne",
-              "locomotion": "surfaceConstrained",
-              "reason": "landed",
-              "t": 2550,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "detach: centripetal apparent_N=40.81 (v²·κ=-50.62, aExN=-9.81) > grip 5.00",
+              "reason": "detach: centripetal apparent_N=12.51 (v²·κ=-22.32, aExN=-9.81) > grip 5.00",
               "t": 2566.6666666666665,
               "to": "airborne"
             },
@@ -128,7 +100,7 @@
             {
               "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
-              "reason": "detach: departing vN=1.49 pull=138.78 > grip 5.00",
+              "reason": "detach: centripetal apparent_N=26.52 (v²·κ=-36.33, aExN=-9.81) > grip 5.00",
               "t": 2583.3333333333335,
               "to": "airborne"
             },
@@ -142,7 +114,7 @@
             {
               "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
-              "reason": "detach: departing vN=3.02 pull=225.77 > grip 5.00",
+              "reason": "detach: centripetal apparent_N=40.52 (v²·κ=-50.33, aExN=-9.81) > grip 5.00",
               "t": 2600,
               "to": "airborne"
             },
@@ -156,12 +128,40 @@
             {
               "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
-              "reason": "detach: departing vN=4.25 pull=287.10 > grip 5.00",
+              "reason": "detach: departing vN=1.45 pull=136.71 > grip 5.00",
               "t": 2616.6666666666665,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2616.6666666666665,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=2.99 pull=224.26 > grip 5.00",
+              "t": 2633.3333333333335,
+              "to": "airborne"
+            },
+            {
+              "from": "airborne",
+              "locomotion": "surfaceConstrained",
+              "reason": "landed",
+              "t": 2633.3333333333335,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "detach: departing vN=4.23 pull=286.05 > grip 5.00",
+              "t": 2650,
               "to": "airborne"
             }
           ],
-          "yawVel": 7.105427357601002e-15
+          "yawVel": -8.952838470577262e-13
         },
         "__map__": true
       }
@@ -169,6 +169,11 @@
     "characterInput": {
       "byEntity": {
         "1": {
+          "cameraLookDir": [
+            -1.1183303667773917e-16,
+            -0.3707388521527131,
+            0.9287371552298793
+          ],
           "cameraYaw": 3.141592653589793,
           "jumpHeld": false,
           "jumpHoldSec": 0,
@@ -184,16 +189,16 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            -1.4452877871563244e-16,
-            -0.5310544770923951,
-            0.8473376790631483
+            -1.0360628209828643e-16,
+            -0.528319379059522,
+            0.8490457194463449
           ],
           "rightTangent": [
-            -1,
-            7.675265500563266e-17,
-            -1.2246467991473535e-16
+            -1.0000000000000002,
+            5.473720662483235e-17,
+            -8.796647032330056e-17
           ],
-          "vDesF": 9.04192888405528,
+          "vDesF": 9.036562621714783,
           "vDesR": 0
         },
         "__map__": true
@@ -227,17 +232,17 @@
             "friction": 1,
             "normal": [
               0,
-              0.8473376790631483,
-              0.5310544770923951
+              0.8490457194463449,
+              0.528319379059522
             ],
             "normalInMax": 800,
             "normalOutMax": 200,
             "position": [
               0,
               5,
-              -1.6418008624395277
+              -1.6445328631553267
             ],
-            "slopeRad": 0.5598445398458032,
+            "slopeRad": 0.5566199201457114,
             "tangentU": [
               1,
               0,
@@ -246,16 +251,16 @@
             "tangentUNorm": 64,
             "tangentV": [
               0,
-              -0.5310544770923951,
-              0.8473376790631483
+              -0.528319379059522,
+              0.8490457194463449
             ],
-            "tangentVNorm": 75.53069051616005,
+            "tangentVNorm": 75.37874408192509,
             "traversable": true
           },
           "surfaceId": "terrace",
           "uv": [
             0.5,
-            0.4743468615243824
+            0.474304174013198
           ]
         },
         "__map__": true
@@ -321,6 +326,11 @@
       "aspect": 1,
       "far": 800,
       "fov": 70,
+      "lookDir": [
+        -1.1202044951047356e-16,
+        -0.371551980820303,
+        0.9284121528440422
+      ],
       "near": 0.1,
       "params": {
         "distance": 6.539113089708726,
@@ -332,7 +342,7 @@
         "pitchSoftMin": 0.18,
         "pivotResponsiveness": 12
       },
-      "pitch": -0.3825415369417936,
+      "pitch": -0.3806801133770188,
       "pivot": {
         "fwd": [
           0,
@@ -340,9 +350,9 @@
           -1
         ],
         "position": [
-          -3.732502741367823e-16,
-          4.975949690322337,
-          1.3999649658351678
+          -3.1026927165879417e-16,
+          5.0742337424446164,
+          1.0191938106320126
         ],
         "up": [
           0,
@@ -351,9 +361,9 @@
         ]
       },
       "pos": [
-        4.728108143052911e-16,
-        7.777642213439266,
-        -5.56313683043526
+        5.260863825217978e-16,
+        7.848277243778765,
+        -5.912422307981151
       ],
       "target": {
         "distance": 6.539113089708726,

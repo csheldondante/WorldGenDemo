@@ -36,6 +36,7 @@ import {
   SURFACE_ATTACHMENT_BUFFER_ID,
   type SurfaceAttachmentBufferData,
 } from "../buffers/surfaceAttachment";
+import { INPUT_MAP_BUFFER_ID, type InputMapBufferData } from "../buffers/inputMap";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { VOLUME_FIELD_BUFFER_ID, type VolumeFieldBufferData } from "../buffers/volumeField";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
@@ -106,6 +107,7 @@ export function createDebugGizmoSystem(): SystemDescriptor {
       { id: TRANSFORM_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
+      { id: INPUT_MAP_BUFFER_ID, access: "read" },
       { id: CAMERA_BUFFER_ID, access: "read" },
       { id: VOLUME_FIELD_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "read" },
@@ -128,11 +130,12 @@ export function createDebugGizmoSystem(): SystemDescriptor {
       const attach = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const sa = attach.byEntity.get(targetId);
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
+      const im = readBuffer(buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID));
       const vol = readBuffer(buffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID));
 
       if (!refs) refs = buildGizmo(refsBuf.scene);
 
-      // ---- Compute the surface-puck frame ----
+      // ---- Compute the surface-puck frame (where the puck WANTS to face) ----
       // Up: surface normal if attached; else negative-gravity if airborne.
       let upX: number, upY: number, upZ: number;
       if (sa && sa.sample) {
@@ -147,34 +150,55 @@ export function createDebugGizmoSystem(): SystemDescriptor {
         upY = -g[1] / gLen;
         upZ = -g[2] / gLen;
       }
-      // Forward (yaw-driven, projected onto up-tangent plane).
-      // R_Y(yaw)·(0,0,-1) = (-sin(yaw), 0, -cos(yaw)).
-      const sy = Math.sin(t.yaw);
-      const cy = Math.cos(t.yaw);
-      let fwdX = -sy;
-      let fwdY = 0;
-      let fwdZ = -cy;
-      const fDotU = fwdX * upX + fwdY * upY + fwdZ * upZ;
-      fwdX -= fDotU * upX;
-      fwdY -= fDotU * upY;
-      fwdZ -= fDotU * upZ;
-      let fLen = Math.hypot(fwdX, fwdY, fwdZ);
-      if (fLen < 1e-6) {
-        // Forward collinear with up (rare; player face straight up/down).
-        // Fall back to a world axis least aligned with up.
+      // Forward: derive from the camera's WORLD-SPACE look direction + the
+      // player's move-input angle. This is the puck's "desired facing" — the
+      // ground truth the orientation controller is trying to track — NOT the
+      // body's actual rendered yaw (which is limited by the world-Y Euler
+      // representation on non-flat-Y gravity). Showing the desired direction
+      // makes the gizmo a stable reference for diagnosing the body-yaw
+      // representation issue separately.
+      //
+      //   Ft   = normalize(camLookDir − (camLookDir·N)·N)    // camera fwd projected onto tangent
+      //   Rt   = cross(N, Ft)                                // lateral tangent
+      //   α    = atan2(moveX, moveY)                          // 0=forward, π/2=right
+      //   dFwd = Ft·cos(α) + Rt·sin(α)
+      //
+      // When idle, dFwd = Ft (α = 0).
+      const camLookX = cam.lookDir[0];
+      const camLookY = cam.lookDir[1];
+      const camLookZ = cam.lookDir[2];
+      const LdotN = camLookX * upX + camLookY * upY + camLookZ * upZ;
+      let FtX = camLookX - LdotN * upX;
+      let FtY = camLookY - LdotN * upY;
+      let FtZ = camLookZ - LdotN * upZ;
+      let FtLen = Math.hypot(FtX, FtY, FtZ);
+      if (FtLen < 1e-6) {
+        // Camera looks directly along surface normal — Ft undefined.
+        // Fall back to a world axis least aligned with up to keep the gizmo
+        // pointing somewhere meaningful instead of flickering.
         const ax = Math.abs(upX);
         const ay = Math.abs(upY);
         const az = Math.abs(upZ);
-        if (ax <= ay && ax <= az) { fwdX = 1; fwdY = 0; fwdZ = 0; }
-        else if (ay <= az) { fwdX = 0; fwdY = 1; fwdZ = 0; }
-        else { fwdX = 0; fwdY = 0; fwdZ = 1; }
-        const d2 = fwdX * upX + fwdY * upY + fwdZ * upZ;
-        fwdX -= d2 * upX; fwdY -= d2 * upY; fwdZ -= d2 * upZ;
-        fLen = Math.hypot(fwdX, fwdY, fwdZ) || 1;
+        if (ax <= ay && ax <= az) { FtX = 1; FtY = 0; FtZ = 0; }
+        else if (ay <= az) { FtX = 0; FtY = 1; FtZ = 0; }
+        else { FtX = 0; FtY = 0; FtZ = 1; }
+        const d2 = FtX * upX + FtY * upY + FtZ * upZ;
+        FtX -= d2 * upX; FtY -= d2 * upY; FtZ -= d2 * upZ;
+        FtLen = Math.hypot(FtX, FtY, FtZ) || 1;
       }
-      fwdX /= fLen; fwdY /= fLen; fwdZ /= fLen;
-      // Right = cross(up, forward) — left-handed thumb pointing along up if
-      // forward is in the page, right comes out toward the viewer's right.
+      FtX /= FtLen; FtY /= FtLen; FtZ /= FtLen;
+      // Right-tangent.
+      const RtX = upY * FtZ - upZ * FtY;
+      const RtY = upZ * FtX - upX * FtZ;
+      const RtZ = upX * FtY - upY * FtX;
+      // Apply move-input angle to derive desired facing.
+      const alpha = Math.atan2(im.moveAxis.x, im.moveAxis.y);
+      const ca = Math.cos(alpha);
+      const sa_ = Math.sin(alpha);
+      const fwdX = FtX * ca + RtX * sa_;
+      const fwdY = FtY * ca + RtY * sa_;
+      const fwdZ = FtZ * ca + RtZ * sa_;
+      // Right = cross(up, forward).
       const rgtX = upY * fwdZ - upZ * fwdY;
       const rgtY = upZ * fwdX - upX * fwdZ;
       const rgtZ = upX * fwdY - upY * fwdX;

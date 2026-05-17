@@ -54,6 +54,7 @@ export function createCharacterInputSystem(): SystemDescriptor {
             jumpReleased,
             jumpHoldSec,
             cameraYaw: cam.yaw,
+            cameraLookDir: [cam.lookDir[0], cam.lookDir[1], cam.lookDir[2]],
           };
           d.byEntity.set(id, next);
         }

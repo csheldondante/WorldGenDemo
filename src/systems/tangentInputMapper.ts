@@ -94,10 +94,20 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
           const sample = att.sample;
           if (!sample) continue;
 
-          // Camera forward in world XZ. The negation convention matches yaw=0 → forward = -Z.
-          const sy = Math.sin(input.cameraYaw);
-          const cy = Math.cos(input.cameraYaw);
-          const FwX = -sy, FwY = 0, FwZ = -cy;
+          // Camera look direction in world space (where the camera is
+          // actually pointing). This is the camera's local -Z transformed by
+          // its world rotation — written by CameraOrbitSystem. Using the
+          // full 3D direction (not a yaw-reconstructed XZ approximation)
+          // is necessary on non-flat-Y gravity: e.g. on a cylinder side
+          // where the surface normal is +Z, the yaw-reconstructed forward
+          // is along ±X and after projection onto the tangent plane (the
+          // XY plane) collapses to zero. The full lookDir keeps its
+          // vertical component, which on projection gives the actual
+          // "screen forward in the puck's tangent plane" — the direction
+          // the player expects to walk when pressing forward.
+          const FwX = input.cameraLookDir[0];
+          const FwY = input.cameraLookDir[1];
+          const FwZ = input.cameraLookDir[2];
 
           // Project camera forward onto the tangent plane: Ft = Fw − (Fw·N)·N. Normalize.
           const Nx = sample.normal[0], Ny = sample.normal[1], Nz = sample.normal[2];
