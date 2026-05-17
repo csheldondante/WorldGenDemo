@@ -1,4 +1,3 @@
-import * as THREE from "three";
 import { readBuffer } from "../runtime/buffer";
 import type { SystemDescriptor } from "../runtime/system";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
@@ -35,7 +34,16 @@ export function createRenderSystem(): SystemDescriptor {
 
       const c = refs.threeCamera;
       c.position.set(camData.pos[0], camData.pos[1], camData.pos[2]);
-      c.quaternion.setFromEuler(new THREE.Euler(camData.pitch, camData.yaw, 0, "YXZ"));
+      // Gravity-aligned camera orientation: lookAt the pivot with up = pivot.up.
+      // three.js builds a full rotation matrix from (right, up, -forward), which
+      // includes camera ROLL — necessary when pivot.up isn't world +Y (e.g.
+      // Mario-Galaxy sphere / cylinder / torus worlds). On flat-Y gravity the
+      // result is identical to the legacy setFromEuler(pitch, yaw, 0, "YXZ")
+      // path. cam.yaw / cam.pitch are still maintained in the buffer for
+      // downstream consumers (characterInput / characterOrientation), but the
+      // renderer no longer depends on them.
+      c.up.set(camData.pivot.up[0], camData.pivot.up[1], camData.pivot.up[2]);
+      c.lookAt(camData.pivot.position[0], camData.pivot.position[1], camData.pivot.position[2]);
       // Aspect / fov / near / far updates: only push when changed to avoid cost.
       if (c.fov !== camData.fov || c.aspect !== camData.aspect || c.near !== camData.near || c.far !== camData.far) {
         c.fov = camData.fov;
