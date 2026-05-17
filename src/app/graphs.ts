@@ -30,6 +30,7 @@ import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/volumetric
 import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
 import { CAMERA_PIVOT_SYSTEM_ID } from "../systems/cameraPivot";
 import { CAMERA_ORBIT_SYSTEM_ID } from "../systems/cameraOrbit";
+import { DEBUG_GIZMO_SYSTEM_ID } from "../systems/debugGizmo";
 import { INPUT_RECORDING_SYSTEM_ID } from "../systems/testing/inputRecording";
 import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
 import { BODY_LEAN_SYSTEM_ID } from "../systems/bodyLean";
@@ -94,6 +95,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       FOOT_IK_SYSTEM_ID,
       SKELETON_WORLD_SYSTEM_ID,
       SKELETON_DEBUG_RENDER_SYSTEM_ID,
+      DEBUG_GIZMO_SYSTEM_ID,
       RENDER_SYSTEM_ID,
       MINIMAP_SYSTEM_ID,
       HUD_SYSTEM_ID,

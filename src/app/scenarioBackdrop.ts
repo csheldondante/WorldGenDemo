@@ -32,6 +32,18 @@ export interface ScenarioBackdrop {
    * heightmaps with a lot of detail look better at 64. Higher = slower load.
    */
   surfaceMeshResolution?: number;
+  /**
+   * When NOT explicitly false, draw RGB axes anchored at the followed
+   * character every tick: +X-body (red) = right, +Y-body (green) = bodyUp,
+   * −Z-body (blue) = forward. Helps debug body-frame composition and the
+   * gravity-aligned camera / lean pipeline. Default ON for all scenarios.
+   */
+  characterAxes?: boolean;
+  /**
+   * When NOT explicitly false, draw a small marker at `cam.pivot.position`
+   * each tick so the camera's orbit centre is visible. Default ON.
+   */
+  pivotMarker?: boolean;
 }
 
 /**
@@ -60,6 +72,17 @@ export function applyScenarioBackdrop(
   if (backdrop.axisGizmo) {
     const cfg = typeof backdrop.axisGizmo === "object" ? backdrop.axisGizmo : {};
     scene.add(buildAxisGizmo(cfg.at ?? [0, 0, 0], cfg.size ?? 5));
+  }
+
+  // Stash the per-frame debug-gizmo flags on the scene so DebugGizmoSystem can
+  // discover them without needing a new buffer. Default ON for both unless
+  // explicitly set to false in the scenario's backdrop config. Falsy on
+  // non-scenario worlds (normal play) means the system stays inert there.
+  const characterAxes = backdrop.characterAxes !== false;
+  const pivotMarker = backdrop.pivotMarker !== false;
+  if (characterAxes || pivotMarker) {
+    (scene.userData as { debugGizmos?: { characterAxes: boolean; pivotMarker: boolean } })
+      .debugGizmos = { characterAxes, pivotMarker };
   }
 }
 

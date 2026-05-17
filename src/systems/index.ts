@@ -34,6 +34,7 @@ import { createVolumetricConstrainedVelocitySystem } from "./volumetricConstrain
 import { createSurfaceConstraintSystem } from "./surfaceConstraint";
 import { createCameraPivotSystem } from "./cameraPivot";
 import { createCameraOrbitSystem } from "./cameraOrbit";
+import { createDebugGizmoSystem } from "./debugGizmo";
 import {
   createInputRecordingSystem,
   createInputRecordingState,
@@ -118,6 +119,7 @@ export function registerCoreSystems(reg: Registry, options: RegisterCoreSystemsO
   reg.registerSystem(createSurfaceConstraintSystem());
   reg.registerSystem(createCameraPivotSystem());
   reg.registerSystem(createCameraOrbitSystem());
+  reg.registerSystem(createDebugGizmoSystem());
   // Always-registered input recording system; inert until state.active=true.
   const inputRecordingState = createInputRecordingState();
   reg.registerSystem(createInputRecordingSystem(inputRecordingState));
@@ -158,6 +160,7 @@ export * from "./volumetricConstrainedVelocity";
 export * from "./surfaceConstraint";
 export * from "./cameraPivot";
 export * from "./cameraOrbit";
+export * from "./debugGizmo";
 export * from "./testing/inputRecording";
 export * from "./characterRenderSync";
 export * from "./bodyLean";
