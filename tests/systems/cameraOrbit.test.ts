@@ -51,9 +51,12 @@ describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
   it("accumulates lookDelta.yaw into target.yaw; FLIPS lookDelta.pitch sign so mouse-down (negative lookDelta.pitch) lifts the camera", () => {
     const { reg, graph } = setup();
     setPivot(reg, [0, 0, 0]);
-    // Reset target.pitch so it doesn't start at the buffer default.
     writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
       d.target.pitch = 0;
+      // Disable cushion + hard floor so we test the raw accumulator without
+      // restoring forces dragging target.pitch back upward.
+      d.params.pitchSoftMin = -10;
+      d.params.pitchMin = -10;
     });
     setLook(reg, 0.1, -0.05);  // mouseDx>0 → yaw=0.1; mouseDy>0 → lookDelta.pitch=-0.05
     tick(reg, graph);
@@ -95,9 +98,12 @@ describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
     setPivot(reg, [0, 0, 0]);
     writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
       d.target.yaw = Math.PI / 2;
-      d.target.pitch = 0;       // horizon-level — needs the pitch-min floor relaxed
+      d.target.pitch = 0;       // horizon-level — needs floor + cushion relaxed
       d.params.distance = 6;
-      d.params.pitchMin = -1;   // disable hard floor for this strict geometry test
+      d.params.pitchMin = -1;
+      d.params.pitchSoftMin = -1;
+      // Pre-seed cam.pos near the orbit target to skip the spawn snap.
+      d.pos = [6, 0, 0];
     });
     setLook(reg, 0, 0);
     tick(reg, graph);
@@ -128,6 +134,62 @@ describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
     expect(cam.pos[0]).toBeCloseTo(expected, 9);
     expect(cam.pos[1]).toBeCloseTo(0, 9);
     expect(cam.pos[2]).toBeCloseTo(expected, 9);
+  });
+
+  it("Phase 3 cushion: target.pitch below pitchSoftMin gets a restoring push back toward softMin", () => {
+    const { reg, graph } = setup();
+    setPivot(reg, [0, 0, 0]);
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.pitch = 0.10;  // below softMin=0.18, above hardMin=0.05
+      d.params.pitchSoftMin = 0.18;
+      d.params.pitchMin = 0.05;
+      d.params.pitchCushionStiffness = 40;
+    });
+    setLook(reg, 0, 0);
+    tick(reg, graph);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // cushion adds (softMin - target.pitch) * (1 - exp(-dt * stiffness))
+    //            = (0.18 - 0.10) * (1 - exp(-1/60 * 40))
+    //            ≈ 0.08 * 0.4866 ≈ 0.0389
+    // → final target.pitch ≈ 0.10 + 0.039 ≈ 0.139
+    expect(cam.target.pitch).toBeGreaterThan(0.10);
+    expect(cam.target.pitch).toBeLessThan(0.18);
+    expect(cam.target.pitch).toBeCloseTo(0.10 + 0.08 * (1 - Math.exp(-1/60 * 40)), 6);
+  });
+
+  it("Phase 3 hard floor: target.pitch is hard-clamped to pitchMin no matter how hard the user pushes", () => {
+    const { reg, graph } = setup();
+    setPivot(reg, [0, 0, 0]);
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.pitch = 0.18;
+    });
+    // Push pitch HARD past the soft cushion. lookDelta.pitch = +50 → target -= 50.
+    setLook(reg, 0, 50);
+    tick(reg, graph);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // The cushion can't catch up over a single huge shove, so the hard
+    // clamp is what enforces the floor.
+    expect(cam.target.pitch).toBeCloseTo(cam.params.pitchMin, 12);
+    expect(cam.target.pitch).toBeGreaterThanOrEqual(cam.params.pitchMin);
+  });
+
+  it("Phase 3 spawn snap: if cam.pos is far from desired (>3·distance), snap rather than glide", () => {
+    const { reg, graph } = setup();
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.pos = [0, 8, 60];           // buffer default — far from pivot
+      d.pivot.position = [0, 0, 0];
+      d.target.yaw = 0;
+      d.target.pitch = Math.atan2(2.6, 6);
+      d.params.distance = Math.hypot(6, 2.6);
+    });
+    setLook(reg, 0, 0);
+    tick(reg, graph);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // Should snap immediately (orbitAlpha = 1 because dist > 3·D).
+    // desired pos: pivot + (0, 2.6, 6) = (0, 2.6, 6).
+    expect(cam.pos[0]).toBeCloseTo(0, 6);
+    expect(cam.pos[1]).toBeCloseTo(2.6, 6);
+    expect(cam.pos[2]).toBeCloseTo(6, 6);
   });
 
   it("derives renderer-facing yaw/pitch (YXZ Euler around world axes) from the world-space view direction", () => {

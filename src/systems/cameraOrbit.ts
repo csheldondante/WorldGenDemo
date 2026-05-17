@@ -53,7 +53,7 @@ export function createCameraOrbitSystem(): SystemDescriptor {
       { id: CAMERA_BUFFER_ID, access: "readwrite" },
     ],
     runsAfter: [STATE_MACHINE_SYSTEM_ID, INPUT_MAPPER_SYSTEM_ID, CHARACTER_INPUT_SYSTEM_ID, CAMERA_PIVOT_SYSTEM_ID],
-    execute: ({ buffer }) => {
+    execute: ({ buffer, dt }) => {
       const im = readBuffer(buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID));
       const camBuf = buffer<CameraBufferData>(CAMERA_BUFFER_ID);
       const c0 = readBuffer(camBuf);
@@ -63,17 +63,25 @@ export function createCameraOrbitSystem(): SystemDescriptor {
       let targetYaw = c0.target.yaw + im.lookDelta.yaw;
       let targetPitch = c0.target.pitch - im.lookDelta.pitch;
 
-      // Hard clamp to params.pitchMax / pitchMin. Phase 3 introduces a
-      // damped cushion at params.pitchSoftMin before the hard floor.
-      if (targetPitch > c0.params.pitchMax) targetPitch = c0.params.pitchMax;
-      if (targetPitch < c0.params.pitchMin) targetPitch = c0.params.pitchMin;
+      // Damped cushion: when target.pitch drops below pitchSoftMin, apply an
+      // exponential restoring step pulling it back toward pitchSoftMin. The
+      // farther below, the larger the per-frame correction — feels like
+      // resistance ramping in as the user pushes harder. Then hard-clamp to
+      // pitchMin so we never cross the floor.
+      const softMin = c0.params.pitchSoftMin;
+      const hardMin = c0.params.pitchMin;
+      const hardMax = c0.params.pitchMax;
+      if (targetPitch < softMin) {
+        const cushionAlpha = 1 - Math.exp(-Math.max(0, dt) * c0.params.pitchCushionStiffness);
+        targetPitch += (softMin - targetPitch) * cushionAlpha;
+      }
+      if (targetPitch < hardMin) targetPitch = hardMin;
+      if (targetPitch > hardMax) targetPitch = hardMax;
 
       // Wrap yaw into [-π, π] so floats don't accumulate over hours of play.
       if (targetYaw > Math.PI) targetYaw -= 2 * Math.PI;
       else if (targetYaw < -Math.PI) targetYaw += 2 * Math.PI;
 
-      // Phase 2: instant chase — rendered = target. Phase 3 adds
-      // exponential smoothing here.
       const yaw = targetYaw;
       const pitch = targetPitch;
       const distance = c0.params.distance;
@@ -97,22 +105,54 @@ export function createCameraOrbitSystem(): SystemDescriptor {
         -yawedFwd[2] * cp + up[2] * sp,
       ];
       const pivot = c0.pivot.position;
-      const pos: [number, number, number] = [
+      const desiredPos: Vec3 = [
         pivot[0] + offset[0] * distance,
         pivot[1] + offset[1] * distance,
         pivot[2] + offset[2] * distance,
       ];
 
-      // Derive world-frame YXZ Euler angles from the camera's look direction
-      // (pivot − pos, unit). render.ts consumes these as
+      // Exponential chase rendered pos toward desiredPos. The chase
+      // smooths sudden yaw/pitch flicks, sudden pivot shifts (cylinders),
+      // and the cushion-driven target.pitch correction so the camera
+      // never snaps.
+      //
+      // First-tick / teleport guard: if rendered pos is more than 3·distance
+      // from desired (initial spawn, mode switch, scene change), snap
+      // instead of gliding in from the buffer default.
+      const dx = desiredPos[0] - c0.pos[0];
+      const dy = desiredPos[1] - c0.pos[1];
+      const dz = desiredPos[2] - c0.pos[2];
+      const distToDesired = Math.hypot(dx, dy, dz);
+      const snapThreshold = distance * 3;
+      const orbitAlpha = distToDesired > snapThreshold
+        ? 1
+        : 1 - Math.exp(-Math.max(0, dt) * c0.params.orbitResponsiveness);
+      const pos: [number, number, number] = [
+        c0.pos[0] + dx * orbitAlpha,
+        c0.pos[1] + dy * orbitAlpha,
+        c0.pos[2] + dz * orbitAlpha,
+      ];
+
+      // Smooth FOV toward target.fov (target.fov stays at fovDefault in MVP
+      // — Phase 5 will drive transitions). target.fov defaults from
+      // params.fovDefault so existing scenarios get the same FOV.
+      const fov = c0.fov + (c0.target.fov - c0.fov) * orbitAlpha;
+
+      // Derive world-frame YXZ Euler angles from the SMOOTHED look direction
+      // (pivot − rendered pos, unit). render.ts consumes these as
       // setFromEuler(pitch, yaw, 0, "YXZ") applied to [0,0,-1]:
       //   look = R_Y(world_yaw) · R_X(world_pitch) · [0,0,-1]
       //        = [−cos(world_pitch)·sin(world_yaw), sin(world_pitch), −cos(world_pitch)·cos(world_yaw)]
       // so world_pitch = asin(look.y), world_yaw = atan2(−look.x, −look.z).
-      // The view direction here is (yawedFwd·cos(pitch) − up·sin(pitch)) — a unit vector by construction.
-      const viewX = yawedFwd[0] * cp - up[0] * sp;
-      const viewY = yawedFwd[1] * cp - up[1] * sp;
-      const viewZ = yawedFwd[2] * cp - up[2] * sp;
+      // Using the smoothed pos keeps the camera always pointing at the pivot
+      // through the chase glide, so there's no double-smoothing artifact.
+      const vx = pivot[0] - pos[0];
+      const vy = pivot[1] - pos[1];
+      const vz = pivot[2] - pos[2];
+      const vlen = Math.hypot(vx, vy, vz) || 1;
+      const viewX = vx / vlen;
+      const viewY = vy / vlen;
+      const viewZ = vz / vlen;
       // Gimbal lock guard: when looking almost straight along ±world-Y, yaw
       // is undefined; keep the previous render yaw to avoid spin.
       let worldYaw: number;
@@ -138,6 +178,7 @@ export function createCameraOrbitSystem(): SystemDescriptor {
         c.yaw = worldYaw;
         c.pitch = worldPitch;
         c.pos = pos;
+        c.fov = fov;
       });
     },
   };

@@ -14,6 +14,8 @@ import { test as cliffRunoff } from "./cliff-runoff";
 import { test as circleRunning } from "./circle-running";
 import { test as cylinderSlopeClimb } from "./cylinder-slope-climb";
 import { test as halfpipeAxisTraverse } from "./halfpipe-axis-traverse";
+import { test as cameraHillCrest } from "./camera-hill-crest";
+import { test as cameraStareDown } from "./camera-stare-down";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
@@ -24,6 +26,8 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [circleRunning.name]: circleRunning,
   [cylinderSlopeClimb.name]: cylinderSlopeClimb,
   [halfpipeAxisTraverse.name]: halfpipeAxisTraverse,
+  [cameraHillCrest.name]: cameraHillCrest,
+  [cameraStareDown.name]: cameraStareDown,
 };
 
 export function getScenario(name: string): BufferTest {
