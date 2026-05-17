@@ -192,6 +192,26 @@ describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
     expect(cam.pos[2]).toBeCloseTo(6, 6);
   });
 
+  it("unwraps worldYaw across the atan2 branch cut: a tiny rotation past π stays a tiny delta, not a 2π jump", () => {
+    const { reg, graph } = setup();
+    setPivot(reg, [0, 0, 0]);
+    // Seed cam.yaw just BELOW π (say π − 0.01). Then drive a small mouse-yaw
+    // that would push the target past π. The atan2-derived raw yaw flips to
+    // roughly −π + small_delta; the unwrap should pull it back to ~π + small_delta.
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.yaw = Math.PI - 0.01;
+      d.target.yaw = Math.PI - 0.01;
+      d.target.pitch = 0.4;     // any non-pole pitch
+      d.pos = [0, 0, 0];        // force snap on first tick
+    });
+    setLook(reg, 0.02, 0);  // small positive yaw delta — straddles +π
+    tick(reg, graph);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // Expect cam.yaw to stay near +π, NOT flip to −π
+    expect(cam.yaw).toBeGreaterThan(Math.PI - 0.5);
+    expect(cam.yaw).toBeLessThan(Math.PI + 0.5);
+  });
+
   it("derives renderer-facing yaw/pitch (YXZ Euler around world axes) from the world-space view direction", () => {
     const { reg, graph } = setup();
     setPivot(reg, [0, 0, 0]);

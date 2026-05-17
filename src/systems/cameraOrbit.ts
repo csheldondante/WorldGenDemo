@@ -171,6 +171,17 @@ export function createCameraOrbitSystem(): SystemDescriptor {
           worldYaw = Math.atan2(-viewX, -viewZ);
         }
       }
+      // Unwrap worldYaw relative to the previous render yaw so consumers that
+      // read cam.yaw differentially (characterInput → characterOrientation
+      // chase, debug telemetry, future feed-forward terms) see a continuous
+      // value as the camera traverses a curved-gravity loop. atan2 produces a
+      // result in (-π, π], so a small physical rotation that straddles the
+      // branch cut would otherwise appear as a 2π jump even though the
+      // rotation is the same. Adding ±2π to keep |Δ| ≤ π preserves the
+      // rotation and removes the snap.
+      const yawDelta = worldYaw - c0.yaw;
+      if (yawDelta > Math.PI) worldYaw -= 2 * Math.PI;
+      else if (yawDelta < -Math.PI) worldYaw += 2 * Math.PI;
 
       writeBuffer(camBuf, (c) => {
         c.target.yaw = targetYaw;
