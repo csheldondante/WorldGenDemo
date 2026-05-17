@@ -31,6 +31,21 @@ function setup() {
   return { reg, graph };
 }
 
+/**
+ * Align `state.followedBodyYaw` with `target.yaw` — the steady-state where
+ * the camera is already behind the player and auto-yaw has zero delta to
+ * chase. This is the principled way to make geometry tests independent of
+ * auto-yaw: not by disabling the feature, but by setting up the state where
+ * it correctly does nothing. If a geometry change broke this assumption
+ * (e.g. auto-yaw started chasing even at zero delta), the test would still
+ * flag it.
+ */
+function alignBodyYaw(reg: ReturnType<typeof setup>["reg"]) {
+  writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+    d.state.followedBodyYaw = d.target.yaw;
+  });
+}
+
 function tick(reg: ReturnType<typeof setup>["reg"], graph: ReturnType<typeof setup>["graph"]) {
   executeGraph(graph, reg, { now: 0, dt: 1 / 60 });
 }
@@ -105,6 +120,10 @@ describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
       // Pre-seed cam.pos near the orbit target to skip the spawn snap.
       d.pos = [6, 0, 0];
     });
+    // Align followedBodyYaw with target.yaw so auto-yaw has zero delta to
+    // chase. This is the "camera already behind player" steady state — auto-yaw
+    // is enabled but silent, which is what we want for a pure orbit geometry test.
+    alignBodyYaw(reg);
     setLook(reg, 0, 0);
     tick(reg, graph);
     const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
@@ -228,5 +247,102 @@ describe("cameraOrbitSystem (Phase 2 spherical orbit around pivot.up)", () => {
     // world_yaw = atan2(-view.x, -view.z) = atan2(0, 6/dist) = 0.
     expect(cam.pitch).toBeCloseTo(-Math.atan2(2.6, 6), 9);
     expect(cam.yaw).toBeCloseTo(0, 9);
+  });
+});
+
+describe("cameraOrbitSystem auto-yaw (camera follows player facing when hands-off)", () => {
+  function autoSetup() {
+    const reg = createRegistry();
+    reg.registerBuffer(createCameraBuffer());
+    reg.registerBuffer(createInputMapBuffer());
+    reg.registerSystem(createCameraOrbitSystem());
+    const graph = buildExecutionGraph({
+      id: "test",
+      nodes: [CAMERA_ORBIT_SYSTEM_ID],
+      registry: reg,
+    });
+    // followBodyYaw stays at its default (true) for these tests.
+    return { reg, graph };
+  }
+  function tickN(
+    reg: ReturnType<typeof autoSetup>["reg"],
+    graph: ReturnType<typeof autoSetup>["graph"],
+    n: number,
+  ) {
+    for (let i = 0; i < n; i++) executeGraph(graph, reg, { now: 0, dt: 1 / 60 });
+  }
+
+  it("does NOT chase when |body yaw − target yaw| is inside the dead-zone (no oscillation on tiny corrections)", () => {
+    const { reg, graph } = autoSetup();
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.yaw = 0;
+      d.state.followedBodyYaw = 0.3;   // 0.3 rad < default dead-zone 0.5
+      d.state.timeSinceLookInputSec = 999;  // long idle
+      d.pos = [-6.54, 2.6, 0];          // pre-seeded to skip spawn snap
+      d.pivot.position = [0, 0, 0];
+      d.target.pitch = Math.atan2(2.6, 6);
+      d.params.distance = Math.hypot(6, 2.6);
+    });
+    setLook(reg, 0, 0);
+    tickN(reg, graph, 30);  // half a second
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    expect(cam.target.yaw).toBeCloseTo(0, 6);  // no movement inside dead-zone
+  });
+
+  it("DOES chase when outside the dead-zone (camera reacquires behind the player)", () => {
+    const { reg, graph } = autoSetup();
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.yaw = 0;
+      d.state.followedBodyYaw = 1.5;     // way outside dead-zone (0.5)
+      d.state.timeSinceLookInputSec = 999;
+      d.pos = [-6.54, 2.6, 0];
+      d.pivot.position = [0, 0, 0];
+      d.target.pitch = Math.atan2(2.6, 6);
+      d.params.distance = Math.hypot(6, 2.6);
+    });
+    setLook(reg, 0, 0);
+    tickN(reg, graph, 120);  // 2 seconds — gentle chase should converge
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    expect(cam.target.yaw).toBeGreaterThan(0.5);
+    expect(cam.target.yaw).toBeLessThan(1.6);
+  });
+
+  it("does NOT chase while the user is actively looking (recent input gate)", () => {
+    const { reg, graph } = autoSetup();
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.target.yaw = 0;
+      d.state.followedBodyYaw = 1.5;     // outside dead-zone
+      d.state.timeSinceLookInputSec = 0;
+      d.pos = [-6.54, 2.6, 0];
+      d.pivot.position = [0, 0, 0];
+      d.target.pitch = Math.atan2(2.6, 6);
+      d.params.distance = Math.hypot(6, 2.6);
+    });
+    // Drive a constant tiny look-yaw each tick — keeps timeSinceLookInputSec at 0.
+    for (let i = 0; i < 60; i++) {
+      setLook(reg, 0.001, 0);
+      executeGraph(graph, reg, { now: 0, dt: 1 / 60 });
+    }
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    // target.yaw should reflect the user's accumulated input, NOT the auto chase.
+    expect(cam.target.yaw).toBeCloseTo(0.001 * 60, 4);
+  });
+
+  it("auto-yaw can be disabled globally via params.followBodyYaw = false", () => {
+    const { reg, graph } = autoSetup();
+    writeBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID), (d) => {
+      d.params.followBodyYaw = false;
+      d.target.yaw = 0;
+      d.state.followedBodyYaw = 1.5;
+      d.state.timeSinceLookInputSec = 999;
+      d.pos = [-6.54, 2.6, 0];
+      d.pivot.position = [0, 0, 0];
+      d.target.pitch = Math.atan2(2.6, 6);
+      d.params.distance = Math.hypot(6, 2.6);
+    });
+    setLook(reg, 0, 0);
+    tickN(reg, graph, 60);
+    const cam = readBuffer(reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID));
+    expect(cam.target.yaw).toBeCloseTo(0, 6);  // chase disabled, yaw stays put
   });
 });

@@ -58,10 +58,37 @@ export function createCameraOrbitSystem(): SystemDescriptor {
       const camBuf = buffer<CameraBufferData>(CAMERA_BUFFER_ID);
       const c0 = readBuffer(camBuf);
 
+      // Track time since last non-trivial look input. Player intent
+      // (mouse / right-stick movement) overrides auto-yaw chase per the
+      // "player intent overrides auto-convenience" rule.
+      const LOOK_INPUT_EPSILON = 1e-4;
+      const lookActive =
+        Math.abs(im.lookDelta.yaw) > LOOK_INPUT_EPSILON ||
+        Math.abs(im.lookDelta.pitch) > LOOK_INPUT_EPSILON;
+      const timeSinceLookInputSec = lookActive ? 0 : c0.state.timeSinceLookInputSec + dt;
+
       // Accumulate lookDelta into target yaw/pitch. Pitch sign is flipped
       // from inputMapper's convention so mouse-down lifts the camera.
       let targetYaw = c0.target.yaw + im.lookDelta.yaw;
       let targetPitch = c0.target.pitch - im.lookDelta.pitch;
+
+      // Auto-yaw: when hands-off long enough AND the camera has drifted
+      // outside the dead-zone, lazily chase the followed character's yaw
+      // so the camera reacquires "behind the player" without fighting
+      // intentional look input.
+      if (
+        c0.params.followBodyYaw &&
+        timeSinceLookInputSec > c0.params.followBodyYawIdleThresholdSec
+      ) {
+        let delta = c0.state.followedBodyYaw - targetYaw;
+        // Wrap to [-π, π] so we always chase the shortest angular distance.
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        if (Math.abs(delta) > c0.params.followBodyYawDeadZone) {
+          const alpha = 1 - Math.exp(-Math.max(0, dt) * c0.params.followBodyYawResponsiveness);
+          targetYaw += delta * alpha;
+        }
+      }
 
       // Damped cushion: when target.pitch drops below pitchSoftMin, apply an
       // exponential restoring step pulling it back toward pitchSoftMin. The
@@ -190,6 +217,7 @@ export function createCameraOrbitSystem(): SystemDescriptor {
         c.pitch = worldPitch;
         c.pos = pos;
         c.fov = fov;
+        c.state.timeSinceLookInputSec = timeSinceLookInputSec;
       });
     },
   };
