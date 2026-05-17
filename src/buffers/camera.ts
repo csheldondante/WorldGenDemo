@@ -56,21 +56,6 @@ export interface CameraBufferData {
     pitchCushionStiffness: number;  // 1/s²; restoring acceleration scale
     pitchMax: number;               // radians; max elevation (just below straight up)
     fovDefault: number;
-    // Auto-yaw: camera target.yaw lazily chases the followed character's
-    // body yaw when the user is hands-off. Per the "player intent overrides
-    // auto-convenience" rule, this engages only when no recent look input.
-    followBodyYaw: boolean;
-    followBodyYawDeadZone: number;          // radians; chase only kicks in when |Δ| > this
-    followBodyYawIdleThresholdSec: number;  // seconds without look input before chase engages
-    followBodyYawResponsiveness: number;    // 1/s; rate of chase once engaged
-  };
-
-  // ───── Runtime state (auto-yaw chase) ─────
-  // Written by CameraOrbitSystem each tick. Persisted between ticks; not
-  // serialized as a "test parameter."
-  state: {
-    timeSinceLookInputSec: number;  // ticks since last non-trivial lookDelta
-    followedBodyYaw: number;        // world body yaw of the followed character (cameraPivot writes)
   };
 }
 
@@ -116,14 +101,6 @@ export function createCameraBuffer(): Buffer<CameraBufferData> {
         pitchCushionStiffness: 40.0,
         pitchMax: Math.PI / 2 - 0.05,
         fovDefault: 70,
-        followBodyYaw: true,
-        followBodyYawDeadZone: 0.5,            // ~28° — small wobbles don't drag the camera
-        followBodyYawIdleThresholdSec: 0.5,    // half a second hands-off before auto kicks in
-        followBodyYawResponsiveness: 2.0,      // ~500 ms time constant — gentle, not pushy
-      },
-      state: {
-        timeSinceLookInputSec: 999,  // start in "long idle" so first scene engages auto-yaw cleanly
-        followedBodyYaw: 0,
       },
     },
   });

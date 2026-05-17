@@ -14,12 +14,12 @@
       "byEntity": {
         "1": {
           "position": [
-            5.512071616818118,
+            -12.578056007191341,
             0,
-            19.745051696338205
+            16.187727051070446
           ],
           "scale": 1,
-          "yaw": -0.9654630247711715
+          "yaw": 0.6598900624368095
         },
         "__map__": true
       }
@@ -28,14 +28,14 @@
       "byEntity": {
         "1": {
           "linear": [
-            7.601239611865134,
+            -6.3173021683199835,
             0,
-            -2.1219785980588552
+            -4.908618747820167
           ],
           "prevLinear": [
-            7.605366381369016,
+            -6.349885666932382,
             0,
-            -2.069314762295378
+            -4.866394631983598
           ]
         },
         "__map__": true
@@ -73,9 +73,16 @@
           },
           "profileId": "player",
           "state": "surfaceSlide",
-          "targetYaw": -0.9288054511402871,
-          "timeInState": 1.0833333333333344,
+          "targetYaw": 0.6165567285614926,
+          "timeInState": 5.916666666666651,
           "transitions": [
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 0,
+              "to": "surfaceSlide"
+            },
             {
               "from": "surfaceSlide",
               "locomotion": "surfaceConstrained",
@@ -103,65 +110,9 @@
               "reason": "grip exceeded",
               "t": 66.66666666666667,
               "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 4783.333333333333,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 4800,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 4816.666666666666,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 4833.333333333333,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 4850,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 4866.666666666666,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 4883.333333333333,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 4900,
-              "to": "surfaceSlide"
             }
           ],
-          "yawVel": 0.3383776027466254
+          "yawVel": -0.40000000500292554
         },
         "__map__": true
       }
@@ -169,7 +120,7 @@
     "characterInput": {
       "byEntity": {
         "1": {
-          "cameraYaw": -0.9288054511402871,
+          "cameraYaw": 0.6165567285614926,
           "jumpHeld": false,
           "jumpHoldSec": 0,
           "jumpPressed": false,
@@ -184,13 +135,13 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            0.9649206899870885,
+            -0.7937180688152384,
             0,
-            -0.26254154344568204
+            -0.6082858104840261
           ],
           "rightTangent": [
             0,
-            -1,
+            1,
             0
           ],
           "vDesF": 8,
@@ -226,22 +177,22 @@
           "sample": {
             "friction": 1,
             "normal": [
-              0.2688815422838106,
+              -0.6135637076678703,
               0,
-              0.9631732534799123
+              0.7896452220034363
             ],
             "normalInMax": 800,
             "normalOutMax": 200,
             "position": [
-              5.3776308456762125,
+              -12.271274153357405,
               0,
-              19.263465069598247
+              15.792904440068726
             ],
             "slopeRad": 1.5707963267948966,
             "tangentU": [
-              -0.9631732534799123,
+              -0.7896452220034363,
               0,
-              0.2688815422838106
+              -0.6135637076678703
             ],
             "tangentUNorm": 125.66370614359172,
             "tangentV": [
@@ -254,7 +205,7 @@
           },
           "surfaceId": "planetoid",
           "uv": [
-            0.20667299182098242,
+            0.35513230752101244,
             0.5
           ]
         },
@@ -324,10 +275,6 @@
       "near": 0.1,
       "params": {
         "distance": 6.539113089708726,
-        "followBodyYaw": true,
-        "followBodyYawDeadZone": 0.5,
-        "followBodyYawIdleThresholdSec": 0.5,
-        "followBodyYawResponsiveness": 2,
         "fovDefault": 70,
         "orbitResponsiveness": 10,
         "pitchCushionStiffness": 40,
@@ -336,41 +283,37 @@
         "pitchSoftMin": 0.18,
         "pivotResponsiveness": 12
       },
-      "pitch": -0.534557665104187,
+      "pitch": -0.002946916265014703,
       "pivot": {
         "fwd": [
-          0.9706601204239828,
-          0.003545931391070218,
-          -0.24042952603428155
+          0.8077569795408547,
+          0.0035513127178524694,
+          0.5895049195562452
         ],
         "position": [
-          4.926591314471647,
+          -12.078516945286749,
           0,
-          19.888397603476516
+          16.549759933670884
         ],
         "up": [
-          0.24043103758441797,
-          1.029645954446374e-31,
-          0.9706662228418582
+          -0.5895086369569703,
+          1.0367244898959695e-31,
+          0.8077620732326661
         ]
       },
       "pos": [
-        0.0696319514000199,
-        3.6070920874772123,
-        23.566487559176622
+        -7.937531189873642,
+        0.02130526580010912,
+        22.47599212275943
       ],
-      "state": {
-        "followedBodyYaw": -0.9654630247711715,
-        "timeSinceLookInputSec": 1004.9999999999945
-      },
       "target": {
         "distance": 6.539113089708726,
         "fov": 70,
         "pitch": 0.4089078289509254,
         "roll": 0,
-        "yaw": -0.6485339658922261
+        "yaw": 3.141592653589793
       },
-      "yaw": -0.922650735767021
+      "yaw": 0.6098900618114163
     },
     "stateMachine": {
       "activeGraph": "Running",

@@ -237,10 +237,6 @@
       "near": 0.1,
       "params": {
         "distance": 6.539113089708726,
-        "followBodyYaw": true,
-        "followBodyYawDeadZone": 0.5,
-        "followBodyYawIdleThresholdSec": 0.5,
-        "followBodyYawResponsiveness": 2,
         "fovDefault": 70,
         "orbitResponsiveness": 10,
         "pitchCushionStiffness": 40,
@@ -272,10 +268,6 @@
         1.5510262548469436,
         -6.454095119505319
       ],
-      "state": {
-        "followedBodyYaw": 3.141592653589793,
-        "timeSinceLookInputSec": 0
-      },
       "target": {
         "distance": 6.539113089708726,
         "fov": 70,

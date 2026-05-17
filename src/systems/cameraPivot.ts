@@ -135,9 +135,6 @@ export function createCameraPivotSystem(): SystemDescriptor {
         c.pivot.position = [newPos[0], newPos[1], newPos[2]];
         c.pivot.up = [newUp[0], newUp[1], newUp[2]];
         c.pivot.fwd = [newFwd[0], newFwd[1], newFwd[2]];
-        // Snapshot the followed character's body yaw so CameraOrbitSystem can
-        // chase it without needing a separate transform-buffer read.
-        c.state.followedBodyYaw = t.yaw;
       });
     },
   };

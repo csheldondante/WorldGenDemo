@@ -28,14 +28,14 @@
       "byEntity": {
         "1": {
           "linear": [
-            0.3801462123305061,
-            -1.7478530259575893,
-            -0.7841550653758931
+            0.3801462123305051,
+            -1.7478530259575897,
+            -0.7841550653758933
           ],
           "prevLinear": [
-            0.36559905090553524,
-            -1.6742599827928972,
-            -0.7503218089304593
+            0.36559905090553413,
+            -1.6742599827928977,
+            -0.7503218089304594
           ]
         },
         "__map__": true
@@ -73,7 +73,7 @@
           },
           "profileId": "player",
           "state": "surfaceSlide",
-          "targetYaw": 3.141650671486703,
+          "targetYaw": -3.1415346356928833,
           "timeInState": 3.9166666666666576,
           "transitions": [
             {
@@ -120,7 +120,7 @@
     "characterInput": {
       "byEntity": {
         "1": {
-          "cameraYaw": 3.141650671486703,
+          "cameraYaw": -3.1415346356928833,
           "jumpHeld": false,
           "jumpHoldSec": 0,
           "jumpPressed": false,
@@ -135,14 +135,14 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            -0.19468227077142158,
+            -0.194682270771421,
             0.895118405724963,
             0.40107586960534475
           ],
           "rightTangent": [
             -0.9771503900960132,
-            -0.21254908120526575,
-            0.00005669221066149921
+            -0.2125490812052652,
+            0.000056692210661721254
           ],
           "vDesF": 6.243777687967622,
           "vDesR": 0
@@ -275,10 +275,6 @@
       "near": 0.1,
       "params": {
         "distance": 6.539113089708726,
-        "followBodyYaw": true,
-        "followBodyYawDeadZone": 0.5,
-        "followBodyYawIdleThresholdSec": 0.5,
-        "followBodyYawResponsiveness": 2,
         "fovDefault": 70,
         "orbitResponsiveness": 10,
         "pitchCushionStiffness": 40,
@@ -310,10 +306,6 @@
         10.03818952117828,
         -11.404061479875052
       ],
-      "state": {
-        "followedBodyYaw": -3.1415653193708932,
-        "timeSinceLookInputSec": 1002.9999999999964
-      },
       "target": {
         "distance": 6.539113089708726,
         "fov": 70,
@@ -321,7 +313,7 @@
         "roll": 0,
         "yaw": 3.141592653589793
       },
-      "yaw": 3.1416553488404055
+      "yaw": -3.1415299583391807
     },
     "stateMachine": {
       "activeGraph": "Running",
