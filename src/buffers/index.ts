@@ -28,6 +28,8 @@ import { createVolumeFieldBuffer } from "./volumeField";
 import { createRigDefinitionBuffer } from "./rigDefinition";
 import { createSkeletonBuffer } from "./skeleton";
 import { createFootLockBuffer } from "./footLock";
+import { createColliderBuffer } from "./collider";
+import { createCollisionEventsBuffer } from "./collisionEvents";
 
 export function registerCoreBuffers(reg: Registry): void {
   // Runtime
@@ -57,6 +59,8 @@ export function registerCoreBuffers(reg: Registry): void {
   reg.registerBuffer(createRigDefinitionBuffer());
   reg.registerBuffer(createSkeletonBuffer());
   reg.registerBuffer(createFootLockBuffer());
+  reg.registerBuffer(createColliderBuffer());
+  reg.registerBuffer(createCollisionEventsBuffer());
 }
 
 export * from "./input";
@@ -83,3 +87,5 @@ export * from "./volumeField";
 export * from "./rigDefinition";
 export * from "./skeleton";
 export * from "./footLock";
+export * from "./collider";
+export * from "./collisionEvents";
