@@ -77,6 +77,20 @@ function activateLook(im: ReturnType<typeof setup>["im"], yawDelta = 0.05) {
   writeBuffer(im, (d) => { d.lookDelta = { yaw: yawDelta, pitch: 0 }; });
 }
 
+/**
+ * Set cam.yaw AND cam.lookDir together. characterOrientation reads
+ * cam.lookDir (the camera's actual 3D look direction) now, not cam.yaw,
+ * because the yaw scalar is lossy on curved surfaces. Tests still want
+ * to drive the camera by a single angle on flat ground; this helper sets
+ * the matching look direction so the system sees a coherent camera pose.
+ */
+function setCamYaw(cam: ReturnType<typeof setup>["cam"], yaw: number) {
+  writeBuffer(cam, (d) => {
+    d.yaw = yaw;
+    d.lookDir = [-Math.sin(yaw), 0, -Math.cos(yaw)];
+  });
+}
+
 function tickN(
   reg: ReturnType<typeof createRegistry>,
   g: ReturnType<typeof buildExecutionGraph>,
@@ -96,7 +110,7 @@ describe("CharacterOrientationSystem", () => {
 
   it("idle player + active look input → body chases camera", () => {
     const { reg, g, tf, cam, im } = setup();
-    writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    setCamYaw(cam, Math.PI / 2);
     activateLook(im);
     tickN(reg, g, 60);
     const yaw = readBuffer(tf).byEntity.get(1)!.yaw;
@@ -106,7 +120,7 @@ describe("CharacterOrientationSystem", () => {
 
   it("idle player + camera moved but no look input → body does NOT rotate", () => {
     const { reg, g, tf, cam } = setup();
-    writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    setCamYaw(cam, Math.PI / 2);
     // No activateLook → lookDelta stays zero → no movement → target stays at 0.
     tickN(reg, g, 60);
     expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0, 3);
@@ -114,7 +128,7 @@ describe("CharacterOrientationSystem", () => {
 
   it("forward movement → body aims at movement direction (= camera yaw)", () => {
     const { reg, g, tf, cam, im } = setup();
-    writeBuffer(cam, (d) => { d.yaw = 0.7; });
+    setCamYaw(cam, 0.7);
     writeBuffer(im, (d) => { d.moveAxis = { x: 0, y: 1 }; });
     tickN(reg, g, 60);
     expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(0.7, 1);
@@ -140,7 +154,7 @@ describe("CharacterOrientationSystem", () => {
   it("after movement-driven turn, body holds when player stops and camera is idle", () => {
     const { reg, g, tf, cam, im } = setup();
     // Move forward with camera at 1.0 → body chases 1.0.
-    writeBuffer(cam, (d) => { d.yaw = 1.0; });
+    setCamYaw(cam, 1.0);
     writeBuffer(im, (d) => { d.moveAxis = { x: 0, y: 1 }; });
     tickN(reg, g, 60);
     expect(readBuffer(tf).byEntity.get(1)!.yaw).toBeCloseTo(1.0, 1);
@@ -153,7 +167,7 @@ describe("CharacterOrientationSystem", () => {
 
   it("respects turnAccelMax: from rest, yawVel rises no faster than profile cap × dt per tick", () => {
     const { reg, g, cc, cam, im } = setup();
-    writeBuffer(cam, (d) => { d.yaw = Math.PI / 2; });
+    setCamYaw(cam, Math.PI / 2);
     activateLook(im);
     const dt = 0.016;
     executeGraph(g, reg, { dt, now: 0 });

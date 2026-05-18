@@ -89,11 +89,15 @@ function runScenario(opts: ScenarioOpts): CapturedFrame[] {
     });
   });
   writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
+    const yaw = opts.input.cameraYaw ?? Math.PI;
     d.byEntity.set(id, {
       ...emptyInput(0),
       moveX: opts.input.moveX ?? 0,
       moveY: opts.input.moveY ?? 0,
-      cameraYaw: opts.input.cameraYaw ?? Math.PI,
+      cameraYaw: yaw,
+      // tangentInputMapper now reads cameraLookDir; mirror the yaw-based forward
+      // so these tests see the same projection they used to.
+      cameraLookDir: [-Math.sin(yaw), 0, -Math.cos(yaw)],
     });
   });
   writeBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID), (d) => {

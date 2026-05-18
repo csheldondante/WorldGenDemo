@@ -16,6 +16,8 @@ export interface CharacterInputComponent {
   jumpReleased: boolean;    // edge: true on the tick the button went up
   jumpHeld: boolean;        // held this tick
   jumpHoldSec: number;      // accumulated time held; reset on release
+  crouchPressed: boolean;   // edge: true on the tick crouch went down
+  crouchHeld: boolean;      // held this tick
   /** Camera-yaw-only frame, in radians. Legacy; used by airborne path which
    *  still operates in world XZ. Surface-attached path should prefer
    *  `cameraLookDir` since the yaw reconstruction loses the camera's
@@ -47,6 +49,7 @@ export function emptyInput(cameraYaw = 0): CharacterInputComponent {
   return {
     moveX: 0, moveY: 0,
     jumpPressed: false, jumpReleased: false, jumpHeld: false, jumpHoldSec: 0,
+    crouchPressed: false, crouchHeld: false,
     cameraYaw,
     cameraLookDir: [0, 0, -1],
   };

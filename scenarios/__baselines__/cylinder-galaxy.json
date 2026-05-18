@@ -126,6 +126,8 @@
             -0.06752397993226161
           ],
           "cameraYaw": 6.283185307179564,
+          "crouchHeld": false,
+          "crouchPressed": false,
           "jumpHeld": false,
           "jumpHoldSec": 0,
           "jumpPressed": false,
@@ -251,6 +253,12 @@
     },
     "inputMap": {
       "actions": {
+        "crouch": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
         "jump": {
           "held": false,
           "heldSec": 0,

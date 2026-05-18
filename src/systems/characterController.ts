@@ -239,6 +239,16 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                         `[CC ${id}] surfaceRun → airborne reason=${isCentripetal ? "centripetal" : "departing"} vN=${vN.toFixed(3)} aExN=${aExN.toFixed(2)} aCentripetalN=${aCentripetalN.toFixed(2)} apparent_N=${apparentN.toFixed(2)} pull=${pullDemand.toFixed(2)} grip=${gripBudget_N.toFixed(2)} uv=(${uv[0].toFixed(2)},${uv[1].toFixed(2)})`,
                       );
                     }
+                  } else if (
+                    input.crouchPressed &&
+                    ctrl.state === "surfaceRun" &&
+                    Math.hypot(vF, vR) > profile.slideMinSpeed
+                  ) {
+                    // Player-triggered slide: crouch (Ctrl) while moving fast
+                    // enough triggers an intentional slide. Lets the user
+                    // feel the slide state at will rather than only when
+                    // the controller forces it via slope/grip.
+                    setState(ctrl, "surfaceSlide", `crouch slide @ ${Math.hypot(vF, vR).toFixed(2)}m/s`, now);
                   } else if (slipMag > gripBudget * profile.slideGripScale && ctrl.state === "surfaceRun") {
                     setState(ctrl, "surfaceSlide", "grip exceeded", now);
                   } else if (slopeRad_local > profile.slopeRunMaxRad && ctrl.state === "surfaceRun") {
@@ -246,8 +256,12 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   } else if (
                     ctrl.state === "surfaceSlide" &&
                     slopeRad_local < profile.slopeStandMaxRad &&
-                    Math.abs(vF) + Math.abs(vR) < 0.5
+                    Math.abs(vF) + Math.abs(vR) < 0.5 &&
+                    !input.crouchHeld
                   ) {
+                    // Recovery from slide: low slope + low speed + crouch released.
+                    // Keeping crouch held holds the player in slide even at low
+                    // speed (lets the user manually stay sliding for testing).
                     setState(ctrl, "surfaceRun", `slope eased to ${slopeRad_local.toFixed(2)}`, now);
                   }
 

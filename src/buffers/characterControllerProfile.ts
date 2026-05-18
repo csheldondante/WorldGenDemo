@@ -37,6 +37,10 @@ export interface CharacterControllerProfile {
   detachNormalOutScale: number;
   /** Multiplier on grip budget: required tangent force > scale × budget → slip into surfaceSlide. */
   slideGripScale: number;
+  /** Minimum tangent speed (m/s) at which a crouch press triggers a manual slide.
+   *  Below this, crouch is ignored by the slide trigger (other crouch behaviors
+   *  may use it later). */
+  slideMinSpeed: number;
   /** Aerial control acceleration in volume mode, m/s². Lower than ground for that "committed-to-jump" feel. */
   airAccel: number;
   /** Aerial maximum horizontal speed cap, m/s. */
@@ -182,6 +186,7 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   ragdollNormalInScale: 1.5,
   detachNormalOutScale: 1.0,
   slideGripScale: 1.0,
+  slideMinSpeed: 2.0,
   airAccel: 12,
   airSpeedCap: 12,
   jumpImpulse: 7,

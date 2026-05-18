@@ -43,6 +43,7 @@ export function createCharacterInputSystem(): SystemDescriptor {
       const moveX = im.moveAxis.x;
       const moveY = im.moveAxis.y;
       const { held: jumpHeld, pressed: jumpPressed, released: jumpReleased, heldSec: jumpHoldSec } = im.actions.jump;
+      const { held: crouchHeld, pressed: crouchPressed } = im.actions.crouch;
 
       writeBuffer(ciBuf, (d) => {
         for (const id of ccBuf.data.byEntity.keys()) {
@@ -53,6 +54,8 @@ export function createCharacterInputSystem(): SystemDescriptor {
             jumpPressed,
             jumpReleased,
             jumpHoldSec,
+            crouchHeld,
+            crouchPressed,
             cameraYaw: cam.yaw,
             cameraLookDir: [cam.lookDir[0], cam.lookDir[1], cam.lookDir[2]],
           };

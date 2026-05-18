@@ -35,6 +35,10 @@ export interface InputMapBufferData {
   actions: {
     jump: ButtonState;
     toggleHud: ButtonState;
+    /** Crouch / slide modifier. Bound to Left/Right Ctrl + GamepadB. While
+     *  running at sufficient speed, crouch press triggers a manual slide;
+     *  other contexts (standing still, mid-air) may use it later. */
+    crouch: ButtonState;
   };
 }
 
@@ -48,7 +52,7 @@ export function createInputMapBuffer(): Buffer<InputMapBufferData> {
     initial: {
       moveAxis: { x: 0, y: 0 },
       lookDelta: { yaw: 0, pitch: 0 },
-      actions: { jump: emptyButtonState(), toggleHud: emptyButtonState() },
+      actions: { jump: emptyButtonState(), toggleHud: emptyButtonState(), crouch: emptyButtonState() },
     },
   });
 }
