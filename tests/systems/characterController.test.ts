@@ -199,15 +199,18 @@ describe("CharacterControllerSystem (FSM core)", () => {
     expect(speed).toBeLessThan(0.5);
   });
 
-  it("icy surface (low friction) under hard input → state transitions to surfaceSlide", () => {
+  it("icy surface (low friction) under hard input → still surfaceRun; thrust is grip-limited, not a slip trigger", () => {
     const { reg, ci, cc, g, id } = setup({ friction: 0.05 });
-    // Strong forward input — desired tangent accel exceeds (μ × |g_N|) = 0.05 × 9.81 ≈ 0.49.
-    // The state-transition slip check fires when required tangent accel > grip × slideGripScale.
+    // Strong forward input on low-friction ground. The controller's
+    // clampToRange caps applied force at the grip budget (~0.5 m/s² here);
+    // the character accelerates slowly but is NOT slipping. The FSM stays
+    // in surfaceRun. (Earlier behavior fired surfaceSlide on every transient
+    // because the rule compared the uncapped REQUEST to the budget — that
+    // was a bug; the cap already enforces friction at the application step.)
     writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1 }); });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(id)!;
-    expect(after.state).toBe("surfaceSlide");
-    expect(after.lastTransitionReason).toContain("grip");
+    expect(after.state).toBe("surfaceRun");
   });
 
   it("low normalOutMax → required suction exceeds cap → detach to airborne", () => {

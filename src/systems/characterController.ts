@@ -217,8 +217,24 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   const gripBudget_N = evaluateLinearAccel(profile.downAccel, Math.max(0, vN));
                   const pullDemand = apparentN + vN / dt;
 
-                  // ----- State transitions (use REQUIRED, not capped, magnitudes) -----
-                  const slipMag = Math.max(Math.abs(aReqF), Math.abs(aReqR));
+                  // ----- State transitions -----
+                  // Slip criteria (see wiki/worldgen-demo-slip-criteria-2026-05-18):
+                  //   1. Stalled-on-slope: slope steeper than slopeRunMaxRad AND
+                  //      tangent speed has dropped below slopeSlideMinVel. Above
+                  //      that velocity, steep-slope-with-momentum stays in
+                  //      surfaceRun (the future wallRun state will eventually
+                  //      take over there); when velocity finally bleeds to zero
+                  //      and the foot still can't overcome gravity-along-tangent,
+                  //      the character slips back.
+                  //   2. Kinematic overspeed: tangent speed exceeds the
+                  //      profile's topSpeedSlipThreshold. Limbs can't cycle that
+                  //      fast for non-wheeled archetypes; they trip.
+                  //   3. Manual crouch: handled below.
+                  // Explicitly NOT a trigger: "requested aReq > grip budget."
+                  // The clampToRange above already caps applied force at the
+                  // friction limit; the request being large just means the
+                  // controller is mid-transient toward vDes, not slipping.
+                  const tangentSpeed = Math.hypot(vF, vR);
                   let stateChanged = false;
                   if (aSurfaceNRequired > sample.normalInMax * profile.ragdollNormalInScale) {
                     // Surface stiffness exceeded — V1 has no ragdoll behavior yet, so detach to airborne.
@@ -242,21 +258,30 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   } else if (
                     input.crouchPressed &&
                     ctrl.state === "surfaceRun" &&
-                    Math.hypot(vF, vR) > profile.slideMinSpeed
+                    tangentSpeed > profile.slideMinSpeed
                   ) {
                     // Player-triggered slide: crouch (Ctrl) while moving fast
-                    // enough triggers an intentional slide. Lets the user
-                    // feel the slide state at will rather than only when
-                    // the controller forces it via slope/grip.
-                    setState(ctrl, "surfaceSlide", `crouch slide @ ${Math.hypot(vF, vR).toFixed(2)}m/s`, now);
-                  } else if (slipMag > gripBudget * profile.slideGripScale && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", "grip exceeded", now);
-                  } else if (slopeRad_local > profile.slopeRunMaxRad && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", `slope ${slopeRad_local.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)}`, now);
+                    // enough triggers an intentional slide.
+                    setState(ctrl, "surfaceSlide", `crouch slide @ ${tangentSpeed.toFixed(2)}m/s`, now);
+                  } else if (
+                    tangentSpeed > profile.topSpeedSlipThreshold &&
+                    ctrl.state === "surfaceRun"
+                  ) {
+                    // Overspeed: limbs can't keep up at this tangent speed.
+                    setState(ctrl, "surfaceSlide", `overspeed ${tangentSpeed.toFixed(2)}>${profile.topSpeedSlipThreshold.toFixed(2)}m/s`, now);
+                  } else if (
+                    slopeRad_local > profile.slopeRunMaxRad &&
+                    tangentSpeed < profile.slopeSlideMinVel &&
+                    ctrl.state === "surfaceRun"
+                  ) {
+                    // Stalled on a too-steep slope. Slope alone with momentum
+                    // is wall-run territory; we only flag slip once velocity
+                    // bleeds to ~0 and the foot can't push back against gravity.
+                    setState(ctrl, "surfaceSlide", `stalled on slope ${slopeRad_local.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)} @ ${tangentSpeed.toFixed(2)}m/s`, now);
                   } else if (
                     ctrl.state === "surfaceSlide" &&
                     slopeRad_local < profile.slopeStandMaxRad &&
-                    Math.abs(vF) + Math.abs(vR) < 0.5 &&
+                    tangentSpeed < profile.slopeSlideMinVel &&
                     !input.crouchHeld
                   ) {
                     // Recovery from slide: low slope + low speed + crouch released.

@@ -19,7 +19,7 @@
             6.276161795061915
           ],
           "scale": 1,
-          "yaw": -0.31021650629584646
+          "yaw": 0.08787578198587584
         },
         "__map__": true
       }
@@ -55,7 +55,7 @@
             1,
             0
           ],
-          "lastTransitionReason": "grip exceeded",
+          "lastTransitionReason": "stalled on slope 1.34>0.90 @ 0.44m/s",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
             "current": [
@@ -74,45 +74,17 @@
           "profileId": "player",
           "state": "surfaceSlide",
           "targetYaw": -3.141591195627717,
-          "timeInState": 2.916666666666661,
+          "timeInState": 0.7000000000000005,
           "transitions": [
             {
               "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 0,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 16.666666666666668,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 33.333333333333336,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 50,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 66.66666666666667,
+              "reason": "stalled on slope 1.34>0.90 @ 0.44m/s",
+              "t": 2283.333333333333,
               "to": "surfaceSlide"
             }
           ],
-          "yawVel": -4.560872294197694
+          "yawVel": 0.7435356329423188
         },
         "__map__": true
       }

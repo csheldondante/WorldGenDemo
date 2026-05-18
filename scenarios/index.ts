@@ -18,6 +18,8 @@ import { test as cameraStareDown } from "./camera-stare-down";
 import { test as cylinderGalaxy } from "./cylinder-galaxy";
 import { test as sphereGalaxy } from "./sphere-galaxy";
 import { test as torusGalaxy } from "./torus-galaxy";
+import { test as overspeedSlide } from "./overspeed-slide";
+import { test as crouchSlide } from "./crouch-slide";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
@@ -32,6 +34,8 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [cylinderGalaxy.name]: cylinderGalaxy,
   [sphereGalaxy.name]: sphereGalaxy,
   [torusGalaxy.name]: torusGalaxy,
+  [overspeedSlide.name]: overspeedSlide,
+  [crouchSlide.name]: crouchSlide,
 };
 
 export function getScenario(name: string): BufferTest {

@@ -55,7 +55,7 @@
             1,
             0
           ],
-          "lastTransitionReason": "grip exceeded",
+          "lastTransitionReason": "spawn",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
             "current": [
@@ -72,60 +72,10 @@
             ]
           },
           "profileId": "player",
-          "state": "surfaceSlide",
+          "state": "surfaceRun",
           "targetYaw": -2.929966965469755,
-          "timeInState": 3.8833333333333244,
-          "transitions": [
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 0,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 16.666666666666668,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 33.333333333333336,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 50,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 66.66666666666667,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 83.33333333333333,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 100,
-              "to": "surfaceSlide"
-            }
-          ],
+          "timeInState": 3.9999999999999907,
+          "transitions": [],
           "yawVel": -1.5740071000205376
         },
         "__map__": true

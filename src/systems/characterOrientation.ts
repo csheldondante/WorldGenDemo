@@ -167,10 +167,18 @@ export function createCharacterOrientationSystem(): SystemDescriptor {
               }
             }
 
+            // Reduced control authority while sliding: scale the per-tick
+            // turn rate cap + acceleration cap by profile.slideControlScale.
+            // Communicates "I can still steer a little but the slide carries
+            // most of the momentum."
+            const ctrlScale = ctrl.state === "surfaceSlide" ? profile.slideControlScale : 1;
+            const turnRateCap = profile.desiredTurnRate * ctrlScale;
+            const turnAccelCap = profile.turnAccelMax * ctrlScale;
+
             const offset = wrapPi(ctrl.targetYaw - t.yaw);
-            const desiredVel = clamp(profile.turnPGain * offset, -profile.desiredTurnRate, profile.desiredTurnRate);
+            const desiredVel = clamp(profile.turnPGain * offset, -turnRateCap, turnRateCap);
             const aReq = (desiredVel - ctrl.yawVel) / dt;
-            const aEff = clamp(aReq, -profile.turnAccelMax, profile.turnAccelMax);
+            const aEff = clamp(aReq, -turnAccelCap, turnAccelCap);
             ctrl.yawVel += aEff * dt;
             t.yaw = wrapPi(t.yaw + ctrl.yawVel * dt);
           }

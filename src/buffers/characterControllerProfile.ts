@@ -41,6 +41,20 @@ export interface CharacterControllerProfile {
    *  Below this, crouch is ignored by the slide trigger (other crouch behaviors
    *  may use it later). */
   slideMinSpeed: number;
+  /** Tangent speed (m/s) below which "slope > slopeRunMaxRad" qualifies as
+   *  slip. Above this, steep-slope-with-momentum is treated as still-running
+   *  (gravity-along-tangent decelerates you; eventually you hit the
+   *  threshold and slip back). Wall-run state will land here later. */
+  slopeSlideMinVel: number;
+  /** Tangent speed (m/s) above which limbs can't cycle and the character
+   *  trips into slide regardless of slope. Models a kinematic top-speed
+   *  for non-wheeled archetypes. Wheeled archetypes set this very high or
+   *  Infinity to disable. */
+  topSpeedSlipThreshold: number;
+  /** Multiplier on turn rate while in surfaceSlide. <1 reduces the
+   *  player's ability to redirect the body during a slide; 0 disables
+   *  turning entirely. ~0.3 communicates "limited control" well. */
+  slideControlScale: number;
   /** Aerial control acceleration in volume mode, m/s². Lower than ground for that "committed-to-jump" feel. */
   airAccel: number;
   /** Aerial maximum horizontal speed cap, m/s. */
@@ -187,6 +201,9 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   detachNormalOutScale: 1.0,
   slideGripScale: 1.0,
   slideMinSpeed: 2.0,
+  slopeSlideMinVel: 0.5,
+  topSpeedSlipThreshold: 9.0,
+  slideControlScale: 0.3,
   airAccel: 12,
   airSpeedCap: 12,
   jumpImpulse: 7,

@@ -55,7 +55,7 @@
             1,
             0
           ],
-          "lastTransitionReason": "grip exceeded",
+          "lastTransitionReason": "spawn",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
             "current": [
@@ -72,46 +72,10 @@
             ]
           },
           "profileId": "player",
-          "state": "surfaceSlide",
+          "state": "surfaceRun",
           "targetYaw": 0.9304974309997294,
-          "timeInState": 5.916666666666651,
-          "transitions": [
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 0,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 16.666666666666668,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 33.333333333333336,
-              "to": "surfaceSlide"
-            },
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.00",
-              "t": 50,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 66.66666666666667,
-              "to": "surfaceSlide"
-            }
-          ],
+          "timeInState": 5.999999999999984,
+          "transitions": [],
           "yawVel": -0.4000081587601487
         },
         "__map__": true
