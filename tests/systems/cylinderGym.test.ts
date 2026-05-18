@@ -103,10 +103,19 @@ function spawn(reg: ReturnType<typeof createRegistry>, opts: SpawnOpts) {
       bodyUpCurrent: [0, 0, 0, 1],
       bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
+      desiredFacingTangent: [0, 0, -1],
     });
   });
   writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
-    d.byEntity.set(id, { ...emptyInput(opts.cameraYaw) });
+    // In production, characterInputSystem copies cam.pivot.up (= local
+    // gravity-up at the pivot) into input.cameraUp. For these radial-gravity
+    // gyms the gravity-up direction coincides with the surface normal at the
+    // attachment point, so seed cameraUp to sample.normal — what
+    // cameraPivotSystem would write in a fully-wired graph.
+    d.byEntity.set(id, {
+      ...emptyInput(opts.cameraYaw),
+      cameraUp: [sample.normal[0], sample.normal[1], sample.normal[2]],
+    });
   });
   writeBuffer(reg.getBuffer<TransformBufferData>(TRANSFORM_BUFFER_ID), (d) => {
     d.byEntity.set(id, {
@@ -137,8 +146,16 @@ function spawn(reg: ReturnType<typeof createRegistry>, opts: SpawnOpts) {
 }
 
 function setInput(reg: ReturnType<typeof createRegistry>, id: number, moveX: number, moveY: number, cameraYaw: number) {
-  writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
-    d.byEntity.set(id, { ...emptyInput(cameraYaw), moveX, moveY });
+  const ciBuf = reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID);
+  // Preserve the spawn-seeded cameraUp (set to the surface normal — see spawn()).
+  const prev = readBuffer(ciBuf).byEntity.get(id);
+  writeBuffer(ciBuf, (d) => {
+    d.byEntity.set(id, {
+      ...emptyInput(cameraYaw),
+      moveX,
+      moveY,
+      cameraUp: prev ? prev.cameraUp : [0, 1, 0],
+    });
   });
 }
 

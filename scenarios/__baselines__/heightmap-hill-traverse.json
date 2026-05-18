@@ -14,12 +14,12 @@
       "byEntity": {
         "1": {
           "position": [
-            -0.23756368715210777,
-            3.0762045350955844,
-            -5.3227242625994915
+            -0.2388972688479744,
+            2.9882106875671486,
+            -4.970450244064169
           ],
           "scale": 1,
-          "yaw": 3.1350262423999973
+          "yaw": 3.135381226350495
         },
         "__map__": true
       }
@@ -28,14 +28,14 @@
       "byEntity": {
         "1": {
           "linear": [
-            -0.04581379890074859,
-            -1.9840030408871256,
-            8.142579045809171
+            -0.04339780031065123,
+            -2.0355090102235005,
+            8.147908768978407
           ],
           "prevLinear": [
-            -0.04667037706211916,
-            -1.96389934103573,
-            8.140014450707543
+            -0.04427410661917512,
+            -2.0155339750400794,
+            8.146034891054919
           ]
         },
         "__map__": true
@@ -55,6 +55,11 @@
             1,
             0
           ],
+          "desiredFacingTangent": [
+            -0.005228121692130293,
+            -0.24017793628582523,
+            0.9707148014041272
+          ],
           "lastTransitionReason": "grip exceeded",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
@@ -73,23 +78,9 @@
           },
           "profileId": "player",
           "state": "surfaceSlide",
-          "targetYaw": 3.1359044955194446,
-          "timeInState": 3.4999999999999925,
+          "targetYaw": 3.1362068583653593,
+          "timeInState": 3.516666666666659,
           "transitions": [
-            {
-              "from": "surfaceSlide",
-              "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.10",
-              "t": 16.666666666666668,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 33.333333333333336,
-              "to": "surfaceSlide"
-            },
             {
               "from": "surfaceSlide",
               "locomotion": "surfaceConstrained",
@@ -122,46 +113,60 @@
               "from": "surfaceSlide",
               "locomotion": "surfaceConstrained",
               "reason": "slope eased to 0.09",
+              "t": 350,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
+              "t": 366.66666666666663,
+              "to": "surfaceSlide"
+            },
+            {
+              "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "slope eased to 0.09",
+              "t": 383.3333333333333,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
+              "locomotion": "surfaceConstrained",
+              "reason": "grip exceeded",
               "t": 400,
-              "to": "surfaceRun"
+              "to": "surfaceSlide"
             },
             {
-              "from": "surfaceRun",
+              "from": "surfaceSlide",
               "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
+              "reason": "slope eased to 0.09",
               "t": 416.6666666666667,
-              "to": "surfaceSlide"
+              "to": "surfaceRun"
             },
             {
-              "from": "surfaceSlide",
+              "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
-              "reason": "slope eased to 0.09",
+              "reason": "grip exceeded",
               "t": 433.33333333333337,
-              "to": "surfaceRun"
-            },
-            {
-              "from": "surfaceRun",
-              "locomotion": "surfaceConstrained",
-              "reason": "grip exceeded",
-              "t": 450,
               "to": "surfaceSlide"
             },
             {
               "from": "surfaceSlide",
               "locomotion": "surfaceConstrained",
               "reason": "slope eased to 0.09",
-              "t": 466.6666666666667,
+              "t": 450,
               "to": "surfaceRun"
             },
             {
               "from": "surfaceRun",
               "locomotion": "surfaceConstrained",
               "reason": "grip exceeded",
-              "t": 483.3333333333333,
+              "t": 466.6666666666667,
               "to": "surfaceSlide"
             }
           ],
-          "yawVel": 0.0081069518718202
+          "yawVel": 0.0076212185987465375
         },
         "__map__": true
       }
@@ -170,11 +175,16 @@
       "byEntity": {
         "1": {
           "cameraLookDir": [
-            -0.0012907451116644598,
-            -0.37751796813812305,
-            0.9260013594536024
+            -0.001260886052470429,
+            -0.3783927073427602,
+            0.9256442994996399
           ],
-          "cameraYaw": 3.140198763329758,
+          "cameraUp": [
+            0,
+            1,
+            0
+          ],
+          "cameraYaw": 3.140230483182337,
           "jumpHeld": false,
           "jumpHoldSec": 0,
           "jumpPressed": false,
@@ -189,16 +199,16 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            -0.00552947832897906,
-            -0.23453061015903964,
-            0.9720930088051442
+            -0.005228121692130293,
+            -0.24017793628582523,
+            0.9707148014041272
           ],
           "rightTangent": [
-            -0.999596359356196,
-            -0.025793334567849057,
-            -0.011908914883823488
+            -0.9996225652386876,
+            -0.024925886273350947,
+            -0.011551071773374371
           ],
-          "vDesF": 8.460149057132035,
+          "vDesF": 8.47122911099279,
           "vDesR": 0
         },
         "__map__": true
@@ -231,36 +241,36 @@
           "sample": {
             "friction": 1,
             "normal": [
-              -0.027556345885472695,
-              0.9712417216191215,
-              0.23649559401342996
+              -0.026655624528209788,
+              0.9698722654978025,
+              0.24215132933595734
             ],
             "normalInMax": 800,
             "normalOutMax": 200,
             "position": [
-              -0.22378551420937143,
-              2.5905836742860235,
-              -5.440972059606207
+              -0.2255694565838695,
+              2.503274554818247,
+              -5.091525908732148
             ],
-            "slopeRad": 0.24040459684288237,
+            "slopeRad": 0.24609039744520353,
             "tangentU": [
-              0.9995977495907685,
-              0.02836087116206627,
+              0.9996225384666918,
+              0.02747327045343215,
               0
             ],
-            "tangentUNorm": 64.02575438590308,
+            "tangentUNorm": 64.02416666011631,
             "tangentV": [
               0,
-              -0.2365854369081006,
-              0.9716106890329085
+              -0.24223740216820838,
+              0.9702170071642722
             ],
-            "tangentVNorm": 65.87000402774729,
+            "tangentVNorm": 65.9646239216706,
             "traversable": true
           },
           "surfaceId": "hill",
           "uv": [
-            0.49650335134047857,
-            0.414984811568653
+            0.49647547724087704,
+            0.4204449076760602
           ]
         },
         "__map__": true
@@ -327,9 +337,9 @@
       "far": 800,
       "fov": 70,
       "lookDir": [
-        -0.001281150533401949,
-        -0.3778595108848931,
-        0.9258620570512326
+        -0.001250408502388971,
+        -0.37871408875453555,
+        0.9255128715784555
       ],
       "near": 0.1,
       "params": {
@@ -342,7 +352,7 @@
         "pitchSoftMin": 0.18,
         "pivotResponsiveness": 12
       },
-      "pitch": -0.38748331722664214,
+      "pitch": -0.38840649815200734,
       "pivot": {
         "fwd": [
           0,
@@ -350,9 +360,9 @@
           -1
         ],
         "position": [
-          -0.23021679497319472,
-          3.2178085602058175,
-          -5.941209352948646
+          -0.23176094549891227,
+          3.135031515379507,
+          -5.588976205586247
         ],
         "up": [
           0,
@@ -361,9 +371,9 @@
         ]
       },
       "pos": [
-        -0.2208689028976212,
-        5.974853759337609,
-        -12.696745381335118
+        -0.2226341434173633,
+        5.899286978256714,
+        -12.344346779829973
       ],
       "target": {
         "distance": 6.539113089708726,
@@ -372,7 +382,7 @@
         "roll": 0,
         "yaw": 3.141592653589793
       },
-      "yaw": 3.1402089164488665
+      "yaw": 3.1402416105303286
     },
     "stateMachine": {
       "activeGraph": "Running",

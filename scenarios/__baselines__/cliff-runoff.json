@@ -55,6 +55,11 @@
             1,
             0
           ],
+          "desiredFacingTangent": [
+            -1.1360426043509903e-16,
+            -0.528319379059522,
+            0.8490457194463448
+          ],
           "lastTransitionReason": "detach: departing vN=4.23 pull=286.05 > grip 5.00",
           "locomotionMode": "volumeConstrained",
           "orientation": {
@@ -173,6 +178,11 @@
             -1.1183303667773917e-16,
             -0.3707388521527131,
             0.9287371552298793
+          ],
+          "cameraUp": [
+            0,
+            1,
+            0
           ],
           "cameraYaw": 3.141592653589793,
           "jumpHeld": false,

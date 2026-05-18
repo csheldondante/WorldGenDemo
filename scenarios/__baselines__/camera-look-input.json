@@ -55,6 +55,11 @@
             1,
             0
           ],
+          "desiredFacingTangent": [
+            -0.4786186883218648,
+            0,
+            0.8780228648441097
+          ],
           "lastTransitionReason": "spawn",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
@@ -88,6 +93,11 @@
             -0.37847168320719804,
             -0.61212855475475,
             0.6943038365616103
+          ],
+          "cameraUp": [
+            0,
+            1,
+            0
           ],
           "cameraYaw": 2.6425118239378045,
           "jumpHeld": false,

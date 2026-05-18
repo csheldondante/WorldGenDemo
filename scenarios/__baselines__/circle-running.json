@@ -55,6 +55,11 @@
             1,
             0
           ],
+          "desiredFacingTangent": [
+            0.21004959691955125,
+            0,
+            0.9776907316907192
+          ],
           "lastTransitionReason": "grip exceeded",
           "locomotionMode": "surfaceConstrained",
           "orientation": {
@@ -138,6 +143,11 @@
             0.194478932087672,
             -0.3778385825479131,
             0.9052159689887395
+          ],
+          "cameraUp": [
+            0,
+            1,
+            0
           ],
           "cameraYaw": -2.929966965469755,
           "jumpHeld": false,

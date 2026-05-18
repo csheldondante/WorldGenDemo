@@ -29,6 +29,8 @@ import { CHARACTER_INPUT_SYSTEM_ID } from "./characterInput";
 import { CHARACTER_ORIENTATION_SYSTEM_ID } from "./characterOrientation";
 import { FORCE_FIELD_SYSTEM_ID } from "./forceField";
 import { xInterceptShifted } from "../lib/math/accelCurve";
+import { projectCameraTangentForward } from "../lib/math/cameraTangent";
+import type { Vec3 } from "../lib/math/quat";
 
 export const TANGENT_INPUT_MAPPER_SYSTEM_ID = "tangentInputMapperSystem";
 
@@ -94,34 +96,22 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
           const sample = att.sample;
           if (!sample) continue;
 
-          // Camera look direction in world space (where the camera is
-          // actually pointing). This is the camera's local -Z transformed by
-          // its world rotation — written by CameraOrbitSystem. Using the
-          // full 3D direction (not a yaw-reconstructed XZ approximation)
-          // is necessary on non-flat-Y gravity: e.g. on a cylinder side
-          // where the surface normal is +Z, the yaw-reconstructed forward
-          // is along ±X and after projection onto the tangent plane (the
-          // XY plane) collapses to zero. The full lookDir keeps its
-          // vertical component, which on projection gives the actual
-          // "screen forward in the puck's tangent plane" — the direction
-          // the player expects to walk when pressing forward.
-          const FwX = input.cameraLookDir[0];
-          const FwY = input.cameraLookDir[1];
-          const FwZ = input.cameraLookDir[2];
-
-          // Project camera forward onto the tangent plane: Ft = Fw − (Fw·N)·N. Normalize.
-          const Nx = sample.normal[0], Ny = sample.normal[1], Nz = sample.normal[2];
-          const FdotN = FwX * Nx + FwY * Ny + FwZ * Nz;
-          let FtX = FwX - FdotN * Nx;
-          let FtY = FwY - FdotN * Ny;
-          let FtZ = FwZ - FdotN * Nz;
-          const FtLen = Math.hypot(FtX, FtY, FtZ) || 1;
-          FtX /= FtLen; FtY /= FtLen; FtZ /= FtLen;
-
-          // Right = Ft × N. Already unit because both inputs are unit and orthogonal.
-          const RtX = FtY * Nz - FtZ * Ny;
-          const RtY = FtZ * Nx - FtX * Nz;
-          const RtZ = FtX * Ny - FtY * Nx;
+          // Project whichever of {camera lookDir F, camera up U} is more
+          // tangent to the surface (smaller |·N|) onto the tangent plane.
+          // The legacy F-only rule degraded as F approached N (steep-hill
+          // crest, torus inside curl, vertical wall + elevated camera all
+          // hit that regime). See `src/lib/math/cameraTangent.ts`.
+          const F: Vec3 = [
+            input.cameraLookDir[0], input.cameraLookDir[1], input.cameraLookDir[2],
+          ];
+          const U: Vec3 = [
+            input.cameraUp[0], input.cameraUp[1], input.cameraUp[2],
+          ];
+          const N: Vec3 = [sample.normal[0], sample.normal[1], sample.normal[2]];
+          const basis = projectCameraTangentForward(F, U, N);
+          if (!basis.forward) continue;
+          const FtX = basis.forward[0], FtY = basis.forward[1], FtZ = basis.forward[2];
+          const RtX = basis.right![0], RtY = basis.right![1], RtZ = basis.right![2];
 
           // Project the per-entity external accel (gravity-along-tangent etc.) onto
           // Ft and Rt. This is what shifts each direction's accel curve. On a downhill

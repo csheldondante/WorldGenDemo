@@ -3,10 +3,14 @@
  *
  *   - Character body frame as a small RGB axis cross (R=right, G=up, B=forward)
  *     anchored at the followed character's transform position. Axes are the
- *     SURFACE PUCK's frame, not the rendered/animated body — i.e. the frame
- *     the root motion controller actually operates in:
+ *     puck's DESIRED facing frame — the target the orientation controller is
+ *     tracking, not the actual rendered yaw, and not velocity:
  *       up      = surfaceAttachment.sample.normal (or gravity-up if airborne)
- *       forward = R_Y(t.yaw)·(0,0,-1), projected onto the up-tangent plane
+ *       forward = projectCameraTangentForward(cam.lookDir, cam.pivot.up, up)
+ *                 rotated by the move-input angle α = atan2(moveX, moveY).
+ *                 SAME helper the controller consumes — keeps the gizmo in
+ *                 sync with where the controller is steering, including the
+ *                 F-vs-cameraWorldY crossover at ~45° pitch on steep slopes.
  *       right   = cross(up, forward)
  *     Procedural animation (bodyLean, chainDynamics, footIk) is layered on
  *     top of this frame and does NOT feed back into root motion — useful to
@@ -36,12 +40,12 @@ import {
   SURFACE_ATTACHMENT_BUFFER_ID,
   type SurfaceAttachmentBufferData,
 } from "../buffers/surfaceAttachment";
-import { INPUT_MAP_BUFFER_ID, type InputMapBufferData } from "../buffers/inputMap";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { VOLUME_FIELD_BUFFER_ID, type VolumeFieldBufferData } from "../buffers/volumeField";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
 import { pickGravity, sortVolumesByPriority } from "../lib/math/gravityVolume";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
+import { CHARACTER_ORIENTATION_SYSTEM_ID } from "./characterOrientation";
 import { CAMERA_ORBIT_SYSTEM_ID } from "./cameraOrbit";
 import { BODY_LEAN_SYSTEM_ID } from "./bodyLean";
 import { RENDER_SYSTEM_ID } from "./render";
@@ -107,12 +111,11 @@ export function createDebugGizmoSystem(): SystemDescriptor {
       { id: TRANSFORM_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
-      { id: INPUT_MAP_BUFFER_ID, access: "read" },
       { id: CAMERA_BUFFER_ID, access: "read" },
       { id: VOLUME_FIELD_BUFFER_ID, access: "read" },
       { id: RENDER_REFS_BUFFER_ID, access: "read" },
     ],
-    runsAfter: [CHARACTER_CONTROLLER_SYSTEM_ID, BODY_LEAN_SYSTEM_ID, CAMERA_ORBIT_SYSTEM_ID],
+    runsAfter: [CHARACTER_CONTROLLER_SYSTEM_ID, CHARACTER_ORIENTATION_SYSTEM_ID, BODY_LEAN_SYSTEM_ID, CAMERA_ORBIT_SYSTEM_ID],
     // Mutates scene contents (line geometry positions); must precede RenderSystem
     // which reads renderRefs.scene to draw.
     runsBefore: [RENDER_SYSTEM_ID],
@@ -130,8 +133,8 @@ export function createDebugGizmoSystem(): SystemDescriptor {
       const attach = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const sa = attach.byEntity.get(targetId);
       const cam = readBuffer(buffer<CameraBufferData>(CAMERA_BUFFER_ID));
-      const im = readBuffer(buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID));
       const vol = readBuffer(buffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID));
+      const ctrl = cc.byEntity.get(targetId)!;
 
       if (!refs) refs = buildGizmo(refsBuf.scene);
 
@@ -150,55 +153,32 @@ export function createDebugGizmoSystem(): SystemDescriptor {
         upY = -g[1] / gLen;
         upZ = -g[2] / gLen;
       }
-      // Forward: derive from the camera's WORLD-SPACE look direction + the
-      // player's move-input angle. This is the puck's "desired facing" — the
-      // ground truth the orientation controller is trying to track — NOT the
-      // body's actual rendered yaw (which is limited by the world-Y Euler
-      // representation on non-flat-Y gravity). Showing the desired direction
-      // makes the gizmo a stable reference for diagnosing the body-yaw
-      // representation issue separately.
-      //
-      //   Ft   = normalize(camLookDir − (camLookDir·N)·N)    // camera fwd projected onto tangent
-      //   Rt   = cross(N, Ft)                                // lateral tangent
-      //   α    = atan2(moveX, moveY)                          // 0=forward, π/2=right
-      //   dFwd = Ft·cos(α) + Rt·sin(α)
-      //
-      // When idle, dFwd = Ft (α = 0).
-      const camLookX = cam.lookDir[0];
-      const camLookY = cam.lookDir[1];
-      const camLookZ = cam.lookDir[2];
-      const LdotN = camLookX * upX + camLookY * upY + camLookZ * upZ;
-      let FtX = camLookX - LdotN * upX;
-      let FtY = camLookY - LdotN * upY;
-      let FtZ = camLookZ - LdotN * upZ;
-      let FtLen = Math.hypot(FtX, FtY, FtZ);
-      if (FtLen < 1e-6) {
-        // Camera looks directly along surface normal — Ft undefined.
-        // Fall back to a world axis least aligned with up to keep the gizmo
-        // pointing somewhere meaningful instead of flickering.
+      // Forward: read the orientation system's desiredFacingTangent directly.
+      // CharacterOrientationSystem owns the input→desired-direction mapping
+      // (camera projected onto surface tangent + alpha-rotated by move
+      // input); the gizmo just renders its output. No projection logic
+      // duplicated here — keeps the gizmo a true display of the controller's
+      // target. Right = cross(up, forward).
+      let fwdX = ctrl.desiredFacingTangent[0];
+      let fwdY = ctrl.desiredFacingTangent[1];
+      let fwdZ = ctrl.desiredFacingTangent[2];
+      const fwdLen = Math.hypot(fwdX, fwdY, fwdZ);
+      if (fwdLen < 1e-6) {
+        // Spawn frame or transient degenerate state — pick a world axis least
+        // aligned with up so the gizmo points somewhere meaningful.
         const ax = Math.abs(upX);
         const ay = Math.abs(upY);
         const az = Math.abs(upZ);
-        if (ax <= ay && ax <= az) { FtX = 1; FtY = 0; FtZ = 0; }
-        else if (ay <= az) { FtX = 0; FtY = 1; FtZ = 0; }
-        else { FtX = 0; FtY = 0; FtZ = 1; }
-        const d2 = FtX * upX + FtY * upY + FtZ * upZ;
-        FtX -= d2 * upX; FtY -= d2 * upY; FtZ -= d2 * upZ;
-        FtLen = Math.hypot(FtX, FtY, FtZ) || 1;
+        if (ax <= ay && ax <= az) { fwdX = 1; fwdY = 0; fwdZ = 0; }
+        else if (ay <= az) { fwdX = 0; fwdY = 1; fwdZ = 0; }
+        else { fwdX = 0; fwdY = 0; fwdZ = 1; }
+        const d2 = fwdX * upX + fwdY * upY + fwdZ * upZ;
+        fwdX -= d2 * upX; fwdY -= d2 * upY; fwdZ -= d2 * upZ;
+        const len2 = Math.hypot(fwdX, fwdY, fwdZ) || 1;
+        fwdX /= len2; fwdY /= len2; fwdZ /= len2;
+      } else {
+        fwdX /= fwdLen; fwdY /= fwdLen; fwdZ /= fwdLen;
       }
-      FtX /= FtLen; FtY /= FtLen; FtZ /= FtLen;
-      // Right-tangent.
-      const RtX = upY * FtZ - upZ * FtY;
-      const RtY = upZ * FtX - upX * FtZ;
-      const RtZ = upX * FtY - upY * FtX;
-      // Apply move-input angle to derive desired facing.
-      const alpha = Math.atan2(im.moveAxis.x, im.moveAxis.y);
-      const ca = Math.cos(alpha);
-      const sa_ = Math.sin(alpha);
-      const fwdX = FtX * ca + RtX * sa_;
-      const fwdY = FtY * ca + RtY * sa_;
-      const fwdZ = FtZ * ca + RtZ * sa_;
-      // Right = cross(up, forward).
       const rgtX = upY * fwdZ - upZ * fwdY;
       const rgtY = upZ * fwdX - upX * fwdZ;
       const rgtZ = upX * fwdY - upY * fwdX;

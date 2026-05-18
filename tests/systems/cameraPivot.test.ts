@@ -58,6 +58,7 @@ function spawnDummyCharacter(reg: ReturnType<typeof setup>["reg"], id: number, p
       timeInState: 0, yawVel: 0, targetYaw: 0,
       bodyUpCurrent: [0, 0, 0, 1], bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
+      desiredFacingTangent: [0, 0, -1],
     });
   });
 }

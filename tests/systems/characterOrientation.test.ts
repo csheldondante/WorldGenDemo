@@ -65,6 +65,7 @@ function setup() {
       bodyUpCurrent: [0, 0, 0, 1],
       bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
+      desiredFacingTangent: [0, 0, -1],
     });
   });
   writeBuffer(tf, (d) => { d.byEntity.set(1, { position: [0, 0, 0], yaw: 0, scale: 1 }); });

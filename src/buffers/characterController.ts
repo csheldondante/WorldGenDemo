@@ -53,6 +53,17 @@ export interface CharacterControllerComponent {
    */
   targetYaw: number;
   /**
+   * 3D world-space "desired facing" direction in the surface tangent plane.
+   * Written by CharacterOrientationSystem each tick — it's the full Vec3 the
+   * system computes internally (camera-projected + alpha-rotated by move
+   * input) before flattening to the world-Y Euler `targetYaw` for the chase.
+   * Storing the 3D version lets debug/render consumers (gizmo) display
+   * exactly what the orientation system targeted, with no projection
+   * duplicated downstream and no information lost on non-flat-Y surfaces.
+   * Initialized to [0, 0, -1] on spawn.
+   */
+  desiredFacingTangent: [number, number, number];
+  /**
    * Smoothed body-up direction in world space (quaternion). BodyLeanSystem
    * computes a target each tick from the apparent-gravity solver and slerps
    * this toward it with `leanResponsiveness`. The pelvis bone's localRot is

@@ -122,6 +122,7 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
               current: [0, 0, 0, 1] as [number, number, number, number],
               target: [0, 0, 0, 1] as [number, number, number, number],
             },
+            desiredFacingTangent: [0, 0, -1] as [number, number, number],
           });
           setComponent(CHARACTER_INPUT_BUFFER_ID, emptyInput(0));
           setComponent(SURFACE_ATTACHMENT_BUFFER_ID, {

@@ -26,6 +26,13 @@ export interface CharacterInputComponent {
    *  tangent plane recovers the screen-forward direction on the puck's
    *  surface, regardless of how the camera is oriented to world-Y. */
   cameraLookDir: [number, number, number];
+  /** Unit world-space camera "up" reference — `cam.pivot.up`, the local
+   *  gravity-up at the pivot. Together with `cameraLookDir` it spans the
+   *  camera's vertical plane; consumers project that plane onto the surface
+   *  tangent plane to recover "forward on stick" stably when `lookDir`
+   *  approaches the surface normal (steep-hill crest, torus inside-curl).
+   *  See `src/lib/math/cameraTangent.ts`. */
+  cameraUp: [number, number, number];
 }
 
 export interface CharacterInputBufferData {
@@ -49,5 +56,6 @@ export function emptyInput(cameraYaw = 0): CharacterInputComponent {
     jumpPressed: false, jumpReleased: false, jumpHeld: false, jumpHoldSec: 0,
     cameraYaw,
     cameraLookDir: [0, 0, -1],
+    cameraUp: [0, 1, 0],
   };
 }

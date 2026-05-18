@@ -83,6 +83,7 @@ function setupOnSurface(opts: {
       bodyUpCurrent: [0, 0, 0, 1],
       bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
+      desiredFacingTangent: [0, 0, -1],
     });
   });
   writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
