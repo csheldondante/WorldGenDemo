@@ -182,19 +182,27 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               vel.linear[1] -= vNnew * Nny;
               vel.linear[2] -= vNnew * Nnz;
 
-              // Step 7: rescale projected velocity to preserve the post-acceleration
-              // speed (energy conservation across the projection). If vNnew was small
-              // this is a near-identity rescale; if surface curved significantly between
-              // ticks it corrects the small magnitude loss from projection. Without
-              // this, the body would lose energy each tick proportional to surface
-              // curvature, slowing artificially.
-              const speedProj = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
-              if (speedProj > 1e-9) {
-                const scale = speedTarget / speedProj;
-                vel.linear[0] *= scale;
-                vel.linear[1] *= scale;
-                vel.linear[2] *= scale;
-              }
+              // Step 7 (DISABLED — bug audit 2026-05-19): the previous rescale-to-
+              // speedTarget step preserved the wrong invariant. `speedTarget` is
+              // captured AFTER step 1's accumulator integration, which includes any
+              // normal-direction accel that step 6 will then absorb into the
+              // constraint. Rescaling tangent magnitude to recover that "lost" speed
+              // converts absorbed-normal-kinetic into tangent kinetic energy — same
+              // conceptual leak as the aSurfaceN-in-accumulator bug, smaller magnitude.
+              // Test before/after: if removing this step (a) eliminates the residual
+              // visible stutter on climb-tall-wall and (b) doesn't measurably slow the
+              // body on smooth curved surfaces (camera-hill-crest, gym-cylinder), the
+              // rescale is the wrong invariant and should be permanently removed or
+              // reworked. See audit note in the conversation log.
+              //
+              // const speedProj = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
+              // if (speedProj > 1e-9) {
+              //   const scale = speedTarget / speedProj;
+              //   vel.linear[0] *= scale;
+              //   vel.linear[1] *= scale;
+              //   vel.linear[2] *= scale;
+              // }
+              void speedTarget;  // suppress unused-var warning while step 7 is disabled
               vels.byEntity.set(id, vel);
 
               // Store un-clamped UV so surfaceConstraint can detect "walked off edge";
