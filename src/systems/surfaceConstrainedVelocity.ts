@@ -251,6 +251,66 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                       sample_new = surface.sampleAtUV(u_jc, v_jc);
                       u_raw = u_jump;
                       v_raw = v_jump;
+
+                      // Kinetic-energy-preserving velocity rotation. The body's
+                      // wheel has rolled onto the new segment — its forward
+                      // momentum doesn't get absorbed into the new normal, it
+                      // rotates to align with the new surface tangent. Capture
+                      // the pre-tick speed (start-of-tick, before this tick's
+                      // accumulator integration) as the magnitude to preserve,
+                      // project current velocity onto the new tangent plane,
+                      // then rescale to that magnitude. Without this, the
+                      // straight-from-step-6 projection drops the normal
+                      // component, which on a steep wall is most of |v| —
+                      // body would instantly lose forward speed and "stall"
+                      // at the wall rather than rolling up it.
+                      const speedPre = Math.hypot(
+                        vel.prevLinear[0],
+                        vel.prevLinear[1],
+                        vel.prevLinear[2],
+                      );
+                      const Nnx = sample_new.normal[0];
+                      const Nny = sample_new.normal[1];
+                      const Nnz = sample_new.normal[2];
+                      const vNcorner =
+                        vel.linear[0] * Nnx +
+                        vel.linear[1] * Nny +
+                        vel.linear[2] * Nnz;
+                      vel.linear[0] -= vNcorner * Nnx;
+                      vel.linear[1] -= vNcorner * Nny;
+                      vel.linear[2] -= vNcorner * Nnz;
+                      const vMagTan = Math.hypot(
+                        vel.linear[0],
+                        vel.linear[1],
+                        vel.linear[2],
+                      );
+                      if (vMagTan > 1e-6 && speedPre > 1e-6) {
+                        const scale = speedPre / vMagTan;
+                        vel.linear[0] *= scale;
+                        vel.linear[1] *= scale;
+                        vel.linear[2] *= scale;
+                      } else if (speedPre > 1e-6) {
+                        // Velocity was almost entirely along the new normal —
+                        // pick the forward surface tangent in the velocity
+                        // plane: t = (velPlaneNormal × N), aligned with
+                        // momentum direction.
+                        const velPlaneNx = -dirZ;
+                        const velPlaneNz = dirX;
+                        // velPlaneN × N_new:
+                        let tx = 0 * Nnz - velPlaneNz * Nny;
+                        let ty = velPlaneNz * Nnx - velPlaneNx * Nnz;
+                        let tz = velPlaneNx * Nny - 0 * Nnx;
+                        const tLen = Math.hypot(tx, ty, tz);
+                        if (tLen > 1e-6) {
+                          tx /= tLen; ty /= tLen; tz /= tLen;
+                          if (tx * dirX + tz * dirZ < 0) {
+                            tx = -tx; ty = -ty; tz = -tz;
+                          }
+                          vel.linear[0] = speedPre * tx;
+                          vel.linear[1] = speedPre * ty;
+                          vel.linear[2] = speedPre * tz;
+                        }
+                      }
                     }
                   }
                 }
