@@ -31,6 +31,7 @@ import { createSkeletonBuffer } from "./skeleton";
 import { createFootLockBuffer } from "./footLock";
 import { createColliderBuffer } from "./collider";
 import { createCollisionEventsBuffer } from "./collisionEvents";
+import { createProfileEditorBuffer } from "./profileEditor";
 
 export function registerCoreBuffers(reg: Registry): void {
   // Runtime
@@ -63,6 +64,7 @@ export function registerCoreBuffers(reg: Registry): void {
   reg.registerBuffer(createFootLockBuffer());
   reg.registerBuffer(createColliderBuffer());
   reg.registerBuffer(createCollisionEventsBuffer());
+  reg.registerBuffer(createProfileEditorBuffer());
 }
 
 export * from "./input";
@@ -92,3 +94,4 @@ export * from "./skeleton";
 export * from "./footLock";
 export * from "./collider";
 export * from "./collisionEvents";
+export * from "./profileEditor";

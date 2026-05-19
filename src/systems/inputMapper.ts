@@ -30,6 +30,10 @@ const BINDINGS: Record<keyof InputMapBufferData["actions"], {
 }> = {
   jump: { keys: ["Space"], gamepadButtons: ["GamepadA"] },
   toggleHud: { keys: ["KeyH"], gamepadButtons: ["GamepadBack"] },
+  toggleProfileEditor: { keys: ["Backquote"], gamepadButtons: [] },
+  cycleProfilePrev: { keys: ["BracketLeft"], gamepadButtons: [] },
+  cycleProfileNext: { keys: ["BracketRight"], gamepadButtons: [] },
+  cloneProfile: { keys: ["KeyN"], gamepadButtons: [] },
 };
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -110,11 +114,32 @@ export function createInputMapperSystem(): SystemDescriptor {
         BINDINGS.toggleHud.keys.some((k) => input.keys.has(k)) ||
         BINDINGS.toggleHud.gamepadButtons.some((b) => input.gamepadButtons.has(b));
       const toggleHud = nextButtonState(toggleHudHeld, prevMap.actions.toggleHud, dt);
+      const editorActions = (
+        [
+          ["toggleProfileEditor", prevMap.actions.toggleProfileEditor],
+          ["cycleProfilePrev", prevMap.actions.cycleProfilePrev],
+          ["cycleProfileNext", prevMap.actions.cycleProfileNext],
+          ["cloneProfile", prevMap.actions.cloneProfile],
+        ] as const
+      ).map(([name, prev]) => {
+        const binding = BINDINGS[name];
+        const held =
+          binding.keys.some((k) => input.keys.has(k)) ||
+          binding.gamepadButtons.some((b) => input.gamepadButtons.has(b));
+        return [name, nextButtonState(held, prev, dt)] as const;
+      });
+      const editor = Object.fromEntries(editorActions) as Pick<
+        InputMapBufferData["actions"],
+        | "toggleProfileEditor"
+        | "cycleProfilePrev"
+        | "cycleProfileNext"
+        | "cloneProfile"
+      >;
 
       writeBuffer(imBuf, (d) => {
         d.moveAxis = { x: moveX, y: moveY };
         d.lookDelta = lookDelta;
-        d.actions = { jump, toggleHud };
+        d.actions = { jump, toggleHud, ...editor };
       });
 
       // Drain mouse deltas after consumption.

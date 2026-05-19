@@ -39,6 +39,8 @@ import { FOOT_PLANNER_SYSTEM_ID } from "../systems/footPlanner";
 import { FOOT_IK_SYSTEM_ID } from "../systems/footIk";
 import { SKELETON_WORLD_SYSTEM_ID } from "../systems/skeletonWorld";
 import { SKELETON_DEBUG_RENDER_SYSTEM_ID } from "../systems/skeletonDebugRender";
+import { PROFILE_EDITOR_SYSTEM_ID } from "../systems/profileEditor";
+import { PROFILE_EDITOR_RENDER_SYSTEM_ID } from "../systems/profileEditorRender";
 
 export const LOADING_GRAPH_ID = "Loading";
 export const RUNNING_GRAPH_ID = "Running";
@@ -96,6 +98,8 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
       SKELETON_WORLD_SYSTEM_ID,
       SKELETON_DEBUG_RENDER_SYSTEM_ID,
       DEBUG_GIZMO_SYSTEM_ID,
+      PROFILE_EDITOR_SYSTEM_ID,
+      PROFILE_EDITOR_RENDER_SYSTEM_ID,
       RENDER_SYSTEM_ID,
       MINIMAP_SYSTEM_ID,
       HUD_SYSTEM_ID,

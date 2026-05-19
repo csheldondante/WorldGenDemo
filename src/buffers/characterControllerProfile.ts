@@ -11,6 +11,10 @@ export type ProfileId = string;
  */
 export interface CharacterControllerProfile {
   id: ProfileId;
+  /** Human-readable name shown in the in-game profile editor. Defaults to `id`
+   *  on creation; users rename freely from the editor without breaking the
+   *  ID-based references (`CharacterControllerComponent.profileId` etc.). */
+  name: string;
   /** Maximum surface-tangent speed under normal run, m/s. Inputs map to a desired velocity scaled by this.
    *  Conventionally equals `forwardAccel.vMax` — the speed at which forward accel reaches zero. */
   desiredRunSpeed: number;
@@ -237,6 +241,7 @@ export const CHARACTER_CONTROLLER_PROFILE_BUFFER_ID = "characterControllerProfil
 
 export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   id: "player",
+  name: "player",
   desiredRunSpeed: 8,
   // accelAtZero values match the pre-curve scalar caps so v=0 behavior is identical.
   // Finite vMax on tangent curves makes "external accel shifts the curve" work cleanly:

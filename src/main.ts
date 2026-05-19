@@ -26,6 +26,7 @@ const worldOpts = {
   hintEl: document.getElementById("hint") as HTMLElement,
   panelEl: panels.world,
   builderPanelEl: panels.builder,
+  profileEditorEl: document.getElementById("profile-editor") as HTMLElement,
 };
 
 const world = scenarioName

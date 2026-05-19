@@ -28,6 +28,8 @@ export interface WorldOptions {
   panelEl: HTMLElement;
   /** Optional builder panel — wired up if present so tab clicks can switch modes. */
   builderPanelEl?: HTMLElement;
+  /** Optional profile editor panel host — populated by ProfileEditorRenderSystem. */
+  profileEditorEl?: HTMLElement;
 }
 
 export interface WorldHandle {
@@ -55,6 +57,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
       panelEl: opts.panelEl,
       hudEl: opts.hudEl,
       hintEl: opts.hintEl,
+      profileEditorEl: opts.profileEditorEl,
     },
     sceneName,
   });
@@ -184,6 +187,7 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
       panelEl: opts.panelEl,
       hudEl: opts.hudEl,
       hintEl: opts.hintEl,
+      profileEditorEl: opts.profileEditorEl,
     },
     sceneName: null, // scenarios seed scene state directly
   });

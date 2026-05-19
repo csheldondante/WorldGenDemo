@@ -47,6 +47,8 @@ import { createFootPlannerSystem } from "./footPlanner";
 import { createFootIkSystem } from "./footIk";
 import { createSkeletonWorldSystem } from "./skeletonWorld";
 import { createSkeletonDebugRenderSystem } from "./skeletonDebugRender";
+import { createProfileEditorSystem } from "./profileEditor";
+import { createProfileEditorRenderSystem } from "./profileEditorRender";
 
 export interface CoreSystems {
   inputAccumulator: InputAccumulator;
@@ -130,6 +132,8 @@ export function registerCoreSystems(reg: Registry, options: RegisterCoreSystemsO
   reg.registerSystem(createFootIkSystem());
   reg.registerSystem(createSkeletonWorldSystem());
   reg.registerSystem(createSkeletonDebugRenderSystem());
+  reg.registerSystem(createProfileEditorSystem());
+  reg.registerSystem(createProfileEditorRenderSystem());
   return { inputAccumulator, builderAccumulator, builderDom, inputRecordingState };
 }
 
@@ -169,3 +173,5 @@ export * from "./footPlanner";
 export * from "./footIk";
 export * from "./skeletonWorld";
 export * from "./skeletonDebugRender";
+export * from "./profileEditor";
+export * from "./profileEditorRender";

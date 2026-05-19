@@ -34,6 +34,41 @@
       }
       #hint.hidden { display: none; }
 
+      /* Profile editor panel — toggled by Backquote key. Auto-hidden by ProfileEditorRenderSystem
+         when the editor buffer's `visible` is false. */
+      #profile-editor {
+        position: absolute; top: 10px; right: 10px; bottom: 10px; width: 360px;
+        background: rgba(10,12,16,0.92); border: 1px solid #444; border-radius: 4px;
+        color: #ddd; font-size: 12px; padding: 8px 10px; overflow-y: auto; pointer-events: auto;
+        display: flex; flex-direction: column; gap: 6px; z-index: 20;
+      }
+      .pe-root { display: flex; flex-direction: column; gap: 8px; }
+      .pe-root.pe-flash { box-shadow: inset 0 0 0 2px #88a8ff; transition: box-shadow 0.1s ease-in; }
+      .pe-header { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid #333; }
+      .pe-name-row { display: flex; gap: 6px; align-items: center; }
+      .pe-name-row label { font-size: 11px; text-transform: uppercase; color: #889; }
+      .pe-name-input {
+        flex: 1; background: #1a1f2a; color: #ddd; border: 1px solid #444; border-radius: 3px;
+        padding: 3px 6px; font: inherit;
+      }
+      .pe-meta { display: flex; gap: 6px; flex-wrap: wrap; font-size: 10px; }
+      .pe-state, .pe-id, .pe-count {
+        background: #2a3142; border: 1px solid #444; border-radius: 3px; padding: 2px 6px;
+      }
+      .pe-state { background: rgba(80,120,200,0.4); border-color: #88a8ff; }
+      .pe-hint { font-size: 10px; color: #889; }
+      .pe-fields { display: flex; flex-direction: column; gap: 4px; }
+      .pe-section { background: rgba(20,24,32,0.5); border: 1px solid #333; border-radius: 3px; padding: 4px 6px; }
+      .pe-section > summary { cursor: pointer; font-size: 11px; text-transform: uppercase; color: #aab; user-select: none; }
+      .pe-field { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
+      .pe-field label { flex: 1; font-size: 11px; color: #ccc; min-width: 0; word-break: break-all; }
+      .pe-field input {
+        width: 90px; background: #1a1f2a; color: #ddd; border: 1px solid #444; border-radius: 3px;
+        padding: 2px 4px; font: inherit; text-align: right;
+      }
+      .pe-field input.pe-invalid { border-color: #d44; }
+      .pe-empty { color: #889; font-style: italic; padding: 10px; }
+
       /* Editor layout: left palette · center canvas · right asset menu */
       .panel.builder { padding-top: 50px; flex-direction: row; gap: 12px; padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
       .editor-pane { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -119,6 +154,7 @@
       <div class="panel world active" id="panel-world">
         <div id="hint" class="hidden">click to fly · WASD = move · Space/Ctrl = up/down · Shift = boost · esc to release</div>
         <div id="hud">loading…</div>
+        <div id="profile-editor" style="display: none;"></div>
       </div>
 
       <div class="panel builder" id="panel-builder">

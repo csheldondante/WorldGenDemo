@@ -29,6 +29,8 @@ export interface RenderingHandles {
   panelEl: HTMLElement;
   hudEl: HTMLElement;
   hintEl: HTMLElement;
+  /** Profile editor panel container — optional; only world.ts wires it. */
+  profileEditorEl?: HTMLElement;
   aspect?: number; // initial aspect; defaults to panel client size
 }
 
@@ -78,6 +80,7 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
       d.panelEl = r.panelEl;
       d.hudEl = r.hudEl;
       d.hintEl = r.hintEl;
+      if (r.profileEditorEl) d.profileEditorEl = r.profileEditorEl;
     });
     const cam = reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID);
     const aspect = r.aspect ?? (r.panelEl.clientWidth || 1) / (r.panelEl.clientHeight || 1);

@@ -10,6 +10,9 @@ export interface RenderRefsBufferData {
   hudEl: HTMLElement | null;
   hintEl: HTMLElement | null;
   minimapEl: HTMLElement | null;
+  /** Root container for the in-game profile editor panel. Populated by main.ts;
+   *  ProfileEditorRenderSystem mutates its children when the panel is visible. */
+  profileEditorEl: HTMLElement | null;
   /** The terrain mesh currently in the scene; replaced on rebuild. */
   terrainMesh: THREE.Mesh | null;
   /** Asset meshes (instanced or per-component) currently in the scene. */
@@ -31,6 +34,7 @@ export function createRenderRefsBuffer(): Buffer<RenderRefsBufferData> {
       hudEl: null,
       hintEl: null,
       minimapEl: null,
+      profileEditorEl: null,
       terrainMesh: null,
       assetMeshes: [],
     },

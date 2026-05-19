@@ -35,6 +35,14 @@ export interface InputMapBufferData {
   actions: {
     jump: ButtonState;
     toggleHud: ButtonState;
+    /** Toggle the in-game profile editor panel. */
+    toggleProfileEditor: ButtonState;
+    /** Cycle the edited entity's profileId to the previous profile in the buffer. */
+    cycleProfilePrev: ButtonState;
+    /** Cycle the edited entity's profileId to the next profile in the buffer. */
+    cycleProfileNext: ButtonState;
+    /** Clone the edited entity's current profile to a new id and switch to it. */
+    cloneProfile: ButtonState;
   };
 }
 
@@ -48,7 +56,14 @@ export function createInputMapBuffer(): Buffer<InputMapBufferData> {
     initial: {
       moveAxis: { x: 0, y: 0 },
       lookDelta: { yaw: 0, pitch: 0 },
-      actions: { jump: emptyButtonState(), toggleHud: emptyButtonState() },
+      actions: {
+        jump: emptyButtonState(),
+        toggleHud: emptyButtonState(),
+        toggleProfileEditor: emptyButtonState(),
+        cycleProfilePrev: emptyButtonState(),
+        cycleProfileNext: emptyButtonState(),
+        cloneProfile: emptyButtonState(),
+      },
     },
   });
 }
