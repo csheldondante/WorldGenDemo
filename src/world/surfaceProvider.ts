@@ -95,90 +95,55 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
   readonly heightmap: Heightmap;
   readonly worldWidth: number;
   readonly worldDepth: number;
-  /**
-   * Per-vertex (cell-corner) unit normals, packed (nx, ny, nz). Precomputed
-   * from central-difference gradients of the height field at construction.
-   * `sampleAtUV` bilinearly interpolates these and renormalizes — the
-   * result is a C0-continuous normal across tile boundaries, which removes
-   * the per-tile-crossing stutter that the per-sample bilinear-height
-   * gradient produced (`∂h/∂v` was piecewise constant within a tile and
-   * jumped at tile borders → normal jumped → velocity reprojection lurched
-   * the body vertical every N frames where N = ticks-to-cross-one-tile).
-   * Memory: 3 floats × W × H. For a 64×64 map that's 48 KB; negligible.
-   */
-  private readonly vertexNormals: Float32Array;
 
   constructor(id: SurfaceId, heightmap: Heightmap) {
     this.id = id;
     this.heightmap = heightmap;
     this.worldWidth = heightmap.width * heightmap.tileSize;
     this.worldDepth = heightmap.height * heightmap.tileSize;
-    this.vertexNormals = new Float32Array(heightmap.width * heightmap.height * 3);
-    this.precomputeVertexNormals();
   }
 
   /**
-   * Compute a smooth unit normal at every grid vertex via central differences
-   * over the height field. Edges clamp to one-sided differences. Normal at
-   * (i, j) = normalize(-∂h/∂x, 1, -∂h/∂z) — points "up" relative to the
-   * height field with magnitude 1.
-   */
-  private precomputeVertexNormals(): void {
-    const W = this.heightmap.width;
-    const H = this.heightmap.height;
-    const ts = this.heightmap.tileSize;
-    const data = this.heightmap.data;
-    for (let j = 0; j < H; j++) {
-      for (let i = 0; i < W; i++) {
-        const ileft = i > 0 ? i - 1 : i;
-        const iright = i < W - 1 ? i + 1 : i;
-        const jdown = j > 0 ? j - 1 : j;
-        const jup = j < H - 1 ? j + 1 : j;
-        const dxSpan = (iright - ileft) * ts;
-        const dzSpan = (jup - jdown) * ts;
-        const dhdx = dxSpan > 0 ? (data[j * W + iright] - data[j * W + ileft]) / dxSpan : 0;
-        const dhdz = dzSpan > 0 ? (data[jup * W + i] - data[jdown * W + i]) / dzSpan : 0;
-        let nx = -dhdx;
-        let ny = 1;
-        let nz = -dhdz;
-        const len = Math.hypot(nx, ny, nz);
-        nx /= len; ny /= len; nz /= len;
-        const idx = (j * W + i) * 3;
-        this.vertexNormals[idx + 0] = nx;
-        this.vertexNormals[idx + 1] = ny;
-        this.vertexNormals[idx + 2] = nz;
-      }
-    }
-  }
-
-  /**
-   * Bilinear-interpolate the precomputed vertex normals at the given UV, then
-   * renormalize. Per-vertex normals are themselves derived from central-
-   * difference height gradients at construction time, so they're already
-   * smoother than recomputing per-sample from a bilinear-h numeric gradient
-   * (which gave piecewise-constant slope per tile). C0-continuous across
-   * tile borders. NOT smoothstep — that was a workaround which hid corners
-   * the wheel-intersection corner detection needs to see.
+   * Surface normal derived from the bilinear h field's gradient within the
+   * cell containing (u, v). Within cell [i,j]..[i+1,j+1] with corner heights
+   * h00 = h(i,j), h10 = h(i+1,j), h01 = h(i,j+1), h11 = h(i+1,j+1) and
+   * fractional offsets (tx, tz):
+   *   ∂h/∂u = ((1−tz)·(h10−h00) + tz·(h11−h01)) · (W−1)
+   *   ∂h/∂v = ((1−tx)·(h01−h00) + tx·(h11−h10)) · (H−1)
+   * Converting to world via worldWidth, worldDepth gives ∂h/∂x and ∂h/∂z;
+   * the outward unit normal is `normalize(−∂h/∂x, 1, −∂h/∂z)`.
+   *
+   * N is piecewise across cell boundaries — exact for the bilinear height
+   * field within a cell, discontinuous at cell boundaries when adjacent
+   * cells have different gradients. The wheel-vs-surface concave-corner
+   * check in `surfaceConstrainedVelocity` handles those discontinuities as
+   * UV jumps rather than letting them propagate into a per-frame Y stutter.
+   * A previous smoothed-vertex-normal scheme made N C0-continuous but
+   * smeared a slope's tilt back into adjacent flat cells, producing a
+   * "pre-slope" body-Y dip — visible on `climb-tall-wall` and the reason
+   * this derivation was reverted on 2026-05-19.
    */
   private sampleNormalUV(u: number, v: number): [number, number, number] {
-    const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
-    const fz = Math.max(0, Math.min(1, v)) * (this.heightmap.height - 1);
-    const x0 = Math.floor(fx), x1 = Math.min(this.heightmap.width - 1, x0 + 1);
-    const z0 = Math.floor(fz), z1 = Math.min(this.heightmap.height - 1, z0 + 1);
-    const tx = fx - x0, tz = fz - z0;
     const W = this.heightmap.width;
-    const i00 = (z0 * W + x0) * 3;
-    const i10 = (z0 * W + x1) * 3;
-    const i01 = (z1 * W + x0) * 3;
-    const i11 = (z1 * W + x1) * 3;
-    const n = this.vertexNormals;
-    const w00 = (1 - tx) * (1 - tz);
-    const w10 = tx * (1 - tz);
-    const w01 = (1 - tx) * tz;
-    const w11 = tx * tz;
-    let nx = w00 * n[i00] + w10 * n[i10] + w01 * n[i01] + w11 * n[i11];
-    let ny = w00 * n[i00 + 1] + w10 * n[i10 + 1] + w01 * n[i01 + 1] + w11 * n[i11 + 1];
-    let nz = w00 * n[i00 + 2] + w10 * n[i10 + 2] + w01 * n[i01 + 2] + w11 * n[i11 + 2];
+    const H = this.heightmap.height;
+    const fx = Math.max(0, Math.min(1, u)) * (W - 1);
+    const fz = Math.max(0, Math.min(1, v)) * (H - 1);
+    const x0 = Math.floor(fx), x1 = Math.min(W - 1, x0 + 1);
+    const z0 = Math.floor(fz), z1 = Math.min(H - 1, z0 + 1);
+    const tx = fx - x0, tz = fz - z0;
+    const h00 = this.heightmap.data[z0 * W + x0];
+    const h10 = this.heightmap.data[z0 * W + x1];
+    const h01 = this.heightmap.data[z1 * W + x0];
+    const h11 = this.heightmap.data[z1 * W + x1];
+    const dh_du = (1 - tz) * (h10 - h00) + tz * (h11 - h01);
+    const dh_dv = (1 - tx) * (h01 - h00) + tx * (h11 - h10);
+    // ∂u corresponds to worldWidth meters across (W−1) cell widths;
+    // ∂h/∂u is a height delta per unit u, so dh/dx = (dh/du) · (W−1) / worldWidth = (dh/du) / tileSize.
+    const dhdx = dh_du * (W - 1) / this.worldWidth;
+    const dhdz = dh_dv * (H - 1) / this.worldDepth;
+    let nx = -dhdx;
+    let ny = 1;
+    let nz = -dhdz;
     const len = Math.hypot(nx, ny, nz) || 1;
     return [nx / len, ny / len, nz / len];
   }
@@ -215,10 +180,10 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
 
   sampleAtUV(u: number, v: number): SurfaceSample {
     const [x, y, z] = this.uvToWorld(u, v);
-    // Smooth normal: bilinear-interpolated from precomputed per-vertex
-    // normals. C0-continuous across tile boundaries — eliminates the per-
-    // tile-crossing slope jump that piecewise-bilinear-height gradient
-    // produced (see `precomputeVertexNormals` doc above).
+    // Piecewise-bilinear-h-gradient normal: exact gradient of the bilinear
+    // height field within the cell containing (u, v). Discontinuous at cell
+    // boundaries — `surfaceConstrainedVelocity`'s wheel-vs-surface check
+    // handles those as concave-corner UV jumps (see sampleNormalUV doc).
     const [nx, ny, nz] = this.sampleNormalUV(u, v);
 
     // Derive an orthonormal tangent frame from the smooth normal so
