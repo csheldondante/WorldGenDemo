@@ -440,12 +440,40 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                     });
                   }
 
-                  // ----- Add tangent control + surface reaction to the accumulator -----
+                  // ----- Add ONLY tangent control to the accumulator -----
                   // (Skip if we just detached — let airborne path run next tick.)
+                  //
+                  // We intentionally do NOT add `aSurfaceN * N` to the accumulator.
+                  // Why: the surface constraint pins the body to the surface
+                  // geometrically (surfaceConstrainedVelocity step 5 sets
+                  // pos = sample_new.position + radius·N). The body doesn't need a
+                  // "surface reaction" force on its velocity buffer to stay attached.
+                  //
+                  // Worse, adding aSurfaceN to the accumulator was actively harmful:
+                  // when `aCentripetalN` spikes at heightmap tile borders (curvature
+                  // of the bilinear height field is impulsive at C¹ discontinuities),
+                  // `aSurfaceN` spikes to match the centripetal demand. Adding that
+                  // to the accumulator injects huge normal-direction velocity that
+                  // step 6 of surfaceConstrainedVelocity dutifully projects out — but
+                  // step 7 then rescales the remaining tangent magnitude back up to
+                  // the post-step-1 speed, converting the projected-out normal
+                  // kinetic into TANGENT kinetic energy. The visible symptom is the
+                  // body "shooting up" the wall at the first tile transition.
+                  //
+                  // The textbook physics is clear: centripetal force is normal-aligned
+                  // and never adds to tangent velocity. It contributes to friction
+                  // (since friction = μ × |normal_force|) and to the detach criterion
+                  // (since the surface needs to provide that pull to hold the body),
+                  // and that's it. Both of those uses are preserved above —
+                  // `aSurfaceN` / `aSurfaceNRequired` are still computed for the
+                  // ragdoll + detach checks; they just no longer touch the velocity.
+                  //
+                  // See [[worldgen-demo-aSurfaceN-out-of-accumulator-2026-05-19]] and
+                  // the bisect trace in the conversation log.
                   if (!stateChanged) {
-                    accelEntry.accel[0] += aFEff * FtX + aREff * RtX + aSurfaceN * Nx;
-                    accelEntry.accel[1] += aFEff * FtY + aREff * RtY + aSurfaceN * Ny;
-                    accelEntry.accel[2] += aFEff * FtZ + aREff * RtZ + aSurfaceN * Nz;
+                    accelEntry.accel[0] += aFEff * FtX + aREff * RtX;
+                    accelEntry.accel[1] += aFEff * FtY + aREff * RtY;
+                    accelEntry.accel[2] += aFEff * FtZ + aREff * RtZ;
                   }
                 }
 
