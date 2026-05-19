@@ -87,6 +87,10 @@ function setup(opts?: SetupOpts) {
       bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
       desiredFacingTangent: [0, 0, -1],
+      jumpHolding: false,
+      jumpDir: [0, 0, 0],
+      jumpImpulseMagMax: 0,
+      jumpImpulseApplied: 0,
     });
   });
   writeBuffer(ci, (d) => { d.byEntity.set(id, emptyInput(0)); });
@@ -142,16 +146,125 @@ describe("CharacterControllerSystem (FSM core)", () => {
     expect(Math.abs(lin[0])).toBeLessThan(0.001); // no lateral velocity
   });
 
-  it("jumpPressed on surfaceRun → state=airborne and v.y=jumpImpulse", () => {
+  it("jumpPressed on surfaceRun → state=airborne, step-1 impulse applied", () => {
     const { reg, ci, v, cc, g, id } = setup();
     writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), jumpPressed: true, jumpHeld: true, jumpHoldSec: 0 }); });
     tick(g, reg, 0.016);
     const after = readBuffer(cc).byEntity.get(id)!;
     expect(after.state).toBe("airborne");
     expect(after.locomotionMode).toBe("volumeConstrained");
-    // Surface reaction canceled gravity-normal *before* the jump fired this tick, so the
-    // net accumulator on integration is zero — v.y comes out exactly at jumpImpulse.
-    expect(readBuffer(v).byEntity.get(id)!.linear[1]).toBeCloseTo(DEFAULT_PLAYER_PROFILE.jumpImpulse, 5);
+    expect(after.jumpHolding).toBe(true);
+    // Press fires the first step of the impulse along the jump direction.
+    // Neutral stick + stationary char → target velocity = (0, jumpUpSpeed, 0),
+    // current = (0, 0, 0), impulse_mag = jumpUpSpeed, step = jumpUpSpeed / steps.
+    const expectedStep = DEFAULT_PLAYER_PROFILE.jump.upSpeed / DEFAULT_PLAYER_PROFILE.jump.stepCount;
+    expect(readBuffer(v).byEntity.get(id)!.linear[1]).toBeCloseTo(expectedStep, 4);
+    expect(after.jumpImpulseMagMax).toBeCloseTo(DEFAULT_PLAYER_PROFILE.jump.upSpeed, 4);
+    expect(after.jumpImpulseApplied).toBeCloseTo(expectedStep, 4);
+  });
+
+  it("jump held through full window: vertical velocity reaches jumpUpSpeed", () => {
+    const { reg, ci, v, g, id } = setup();
+    // Press and hold for a tick.
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), jumpPressed: true, jumpHeld: true, jumpHoldSec: 0 }); });
+    tick(g, reg, 0.016);
+    // Continue holding; release of jumpPressed (edge), still jumpHeld.
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), jumpPressed: false, jumpHeld: true, jumpHoldSec: 0.016 }); });
+    // Tick past the hold window. jumpHoldMaxSec = 0.18, plenty of margin at dt=0.016.
+    const dt = 0.016;
+    for (let i = 0; i < 12; i++) tick(g, reg, dt);
+    const lin = readBuffer(v).byEntity.get(id)!.linear;
+    // After the full window: 4 steps × jumpUpSpeed/4 = jumpUpSpeed delivered;
+    // gravity drag applied on every airborne tick (12 ticks past press; the press
+    // tick itself doesn't drag because the surface reaction neutralized the
+    // accumulator before transitioning to airborne).
+    const gravity = 9.81;
+    const airbornePostPressTicks = 12;
+    const expectedY = DEFAULT_PLAYER_PROFILE.jump.upSpeed - gravity * airbornePostPressTicks * dt;
+    expect(lin[1]).toBeCloseTo(expectedY, 1);
+  });
+
+  it("jump tap (release before window closes): jumpHolding stops; impulse partial", () => {
+    const { reg, ci, v, cc, g, id } = setup();
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), jumpPressed: true, jumpHeld: true, jumpHoldSec: 0 }); });
+    tick(g, reg, 0.016);
+    // Release the button on the next tick.
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), jumpPressed: false, jumpReleased: true, jumpHeld: false }); });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.jumpHolding).toBe(false);
+    // Applied impulse should be less than full magnitude — the player let go early.
+    expect(after.jumpImpulseApplied).toBeLessThan(after.jumpImpulseMagMax);
+    expect(after.jumpImpulseApplied).toBeGreaterThan(0);
+    const lin = readBuffer(v).byEntity.get(id)!.linear;
+    // v.y < full jumpUpSpeed (and adjusted by 2 ticks of gravity).
+    expect(lin[1]).toBeLessThan(DEFAULT_PLAYER_PROFILE.jump.upSpeed);
+  });
+
+  it("jump press with forward stick at speed: forward kick ADDED to current velocity", () => {
+    const { reg, ci, v, g, id } = setup();
+    // Seed velocity at full run speed forward (-Z).
+    writeBuffer(v, (d) => {
+      const entry = d.byEntity.get(id)!;
+      entry.linear[0] = 0; entry.linear[1] = 0; entry.linear[2] = -DEFAULT_PLAYER_PROFILE.desiredRunSpeed;
+      d.byEntity.set(id, entry);
+    });
+    writeBuffer(ci, (d) => {
+      d.byEntity.set(id, { ...emptyInput(0), moveY: 1, jumpPressed: true, jumpHeld: true, jumpHoldSec: 0 });
+    });
+    // Tick once for press + step1; hold through full window for full impulse.
+    const dt = 0.016;
+    for (let i = 0; i < 14; i++) {
+      tick(g, reg, dt);
+      // After first tick clear jumpPressed edge.
+      writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1, jumpPressed: false, jumpHeld: true, jumpHoldSec: i * dt }); });
+    }
+    const lin = readBuffer(v).byEntity.get(id)!.linear;
+    // Additive impulse: current horizontal (8 forward) + jump.horizSpeed kick
+    // (4 forward) = 12 m/s.
+    const horizMag = Math.hypot(lin[0], lin[2]);
+    expect(horizMag).toBeGreaterThan(11);
+    expect(horizMag).toBeLessThan(13);
+  });
+
+  it("jump press with backward stick at full forward speed: kick SUBTRACTS from current velocity", () => {
+    const { reg, ci, v, g, id } = setup();
+    writeBuffer(v, (d) => {
+      const entry = d.byEntity.get(id)!;
+      entry.linear[0] = 0; entry.linear[1] = 0; entry.linear[2] = -DEFAULT_PLAYER_PROFILE.desiredRunSpeed;
+      d.byEntity.set(id, entry);
+    });
+    writeBuffer(ci, (d) => {
+      d.byEntity.set(id, { ...emptyInput(0), moveY: -1, jumpPressed: true, jumpHeld: true, jumpHoldSec: 0 });
+    });
+    tick(g, reg, 0.016);
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: -1, jumpPressed: false, jumpHeld: true, jumpHoldSec: 0.016 }); });
+    for (let i = 0; i < 12; i++) tick(g, reg, 0.016);
+    const lin = readBuffer(v).byEntity.get(id)!.linear;
+    // Additive impulse: current (-8 forward) + kick (+4 back) = -4 in Z.
+    // Forward velocity is reduced but not reversed (kick < current).
+    expect(lin[2]).toBeGreaterThan(-6);
+    expect(lin[2]).toBeLessThan(-2);
+  });
+
+  it("jump pressing into a steep slope: impulse direction is tangent (no into-surface component)", () => {
+    // 70° slope (~1.22 rad). Surface normal tilts strongly back in +Z.
+    // Without the tangent clamp, joystick-forward into the slope would push
+    // impulse partly INTO the slope (in -N direction). The clamp projects
+    // out that component so the body either jumps tangent-to-slope (climb
+    // up the hill) or straight up.
+    const slopeRad = 1.22;
+    const { reg, ci, cc, g, id } = setup({ slopeRad, friction: 1, normalOutMax: 1000 });
+    // Press forward (uphill) + jump on the first tick.
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1, jumpPressed: true, jumpHeld: true, jumpHoldSec: 0 }); });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("airborne");
+    // jumpDir should be tangent to the surface normal (dot ≈ 0 or positive).
+    // The surface normal here is (0, cos(slopeRad), sin(slopeRad)).
+    const Nx = 0, Ny = Math.cos(slopeRad), Nz = Math.sin(slopeRad);
+    const dotDirN = after.jumpDir[0] * Nx + after.jumpDir[1] * Ny + after.jumpDir[2] * Nz;
+    expect(dotDirN).toBeGreaterThanOrEqual(-1e-3); // no into-surface component (small ε for FP)
   });
 
   it("steep slope transitions surfaceRun → surfaceSlide", () => {
@@ -221,6 +334,96 @@ describe("CharacterControllerSystem (FSM core)", () => {
     expect(after.state).toBe("airborne");
     expect(after.locomotionMode).toBe("volumeConstrained");
     expect(after.lastTransitionReason).toContain("detach");
+  });
+
+  // ===== Climb + slide transitions (Phase 2 FSM refactor) =====
+  //
+  // Triggers under test:
+  //   • run/slide → climb : tangentSpeed < climb.engagementMaxSpeed AND slope > slopeRunMaxRad
+  //   • climb → surfaceRun : slope < slopeStandMaxRad (hysteresis with engagement)
+  //   • climb → surfaceSlide : tangentSpeed > climb.engagementMaxSpeed × 1.5
+  //   • surfaceRun → surfaceSlide : over-speed (tangentSpeed > forwardAccel.vMax × 1.1)
+  //   • surfaceRun → surfaceSlide : backslide (intent vs vel opposing AND net foot
+  //     accel in intent direction ≤ 0)
+  //
+  // Reference: [[worldgen-demo-fsm-transitions-as-the-primary-mechanic]],
+  // [[worldgen-demo-slip-criteria-2026-05-18]] (note: that memory predates the
+  // 2026-05-18 backslide-only refinement — superseded by code here).
+
+  it("steep slope + low tangent speed → surfaceRun transitions to climb (grab)", () => {
+    // 1.2 rad slope (~69°) > slopeRunMaxRad (0.9); body stationary → climb.
+    const { reg, cc, g } = setup({ slopeRad: 1.2 });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(1)!;
+    expect(after.state).toBe("climb");
+    expect(after.lastTransitionReason).toContain("grab");
+    // Validate the full FSM path: spawn (surfaceRun) → climb in one tick.
+    expect(after.transitions).toHaveLength(1);
+    expect(after.transitions[0].from).toBe("surfaceRun");
+    expect(after.transitions[0].to).toBe("climb");
+    expect(after.transitions[0].reason).toMatch(/grab/);
+  });
+
+  it("climb → surfaceRun when slope eases below slopeStandMaxRad", () => {
+    // Start on a 1.2 rad slope so engagement fires.
+    const { reg, cc, g, id, sa, provider } = setup({ slopeRad: 1.2 });
+    tick(g, reg, 0.016);
+    expect(readBuffer(cc).byEntity.get(id)!.state).toBe("climb");
+
+    // Swap the surface to a shallow slope (0.5 rad ≈ 29° < slopeStandMaxRad).
+    // Re-write the attachment's sample to reflect the easier slope.
+    const shallowSample = {
+      ...provider.sampleAtUV(0.5, 0.5),
+      normal: [0, Math.cos(0.5), Math.sin(0.5)] as [number, number, number],
+    };
+    writeBuffer(sa, (d) => {
+      const att = d.byEntity.get(id)!;
+      d.byEntity.set(id, {
+        ...att,
+        sample: shallowSample,
+      });
+    });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("surfaceRun");
+    expect(after.lastTransitionReason).toContain("eased");
+    // FSM path: surfaceRun → climb → surfaceRun.
+    expect(after.transitions.map((t) => `${t.from}→${t.to}`)).toEqual([
+      "surfaceRun→climb",
+      "climb→surfaceRun",
+    ]);
+    expect(after.transitions[1].reason).toMatch(/eased/);
+  });
+
+  it("over-speed on flat surface → surfaceRun transitions to surfaceSlide", () => {
+    // Seed velocity 1.5× forwardAccel.vMax (12 m/s when vMax=8). Should slip.
+    const { reg, cc, v, g, id } = setup();
+    const vMax = DEFAULT_PLAYER_PROFILE.forwardAccel.vMax;
+    writeBuffer(v, (d) => {
+      d.byEntity.set(id, { linear: [0, 0, -vMax * 1.5], prevLinear: [0, 0, -vMax * 1.5] });
+    });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("surfaceSlide");
+    expect(after.lastTransitionReason).toContain("over-speed");
+    // FSM path: spawn (surfaceRun) → surfaceSlide in one tick.
+    expect(after.transitions).toHaveLength(1);
+    expect(after.transitions[0].from).toBe("surfaceRun");
+    expect(after.transitions[0].to).toBe("surfaceSlide");
+    expect(after.transitions[0].reason).toMatch(/over-speed/);
+  });
+
+  it("icy flat surface with steady input does NOT slip (no more grip-budget trigger)", () => {
+    // Old design slipped here; new design says feet just accelerate slowly,
+    // capped by grip budget. Body stays in surfaceRun — no transitions.
+    // [[worldgen-demo-slip-criteria-2026-05-18]] — superseded.
+    const { reg, ci, cc, g, id } = setup({ friction: 0.05 });
+    writeBuffer(ci, (d) => { d.byEntity.set(id, { ...emptyInput(0), moveY: 1 }); });
+    tick(g, reg, 0.016);
+    const after = readBuffer(cc).byEntity.get(id)!;
+    expect(after.state).toBe("surfaceRun");
+    // No state changes — transitions log should be empty.
+    expect(after.transitions).toHaveLength(0);
   });
 
   it("low normalInMax → required reaction exceeds cap → ragdoll → airborne (V1)", () => {

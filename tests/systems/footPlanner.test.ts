@@ -171,6 +171,10 @@ function setup(surface: SurfaceProvider = POSITION_AWARE_SURFACE) {
       bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
       desiredFacingTangent: [0, 0, -1],
+      jumpHolding: false,
+      jumpDir: [0, 0, 0],
+      jumpImpulseMagMax: 0,
+      jumpImpulseApplied: 0,
     });
   });
 

@@ -154,6 +154,10 @@ describe("Multi-agent energy-conservation stress test", () => {
       bodyUpWorld: [0, 1, 0],
                   orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
       desiredFacingTangent: [0, 0, -1],
+      jumpHolding: false,
+      jumpDir: [0, 0, 0],
+      jumpImpulseMagMax: 0,
+      jumpImpulseApplied: 0,
                 });
                 ci.byEntity.set(id, { ...emptyInput(0), cameraYaw: rng() * Math.PI * 2 });
                 t.byEntity.set(id, {

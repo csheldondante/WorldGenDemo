@@ -60,6 +60,14 @@
             0,
             1
           ],
+          "jumpDir": [
+            0,
+            0,
+            0
+          ],
+          "jumpHolding": false,
+          "jumpImpulseApplied": 0,
+          "jumpImpulseMagMax": 0,
           "lastTransitionReason": "spawn",
           "locomotionMode": "surfaceConstrained",
           "orientation": {

@@ -18,6 +18,16 @@ import { SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID } from "./surfaceConstrainedVelo
 export const VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID = "volumetricConstrainedVelocitySystem";
 
 /**
+ * Fraction of the world-horizontal velocity component to bleed off on a
+ * head-on CCD impact into a steep surface. Scales by the impact's head-on
+ * fraction and the surface's verticality, so flat-ground contact loses 0%
+ * and a perpendicular crash into a vertical wall loses up to this value.
+ * Hardcoded for now; will likely become a per-surface or per-character
+ * tunable later (e.g. ice vs. velcro walls, or heavy vs. agile archetypes).
+ */
+const IMPACT_HORIZONTAL_DAMPING = 0.75;
+
+/**
  * Integration for airborne entities and any entity without a CharacterController.
  * Standard semi-implicit Euler in XYZ; no surface snap downstream. This is the path
  * for jumping, falling, projectiles, vehicles in airborne phase, etc.
@@ -128,9 +138,40 @@ export function createVolumetricConstrainedVelocitySystem(): SystemDescriptor {
                     vel.linear[1] * hit.normal[1] +
                     vel.linear[2] * hit.normal[2];
                   if (vDotN < 0) {
+                    // Head-on fraction = how much of the incoming speed was
+                    // pointing into the surface. 1 = perpendicular crash,
+                    // 0 = pure grazing. Computed before the tangent projection.
+                    const preSpeed = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
+                    const intoFrac = preSpeed > 1e-6 ? Math.min(1, -vDotN / preSpeed) : 0;
+
+                    // Tangent-project: remove the into-surface component.
                     vel.linear[0] -= vDotN * hit.normal[0];
                     vel.linear[1] -= vDotN * hit.normal[1];
                     vel.linear[2] -= vDotN * hit.normal[2];
+
+                    // Damp the world-horizontal component of remaining tangent
+                    // velocity when the impact is head-on into a steep surface.
+                    // Without this, jumping into a steep slope tangent-projects
+                    // cleanly and the body slides up the slope at full speed.
+                    // World-vertical velocity is preserved so the vertical-to-
+                    // forward ratio rises naturally as forward is bled off.
+                    // gravity-up is derived from the per-entity accumulator
+                    // (which is dominated by gravity from forceField at this
+                    // point in the pipeline).
+                    const gMag = Math.hypot(ax, ay, az) || 1;
+                    const gUpX = -ax / gMag;
+                    const gUpY = -ay / gMag;
+                    const gUpZ = -az / gMag;
+                    const NdotGUp = hit.normal[0] * gUpX + hit.normal[1] * gUpY + hit.normal[2] * gUpZ;
+                    const verticality = Math.max(0, 1 - Math.max(0, NdotGUp)); // 0 flat, 1 vertical
+                    const retain = Math.max(0, 1 - intoFrac * verticality * IMPACT_HORIZONTAL_DAMPING);
+                    const vDotGUp = vel.linear[0] * gUpX + vel.linear[1] * gUpY + vel.linear[2] * gUpZ;
+                    const vHX = vel.linear[0] - vDotGUp * gUpX;
+                    const vHY = vel.linear[1] - vDotGUp * gUpY;
+                    const vHZ = vel.linear[2] - vDotGUp * gUpZ;
+                    vel.linear[0] = vHX * retain + vDotGUp * gUpX;
+                    vel.linear[1] = vHY * retain + vDotGUp * gUpY;
+                    vel.linear[2] = vHZ * retain + vDotGUp * gUpZ;
                   }
                   e.events.push({
                     a: id,

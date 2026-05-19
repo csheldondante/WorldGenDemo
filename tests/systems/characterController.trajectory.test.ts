@@ -1,16 +1,14 @@
 /**
- * Multi-tick run-physics integration tests with ranged-baseline validation.
+ * Multi-tick run-physics integration tests.
  *
  * Each test wires a minimal real-runtime graph (ForceField → CharacterController →
  * VelocityIntegration → SurfaceConstraint), pre-populates SurfaceProviderBuffer with a
  * parametric surface, models input by writing CharacterInputBuffer directly, ticks N
- * frames, and captures per-frame channels (position, velocity, state, transition
- * reason). The recorded data is compared against a ranged baseline — see
- * `src/lib/testing/rangedBaseline.ts` — so only out-of-range or unexpected samples
- * surface as regressions.
- *
- * Update the inline `BASELINES` data when behavior intentionally changes; the git diff
- * makes intent visible at review time.
+ * frames, and captures per-frame transform/velocity/state. Assertions are direct
+ * `expect` calls on the captured frames — the previous `rangedBaseline` envelope
+ * framework was deprecated in favor of the buffer-snapshot comparator (see CLAUDE.md
+ * "MANDATORY change discipline" + `BufferTest.enableDebugBuffers`). For full-state
+ * regression detection use `runBufferTest` with `characterControllerDebug` snapshotted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createRegistry } from "../../src/runtime/registry";
@@ -36,11 +34,6 @@ import { createSurfaceConstraintSystem } from "../../src/systems/surfaceConstrai
 import { createTangentInputMapperSystem } from "../../src/systems/tangentInputMapper";
 import { PlaneSurfaceProvider } from "../../src/world/parametricSurfaceProvider";
 import { HeightmapSurfaceProvider, type SurfaceProvider } from "../../src/world/surfaceProvider";
-import {
-  compareRangedBaseline,
-  formatRegressions,
-  type RangedBaseline,
-} from "../../src/lib/testing/rangedBaseline";
 
 interface ScenarioOpts {
   provider: SurfaceProvider;
@@ -87,6 +80,10 @@ function runScenario(opts: ScenarioOpts): CapturedFrame[] {
       bodyUpWorld: [0, 1, 0],
       orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
       desiredFacingTangent: [0, 0, -1],
+      jumpHolding: false,
+      jumpDir: [0, 0, 0],
+      jumpImpulseMagMax: 0,
+      jumpImpulseApplied: 0,
     });
   });
   writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
@@ -148,22 +145,25 @@ function runScenario(opts: ScenarioOpts): CapturedFrame[] {
   return frames;
 }
 
-function framesToChannels(frames: CapturedFrame[]): Record<string, number[] | string[]> {
-  return {
-    "pos.x": frames.map((f) => f.pos[0]),
-    "pos.y": frames.map((f) => f.pos[1]),
-    "pos.z": frames.map((f) => f.pos[2]),
-    "vel.x": frames.map((f) => f.vel[0]),
-    "vel.y": frames.map((f) => f.vel[1]),
-    "vel.z": frames.map((f) => f.vel[2]),
-    state: frames.map((f) => f.state),
-  };
+function assertChannelInRange(
+  name: string,
+  values: number[],
+  min: number,
+  max: number,
+): void {
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v < min || v > max) {
+      throw new Error(`${name} out of [${min}, ${max}] at frame ${i}: ${v}`);
+    }
+  }
 }
 
-function assertBaselineClean(baseline: RangedBaseline, frames: CapturedFrame[]): void {
-  const regs = compareRangedBaseline(baseline, framesToChannels(frames));
-  if (regs.length > 0) {
-    throw new Error(`Ranged baseline '${baseline.name}' failed:\n${formatRegressions(regs)}`);
+function assertStateInAllowed(states: string[], allowed: string[]): void {
+  for (let i = 0; i < states.length; i++) {
+    if (!allowed.includes(states[i])) {
+      throw new Error(`state at frame ${i} = "${states[i]}" not in ${JSON.stringify(allowed)}`);
+    }
   }
 }
 
@@ -191,33 +191,20 @@ describe("Character controller — trajectory tests with ranged baselines", () =
       dt: 0.016,
     });
 
-    // Ranged baseline. Bounds chosen with headroom around the expected steady-state.
-    const baseline: RangedBaseline = {
-      name: "flat-plane-forward-2s",
-      frames: 120,
-      channels: {
-        // Stays near the plane center on X (no lateral input). Wide range to accommodate
-        // any tiny FP drift.
-        "pos.x": { kind: "numeric", min: -0.1, max: 0.1 },
-        // Y stays at bodyRadius (0.5) — surfaceConstraint snaps to surface+radius each tick.
-        // Wide range allows a small initial overshoot before the constraint settles.
-        "pos.y": { kind: "numeric", min: 0.45, max: 0.55 },
-        // Z drifts positive over time. After 120 frames at dt=0.016 with v≈8 m/s steady,
-        // total displacement = some ramp + ~8*1.7 ≈ 13.6 m. Allow 0 (start) to 16 (overshoot).
-        "pos.z": { kind: "numeric", min: 0, max: 16 },
-        "vel.x": { kind: "numeric", min: -0.1, max: 0.1 },
-        // Vertical velocity stays near zero on flat ground (small numerical bobble allowed).
-        "vel.y": { kind: "numeric", min: -0.5, max: 0.5 },
-        // Forward velocity ramps from 0 up to ~8 m/s. Cap at 9 to catch overshoot regressions.
-        "vel.z": { kind: "numeric", min: 0, max: 9 },
-        // Allowed: surfaceRun or surfaceSlide. A hard-accel start from rest exceeds grip
-        // momentarily and the controller transitions to surfaceSlide — that is correct
-        // controller behavior, not a regression. Airborne would mean a spurious centripetal
-        // or kinematic detach (not expected on flat ground) and would fail this test.
-        state: { kind: "categorical", allowed: ["surfaceRun", "surfaceSlide"] },
-      },
-    };
-    assertBaselineClean(baseline, frames);
+    // Direct per-channel range assertions. Bounds chosen with headroom around the
+    // expected steady-state. Replaces the deprecated ranged-baseline framework with
+    // straightforward `expect`-style invariants.
+    assertChannelInRange("pos.x", frames.map((f) => f.pos[0]), -0.1, 0.1);
+    assertChannelInRange("pos.y", frames.map((f) => f.pos[1]), 0.45, 0.55);
+    assertChannelInRange("pos.z", frames.map((f) => f.pos[2]), 0, 16);
+    assertChannelInRange("vel.x", frames.map((f) => f.vel[0]), -0.1, 0.1);
+    assertChannelInRange("vel.y", frames.map((f) => f.vel[1]), -0.5, 0.5);
+    assertChannelInRange("vel.z", frames.map((f) => f.vel[2]), 0, 9);
+    // Allowed: surfaceRun or surfaceSlide. A hard-accel start from rest exceeds grip
+    // momentarily and the controller may transition to surfaceSlide — that is correct
+    // controller behavior. Airborne would mean a spurious centripetal or kinematic
+    // detach (not expected on flat ground) and fails this test.
+    assertStateInAllowed(frames.map((f) => f.state), ["surfaceRun", "surfaceSlide"]);
   });
 
   it("brake from initial velocity on flat plane: decays to rest within ~1 s", () => {

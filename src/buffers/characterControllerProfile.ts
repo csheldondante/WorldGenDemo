@@ -27,9 +27,15 @@ export interface CharacterControllerProfile {
   /** Max self-applied accel along surface +normal (boost off the surface). Conventionally vMax=Infinity —
    *  this is a grip budget, not a velocity-shaped curve. Jump uses impulse instead. */
   upAccel: LinearAccelCurve;
-  /** Max self-applied accel along surface -normal (push/grip into the surface). The Phase-4 centripetal-aware
-   *  leave-surface rule reads this at `max(0, vN_current)` for the grip budget — at vN=0 (attached) the
-   *  budget is exactly accelAtZero. Conventionally vMax=Infinity (constant grip). */
+  /** Self-applied force into the surface (m/s² along -N). Two roles:
+   *   1. Scales friction-grip on the tangent plane: tangentGrip = μ × (|gravity·N| + downAccel).
+   *      Run sets this to 0 — legs aren't pressing; gravity supplies all the normal load.
+   *      Climb sets this high (≈20 m/s²) — legs actively press into walls/overhangs to
+   *      generate friction grip where gravity's into-N component alone is ~0.
+   *   2. Detach-resist budget: the centripetal-aware leave-surface rule reads it at
+   *      `max(0, vN_current)`; if the surface needs to PULL the body in harder than this
+   *      budget allows, the body detaches.
+   *   Conventionally vMax=Infinity (constant force regardless of vN). */
   downAccel: LinearAccelCurve;
   /** Multiplier on surface.normalInMax: required normal-in > scale × cap → enter ragdoll. */
   ragdollNormalInScale: number;
@@ -37,12 +43,76 @@ export interface CharacterControllerProfile {
   detachNormalOutScale: number;
   /** Multiplier on grip budget: required tangent force > scale × budget → slip into surfaceSlide. */
   slideGripScale: number;
-  /** Aerial control acceleration in volume mode, m/s². Lower than ground for that "committed-to-jump" feel. */
+  /** Aerial control acceleration in volume mode, m/s². Deliberately small —
+   *  this is a fine-tuning concession for joystick fidelity, not a re-aim
+   *  channel. The jump press captures most of the intent; in-air thrust is
+   *  small enough that you can't repeat-correct against a wall. */
   airAccel: number;
-  /** Aerial maximum horizontal speed cap, m/s. */
+  /** Aerial maximum horizontal speed cap from THRUST (not total absolute
+   *  velocity). You can carry higher speeds through the air from takeoff;
+   *  this just bounds how much speed pure airborne steering can add. */
   airSpeedCap: number;
-  /** Vertical impulse applied on a short jump press, m/s. */
-  jumpImpulse: number;
+  /** Jump-move profile. Single cluster for the basic jump's tunables —
+   *  groundwork for the future "moves are composable, profile-bound units"
+   *  architecture (see controller library vision). Variants like reverse-
+   *  flip / wall-jump / dive should become separate JumpProfiles / FSM
+   *  states with their own values, NOT flag-bonus fields layered on top
+   *  of this one. */
+  jump: {
+    /** Vertical component of the "intended jump velocity" at full hold, m/s.
+     *  Hold full → vertical velocity reaches this value (plus near-zero
+     *  ground residual). Shorter holds apply a fraction. */
+    upSpeed: number;
+    /** Target horizontal speed when joystick is fully deflected at press,
+     *  m/s. Direction = joystick (purely); magnitude blends from current
+     *  speed toward this value via `horizBlendMax`. */
+    horizSpeed: number;
+    /** How strongly the joystick-targeted speed replaces current speed at
+     *  press, in [0, 1]. Scales with joystick magnitude. */
+    horizBlendMax: number;
+    /** Hold window during which the impulse continues to be applied along
+     *  its initial direction, seconds. */
+    holdMaxSec: number;
+    /** Discrete energy steps within the hold window for press-timing-snap.
+     *  4 = quartiles; 1 = continuous. */
+    stepCount: number;
+    /** Maximum angle the press-time impulse can dip below world horizontal,
+     *  radians. The impulse is also clamped to never point into the surface
+     *  (so jumping into a slope is reflected up along the slope tangent,
+     *  and jumping into a steep enough wall pushes up the wall instead of
+     *  through it). 0.174 ≈ 10°. */
+    maxAngleBelowHorizonRad: number;
+    /** Floor on the surface-orientation jump-force scale. The jump impulse
+     *  magnitude is multiplied by `max(minSurfaceScale, N · gravityUp)` —
+     *  full strength on flat ground, reduced when the body is on a slope
+     *  whose normal isn't aligned with gravity-up (because there's less
+     *  friction budget left over after holding against tangent gravity).
+     *  Floor of 0.2 means even on a vertical wall you can muster 20% of a
+     *  full jump — "last push up" rather than "leap to scale it." */
+    minSurfaceScale: number;
+  };
+  /** Climb sub-profile. Selected by FSM state — when `ctrl.state === "climb"`,
+   *  the controller reads these curves instead of the top-level run curves.
+   *  Same 6DoF shape (forward/backward/lateral/up/down accel) as the run
+   *  curves; tuned for "high acceleration, very low top speed" so the body
+   *  pins to steep / vertical surfaces with strong grip and moves slowly.
+   *  `engagementMaxSpeed` is the tangent-speed threshold that gates the
+   *  transition INTO climb from run or slide. Same pattern as `jump` — per-
+   *  state parameter bundle, picked by FSM state. */
+  climb: {
+    forwardAccel: LinearAccelCurve;
+    backwardAccel: LinearAccelCurve;
+    lateralAccel: LinearAccelCurve;
+    upAccel: LinearAccelCurve;
+    /** Same role as the top-level `downAccel` — climb sets this high so the
+     *  body actively presses into the surface, generating friction grip on
+     *  walls/overhangs where gravity's into-N component is ~0. */
+    downAccel: LinearAccelCurve;
+    /** Tangent-speed threshold (m/s) below which run / slide → climb fires
+     *  on a slope steeper than `slopeRunMaxRad`. Also gates climb → slide
+     *  when exceeded by an external impulse. */
+    engagementMaxSpeed: number;
+  };
   /** Hold-time threshold to upgrade jump → wing launch, seconds. */
   wingLaunchHoldSec: number;
   /** Vertical impulse for a wing launch (longer-hold jump), m/s. */
@@ -182,9 +252,29 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   ragdollNormalInScale: 1.5,
   detachNormalOutScale: 1.0,
   slideGripScale: 1.0,
-  airAccel: 12,
-  airSpeedCap: 12,
-  jumpImpulse: 7,
+  airAccel: 1.5,
+  airSpeedCap: 2,
+  jump: {
+    upSpeed: 7,
+    horizSpeed: 4,
+    horizBlendMax: 0.5,
+    holdMaxSec: 0.18,
+    stepCount: 4,
+    maxAngleBelowHorizonRad: 0.174,
+    minSurfaceScale: 0.2,
+  },
+  // Climb sub-profile — "high acceleration, very low top speed." vMax ≈ 2 m/s
+  // (a quarter of run speed); accelAtZero raised so the body grips and can push
+  // against gravity on overhangs. downAccel cranked above gravity (≈ 20 m/s²) so
+  // the existing centripetal-leave rule keeps the body stuck even on ceilings.
+  climb: {
+    forwardAccel: { accelAtZero: 30, vMax: 2 },
+    backwardAccel: { accelAtZero: 30, vMax: 2 },
+    lateralAccel: { accelAtZero: 30, vMax: 2 },
+    upAccel: { accelAtZero: 20, vMax: Infinity },
+    downAccel: { accelAtZero: 20, vMax: Infinity },
+    engagementMaxSpeed: 1.5,
+  },
   wingLaunchHoldSec: 0.35,
   wingLaunchImpulse: 14,
   flapImpulseUp: 5,

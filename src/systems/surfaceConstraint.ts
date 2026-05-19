@@ -131,6 +131,7 @@ export function createSurfaceConstraintSystem(): SystemDescriptor {
                     transforms.byEntity.set(id, t);
                     vels.byEntity.set(id, v);
                     ctrl.locomotionMode = "surfaceConstrained";
+                    ctrl.jumpHolding = false;
                     recordTransition(ctrl, "surfaceRun", "landed", now);
                     const att = sa.byEntity.get(id);
                     if (att) {

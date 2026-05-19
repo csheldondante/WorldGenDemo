@@ -4,8 +4,9 @@ import type { ProfileId } from "./characterControllerProfile";
 
 /** FSM states. New states get added to this union; threshold-based transitions are owned by CharacterControllerSystem. */
 export type ControllerState =
-  | "surfaceRun"   // grounded, accepts move/jump input
-  | "surfaceSlide" // grounded but slope too steep; sliding downhill, limited steering
+  | "surfaceRun"   // grounded, accepts move/jump input ("run/walk" in plan vocabulary)
+  | "surfaceSlide" // grounded but tangent speed exceeds sustainable; friction-dominated ("scramble" in plan vocabulary — wallrun is a special case)
+  | "climb"        // grounded, near-zero tangent speed on a steep surface; strong grip via cranked downAccel curve, low max tangent speed. NEW. Behavior wired in Phase 2.
   | "airborne"     // volume-constrained, no winged moves yet (post-jump or fell off)
   | "wingLaunch"   // brief upward boost from a long-held jump; transitions to airborne
   | "flap"         // single-tick impulse; transitions to airborne
@@ -92,6 +93,20 @@ export interface CharacterControllerComponent {
     current: [number, number, number, number];
     target: [number, number, number, number];
   };
+  /**
+   * Jump state. The press captures an "intended jump velocity" via
+   * joystick-blended horizontal + vertical components; the difference from
+   * current velocity is the total impulse the jump owes. `jumpDir` is the
+   * unit direction of that impulse (locked at press time — gravity bends
+   * the trajectory afterwards, but the impulse direction stays along the
+   * initial arc). Hold-time releases more of `jumpImpulseMagMax` over the
+   * window, frame-rate-independently (target = progress × max). Cleared
+   * on release, timeout, or landing. See `src/systems/characterController.ts`.
+   */
+  jumpHolding: boolean;
+  jumpDir: [number, number, number];
+  jumpImpulseMagMax: number;
+  jumpImpulseApplied: number;
 }
 
 export interface CharacterControllerBufferData {

@@ -17,7 +17,7 @@
  * `src/lib/` cannot import the runtime per layer rules.
  */
 
-import { readBuffer, writeBuffer, type BufferId } from "../runtime/buffer";
+import { readBuffer, writeBuffer, type BufferId, type Buffer } from "../runtime/buffer";
 import type { Registry } from "../runtime/registry";
 import type { SystemDescriptor, SystemId } from "../runtime/system";
 import { executeGraph } from "../runtime/scheduler";
@@ -87,6 +87,18 @@ export interface BufferTest {
    * without affecting the test physics.
    */
   backdrop?: ScenarioBackdrop;
+  /**
+   * Debug buffer ids to flip `enabled = true` on before the first tick.
+   * Each must be a buffer whose data shape has a top-level `enabled: boolean`
+   * field (the established opt-in convention — see
+   * `src/buffers/characterControllerDebug.ts`). Lets a scenario request
+   * per-tick diagnostic capture without baking the toggle into the system code.
+   *
+   * Typical usage: `enableDebugBuffers: ["characterControllerDebug"]` along
+   * with adding the same id to `output.snapshot` so the captured history is
+   * compared against the baseline.
+   */
+  enableDebugBuffers?: BufferId[];
 }
 
 export interface TestResult {
@@ -120,6 +132,21 @@ export function runBufferTest(test: BufferTest, options: RunBufferTestOptions = 
   const reg = app.registry;
 
   applyInput(reg, test.input);
+
+  // Flip `enabled = true` on any opt-in debug buffers the scenario asked for.
+  // Each declared id must point at a buffer whose data has a top-level
+  // `enabled: boolean` field (the per-system debug-buffer convention).
+  if (test.enableDebugBuffers) {
+    for (const dbgId of test.enableDebugBuffers) {
+      if (!reg.hasBuffer(dbgId)) {
+        throw new Error(`bufferTest "${test.name}": enableDebugBuffers references unregistered buffer "${dbgId}"`);
+      }
+      const buf = reg.getBuffer(dbgId) as Buffer<{ enabled: boolean }>;
+      writeBuffer(buf, (d) => {
+        d.enabled = true;
+      });
+    }
+  }
 
   let cumulativeTicks = 0;
   for (let stepIdx = 0; stepIdx < test.steps.length; stepIdx++) {

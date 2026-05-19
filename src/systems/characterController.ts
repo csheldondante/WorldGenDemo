@@ -16,6 +16,10 @@ import {
   type ControllerState,
 } from "../buffers/characterController";
 import {
+  CHARACTER_CONTROLLER_DEBUG_BUFFER_ID,
+  type CharacterControllerDebugBufferData,
+} from "../buffers/characterControllerDebug";
+import {
   CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
   type CharacterControllerProfileBufferData,
 } from "../buffers/characterControllerProfile";
@@ -27,10 +31,15 @@ import {
 } from "../buffers/surfaceAttachment";
 import { SURFACE_PROVIDER_BUFFER_ID, type SurfaceProviderBufferData } from "../buffers/surfaceProvider";
 import { FORCE_ACCUMULATOR_BUFFER_ID, type ForceAccumulatorBufferData } from "../buffers/forceAccumulator";
+import { VOLUME_FIELD_BUFFER_ID, type VolumeFieldBufferData } from "../buffers/volumeField";
+import { pickGravity, sortVolumesByPriority } from "../lib/math/gravityVolume";
 import { CHARACTER_INPUT_SYSTEM_ID } from "./characterInput";
 import { TANGENT_INPUT_MAPPER_SYSTEM_ID } from "./tangentInputMapper";
 import { FORCE_FIELD_SYSTEM_ID } from "./forceField";
 import { evaluateLinearAccel } from "../lib/math/accelCurve";
+import { heldImpulseProgress } from "../lib/math/heldImpulse";
+import { projectCameraTangentForward } from "../lib/math/cameraTangent";
+import type { Vec3 } from "../lib/math/quat";
 import { IS_DEV } from "../runtime/dev";
 
 export const CHARACTER_CONTROLLER_SYSTEM_ID = "characterControllerSystem";
@@ -55,8 +64,10 @@ export function createCharacterControllerSystem(): SystemDescriptor {
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
       { id: SURFACE_PROVIDER_BUFFER_ID, access: "read" },
+      { id: VOLUME_FIELD_BUFFER_ID, access: "read" },
       { id: TRANSFORM_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "readwrite" },
+      { id: CHARACTER_CONTROLLER_DEBUG_BUFFER_ID, access: "readwrite" },
       { id: VELOCITY_BUFFER_ID, access: "readwrite" },
       { id: FORCE_ACCUMULATOR_BUFFER_ID, access: "readwrite" },
     ],
@@ -67,10 +78,18 @@ export function createCharacterControllerSystem(): SystemDescriptor {
       const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       const sa = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const sp = readBuffer(buffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID));
+      const vol = readBuffer(buffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID));
+      const sortedVolumes = sortVolumesByPriority(vol.volumes);
       const ccBuf = buffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
       const vBuf = buffer<VelocityBufferData>(VELOCITY_BUFFER_ID);
       const tBuf = buffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
       const faBuf = buffer<ForceAccumulatorBufferData>(FORCE_ACCUMULATOR_BUFFER_ID);
+      const dbgBuf = buffer<CharacterControllerDebugBufferData>(CHARACTER_CONTROLLER_DEBUG_BUFFER_ID);
+      // Cheap pre-check: if disabled, the per-tick capture branch is skipped entirely
+      // and production pays only a single bool read per execute(). When enabled, the
+      // tick counter is the existing `now` (scheduler ms) — diagnostic rows are tagged
+      // with it so the baseline JSON shows when each row was captured.
+      const dbgEnabled = readBuffer(dbgBuf).enabled;
 
       writeBuffer(ccBuf, (cc) => {
         writeBuffer(vBuf, (vel) => {
@@ -88,7 +107,11 @@ export function createCharacterControllerSystem(): SystemDescriptor {
 
               ctrl.timeInState += dt;
 
-              if (ctrl.state === "surfaceRun" || ctrl.state === "surfaceSlide") {
+              if (
+                ctrl.state === "surfaceRun" ||
+                ctrl.state === "surfaceSlide" ||
+                ctrl.state === "climb"
+              ) {
                 const att = sa.byEntity.get(id);
                 const sample = att?.sample ?? null;
                 const surface = sp.heightmap;
@@ -152,7 +175,21 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   const aReqF = (vDesF - vF) / dt - aExF;
                   const aReqR = (vDesR - vR) / dt - aExR;
 
+                  // ----- Per-state curve bundle selection -----
+                  // The curve bundle is selected by FSM state: climb uses
+                  // `profile.climb.*` (low vMax, high accelAtZero) so the body grips
+                  // and moves slowly on steep surfaces; everything else uses the
+                  // top-level run curves. Same selection happens in
+                  // TangentInputMapperSystem for `vDes` consistency.
+                  // See [[worldgen-demo-controller-state-curves-and-triggers]].
+                  const curves = ctrl.state === "climb" ? profile.climb : profile;
+
                   // ----- Friction grip = μ × |normal force from existing forces| -----
+                  // Old (pre-batch) formula: gravity-only into-N. The friction-wiring
+                  // change that adds the body's self-applied downAccel push to this is
+                  // deferred to a later commit in this bisect series so we can isolate
+                  // whether it introduces the lurch.
+                  const selfNormalPush = 0;
                   const gripBudget = sample.friction * Math.abs(aExN);
 
                   // ----- Per-direction biomechanical ceilings -----
@@ -161,10 +198,10 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   // Past vMax in that direction, the curve goes negative — "limbs are too slow
                   // to push at this speed; they drag." Voluntary range = [−backCeil, +fwdCeil],
                   // intersected with friction grip on both sides.
-                  const fwdCeil  = evaluateLinearAccel(profile.forwardAccel,  Math.max(0,  vF));
-                  const backCeil = evaluateLinearAccel(profile.backwardAccel, Math.max(0, -vF));
-                  const rightCeil = evaluateLinearAccel(profile.lateralAccel, Math.max(0,  vR));
-                  const leftCeil  = evaluateLinearAccel(profile.lateralAccel, Math.max(0, -vR));
+                  const fwdCeil  = evaluateLinearAccel(curves.forwardAccel,  Math.max(0,  vF));
+                  const backCeil = evaluateLinearAccel(curves.backwardAccel, Math.max(0, -vF));
+                  const rightCeil = evaluateLinearAccel(curves.lateralAccel, Math.max(0,  vR));
+                  const leftCeil  = evaluateLinearAccel(curves.lateralAccel, Math.max(0, -vR));
                   // Cap ceilings by grip (positive only). Negative ceilings stay negative —
                   // they represent forced deceleration that grip can't suppress.
                   const fwdMax   = Math.min(fwdCeil,   gripBudget);
@@ -214,11 +251,23 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   // detach. The reason string differentiates centripetal vs departing-body
                   // failures for diagnosability.
                   const apparentN = aExN - aCentripetalN;
-                  const gripBudget_N = evaluateLinearAccel(profile.downAccel, Math.max(0, vN));
+                  // Grip budget along -N uses the state-selected curve: climb's
+                  // cranked downAccel (≈20 m/s², > gravity) is what holds the
+                  // body to walls and overhangs — no separate grip mechanism.
+                  const gripBudget_N = evaluateLinearAccel(curves.downAccel, Math.max(0, vN));
                   const pullDemand = apparentN + vN / dt;
 
-                  // ----- State transitions (use REQUIRED, not capped, magnitudes) -----
-                  const slipMag = Math.max(Math.abs(aReqF), Math.abs(aReqR));
+                  // ----- State transitions -----
+                  // Detach triggers (smack / pullDemand-exceeds-grip) fire from
+                  // ANY surface state. Per-state transitions follow.
+                  //
+                  // All trigger conditions reduce to three local quantities:
+                  //   - tangentSpeed (||(vF, vR)||)
+                  //   - slopeRad_local (angle between N and -gravity)
+                  //   - the player's intent vs net producible accel in that
+                  //     direction (backslide criterion below).
+                  // See [[worldgen-demo-fsm-transitions-as-the-primary-mechanic]].
+                  const tangentSpeed = Math.hypot(vF, vR);
                   let stateChanged = false;
                   if (aSurfaceNRequired > sample.normalInMax * profile.ragdollNormalInScale) {
                     // Surface stiffness exceeded — V1 has no ragdoll behavior yet, so detach to airborne.
@@ -236,19 +285,159 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                     if (IS_DEV) {
                       // eslint-disable-next-line no-console
                       console.log(
-                        `[CC ${id}] surfaceRun → airborne reason=${isCentripetal ? "centripetal" : "departing"} vN=${vN.toFixed(3)} aExN=${aExN.toFixed(2)} aCentripetalN=${aCentripetalN.toFixed(2)} apparent_N=${apparentN.toFixed(2)} pull=${pullDemand.toFixed(2)} grip=${gripBudget_N.toFixed(2)} uv=(${uv[0].toFixed(2)},${uv[1].toFixed(2)})`,
+                        `[CC ${id}] ${ctrl.state} → airborne reason=${isCentripetal ? "centripetal" : "departing"} vN=${vN.toFixed(3)} aExN=${aExN.toFixed(2)} aCentripetalN=${aCentripetalN.toFixed(2)} apparent_N=${apparentN.toFixed(2)} pull=${pullDemand.toFixed(2)} grip=${gripBudget_N.toFixed(2)} uv=(${uv[0].toFixed(2)},${uv[1].toFixed(2)})`,
                       );
                     }
-                  } else if (slipMag > gripBudget * profile.slideGripScale && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", "grip exceeded", now);
-                  } else if (slopeRad_local > profile.slopeRunMaxRad && ctrl.state === "surfaceRun") {
-                    setState(ctrl, "surfaceSlide", `slope ${slopeRad_local.toFixed(2)}>${profile.slopeRunMaxRad.toFixed(2)}`, now);
                   } else if (
-                    ctrl.state === "surfaceSlide" &&
-                    slopeRad_local < profile.slopeStandMaxRad &&
-                    Math.abs(vF) + Math.abs(vR) < 0.5
+                    (ctrl.state === "surfaceRun" || ctrl.state === "surfaceSlide") &&
+                    tangentSpeed < profile.climb.engagementMaxSpeed &&
+                    slopeRad_local > profile.slopeRunMaxRad
                   ) {
-                    setState(ctrl, "surfaceRun", `slope eased to ${slopeRad_local.toFixed(2)}`, now);
+                    // Climb engagement: stopped (or nearly so) on a steep face → grab.
+                    // Fires from run AND slide so a high-speed scramble that bleeds
+                    // its tangent speed into a wall transitions into climb. The
+                    // cranked `profile.climb.downAccel` IS the grip mechanism —
+                    // existing centripetal-leave rule reads it, body sticks.
+                    setState(
+                      ctrl,
+                      "climb",
+                      `grab: tangentSpeed ${tangentSpeed.toFixed(2)} < ${profile.climb.engagementMaxSpeed.toFixed(2)} on slope ${slopeRad_local.toFixed(2)}`,
+                      now,
+                    );
+                  } else if (
+                    ctrl.state === "climb" &&
+                    slopeRad_local < profile.slopeStandMaxRad
+                  ) {
+                    // Climb disengagement: slope eased to a runnable angle. Use
+                    // slopeStandMaxRad (the slide→run hysteresis threshold) so
+                    // run⇄climb doesn't oscillate around slopeRunMaxRad.
+                    setState(
+                      ctrl,
+                      "surfaceRun",
+                      `slope eased to ${slopeRad_local.toFixed(2)} < ${profile.slopeStandMaxRad.toFixed(2)}`,
+                      now,
+                    );
+                  } else if (
+                    ctrl.state === "climb" &&
+                    tangentSpeed > profile.climb.engagementMaxSpeed * 1.5
+                  ) {
+                    // Lost grip via external impulse: climb max speed exceeded by
+                    // 1.5× → drop into slide so friction-dominated path takes over.
+                    // The bare engagementMaxSpeed is the engagement gate; the
+                    // 1.5× hysteresis prevents oscillation.
+                    setState(
+                      ctrl,
+                      "surfaceSlide",
+                      `climb cap blown: tangentSpeed ${tangentSpeed.toFixed(2)} > ${profile.climb.engagementMaxSpeed.toFixed(2)}`,
+                      now,
+                    );
+                  } else if (
+                    ctrl.state === "surfaceRun" &&
+                    tangentSpeed > profile.forwardAccel.vMax * 1.1
+                  ) {
+                    // Over-speed slide trigger: tangentSpeed past the natural
+                    // top-speed limit (forwardAccel's x-intercept) means "limbs
+                    // can't cycle that fast — friction takes over." Should only
+                    // fire when an external impulse pushed us past vMax (e.g.
+                    // jumping into a steep slope and converting vertical to
+                    // tangent). 1.1× margin so normal acceleration overshoots
+                    // don't trip it.
+                    setState(
+                      ctrl,
+                      "surfaceSlide",
+                      `over-speed: tangentSpeed ${tangentSpeed.toFixed(2)} > ${profile.forwardAccel.vMax.toFixed(2)}`,
+                      now,
+                    );
+                  } else if (ctrl.state === "surfaceRun" || ctrl.state === "surfaceSlide") {
+                    // Backslide trigger: player is pressing in some direction AND
+                    // velocity is in the opposing direction AND the max producible
+                    // net acceleration in the intent direction (foot ceiling +
+                    // external) is ≤ 0. That's the user's "actively accelerating
+                    // the other way" — feet maxed out, external winning. NOTE:
+                    // foot ceilings are signed (positive = thrust in that
+                    // direction); when intent has a +Y component we project the
+                    // forward ceiling onto Y, etc. We use the *capped* ceilings
+                    // (gripBudget-intersected) because that's the actual force
+                    // available, not just the biomechanical max.
+                    const intentMagSq = input.moveX * input.moveX + input.moveY * input.moveY;
+                    if (intentMagSq > 0.04) {
+                      // Per-axis max foot ceiling in the intent's sign.
+                      const intentDirF =
+                        input.moveY > 0 ? fwdMax : input.moveY < 0 ? -backMax : 0;
+                      const intentDirR =
+                        input.moveX > 0 ? rightMax : input.moveX < 0 ? -leftMax : 0;
+                      // Net producible accel along intent direction =
+                      // (max foot ceil + external) · intent_unit.
+                      const intentLen = Math.sqrt(intentMagSq);
+                      const intentNet =
+                        ((intentDirF + aExF) * input.moveY +
+                          (intentDirR + aExR) * input.moveX) /
+                        intentLen;
+                      // Velocity component along intent — backslide requires this
+                      // to be negative (moving against intent).
+                      const vAlongIntent =
+                        (vF * input.moveY + vR * input.moveX) / intentLen;
+                      if (
+                        intentNet <= 0 &&
+                        vAlongIntent < -0.1 &&
+                        ctrl.state === "surfaceRun"
+                      ) {
+                        setState(
+                          ctrl,
+                          "surfaceSlide",
+                          `backslide: intentNet ${intentNet.toFixed(2)} ≤ 0, vAlongIntent ${vAlongIntent.toFixed(2)}`,
+                          now,
+                        );
+                      } else if (
+                        intentNet > 0.5 &&
+                        vAlongIntent > 0 &&
+                        ctrl.state === "surfaceSlide" &&
+                        tangentSpeed < profile.forwardAccel.vMax
+                      ) {
+                        // Slide recovery: feet are back to producing positive net
+                        // accel in the intent direction AND velocity is going
+                        // with intent AND tangent speed is within run capacity.
+                        setState(
+                          ctrl,
+                          "surfaceRun",
+                          `recover: intentNet ${intentNet.toFixed(2)} > 0, vAlongIntent ${vAlongIntent.toFixed(2)}`,
+                          now,
+                        );
+                      }
+                    }
+                  }
+
+                  // Diagnostic capture (opt-in via CharacterControllerDebugBuffer.enabled).
+                  // Gated on a single bool read so production cost is negligible.
+                  // Captures every intermediate the surface-frame solver computes; the
+                  // buffer-snapshot regression framework compares histories tick-for-tick.
+                  if (dbgEnabled) {
+                    writeBuffer(dbgBuf, (d) => {
+                      let entry = d.byEntity.get(id);
+                      if (!entry) {
+                        entry = { history: [] };
+                        d.byEntity.set(id, entry);
+                      }
+                      entry.history.push({
+                        tick: now,
+                        vF, vR, vN,
+                        slopeRad: slopeRad_local,
+                        aExN, aExF, aExR,
+                        aCentripetalN,
+                        gripBudget,
+                        gripBudget_N,
+                        fwdCeil, backCeil, rightCeil, leftCeil,
+                        fwdMax, backMax, rightMax, leftMax,
+                        aReqF, aReqR,
+                        aFEff, aREff,
+                        aSurfaceNRequired,
+                        aSurfaceN,
+                        apparentN,
+                        pullDemand,
+                        selfNormalPush,
+                        tangentSpeed,
+                      });
+                    });
                   }
 
                   // ----- Add tangent control + surface reaction to the accumulator -----
@@ -260,15 +449,191 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   }
                 }
 
-                // Jump: edge press → switch to airborne with vertical impulse.
-                // (Direct velocity write — impulses are a separate channel from the
-                // desired-velocity loop.)
+                // Jump press: capture the "intended jump velocity" by blending
+                // current horizontal velocity with the joystick direction, plus
+                // a fixed vertical component along the surface normal. The
+                // difference from current velocity is the total impulse the
+                // jump owes; we apply step 1 immediately and stash the
+                // direction + budget on the controller for the hold-window
+                // integration that runs each subsequent tick. Direction is
+                // locked at press; gravity bends the trajectory afterwards.
                 if (input.jumpPressed && ctrl.locomotionMode === "surfaceConstrained") {
-                  v.linear[1] = profile.jumpImpulse;
+                  // Press-time intent. Two rules:
+                  //
+                  //  1. **Vertical = gravity-up**, NOT surface normal. Jumping
+                  //     off an incline should kick toward the sky, not normal
+                  //     to the slope (which points partway "back down"
+                  //     relative to gravity). Gravity-up = -normalize(pickGravity).
+                  //
+                  //  2. **Horizontal kick = joystick** mapped through the
+                  //     CAMERA-on-gravity-horizon plane, ADDED to current
+                  //     velocity. Surface tangent is not the intent basis —
+                  //     it only constrains the result via clamp #3 below.
+                  //     "Running along a wall + jump right" = forward
+                  //     velocity preserved + lateral kick.
+                  //
+                  //  3. **Tangent-plane clamp**: impulse is projected so it
+                  //     never pushes INTO the surface (-N component zeroed).
+                  //     On a wall this redirects the kick to be at most
+                  //     tangent to the wall instead of crashing through it.
+                  //
+                  //  4. **Surface-friction scale**: the kick magnitude is
+                  //     scaled by how aligned the surface normal is with
+                  //     gravity-up. Full on flat ground, reduced on slopes,
+                  //     minimum on vertical walls — "last push up the wall,
+                  //     not a leap to scale it."
+                  const jpAtt = sa.byEntity.get(id);
+                  if (jpAtt && jpAtt.sample) {
+                    const sp_ = jpAtt.sample.position;
+                    const grav = pickGravity(sortedVolumes, vol.gravity, [sp_[0], sp_[1], sp_[2]]);
+                    const gLen = Math.hypot(grav[0], grav[1], grav[2]) || 1;
+                    const gUpX = -grav[0] / gLen, gUpY = -grav[1] / gLen, gUpZ = -grav[2] / gLen;
+
+                    // Joystick basis in the camera-on-gravity-horizon plane
+                    // (reuses projectCameraTangentForward with N = gUp).
+                    const camF: Vec3 = [
+                      input.cameraLookDir[0], input.cameraLookDir[1], input.cameraLookDir[2],
+                    ];
+                    const camU: Vec3 = [
+                      input.cameraUp[0], input.cameraUp[1], input.cameraUp[2],
+                    ];
+                    const horizon = projectCameraTangentForward(camF, camU, [gUpX, gUpY, gUpZ]);
+                    const horizF = horizon.forward;
+                    const horizR = horizon.right;
+
+                    const moveX = input.moveX, moveY = input.moveY;
+                    const stickMag = Math.min(1, Math.hypot(moveX, moveY));
+
+                    // Additive impulse: vertical component along gravity-up +
+                    // (optional) horizontal kick in joystick direction.
+                    // Current velocity is preserved; the kick is added to it
+                    // by the downstream `v.linear += dir × stepSize` step.
+                    let impX = gUpX * profile.jump.upSpeed;
+                    let impY = gUpY * profile.jump.upSpeed;
+                    let impZ = gUpZ * profile.jump.upSpeed;
+                    if (stickMag > 1e-6 && horizF && horizR) {
+                      const jX = moveY * horizF[0] + moveX * horizR[0];
+                      const jY = moveY * horizF[1] + moveX * horizR[1];
+                      const jZ = moveY * horizF[2] + moveX * horizR[2];
+                      const jLen = Math.hypot(jX, jY, jZ) || 1;
+                      const kick = stickMag * profile.jump.horizSpeed;
+                      impX += (jX / jLen) * kick;
+                      impY += (jY / jLen) * kick;
+                      impZ += (jZ / jLen) * kick;
+                    }
+
+                    // Clamp 1 (surface tangent): impulse must not push INTO
+                    // the slope. Project out any -N component so the impulse
+                    // is at worst tangent to the surface. Behavioural effect:
+                    // - Pressing into a 70° wall + jump → impulse goes UP
+                    //   the wall (tangent) instead of crashing through it.
+                    // - Pressing into a too-steep hill + jump → impulse
+                    //   redirects up-along-the-slope (climb-style push).
+                    const jpN = jpAtt.sample.normal;
+                    const ipDotN = impX * jpN[0] + impY * jpN[1] + impZ * jpN[2];
+                    if (ipDotN < 0) {
+                      impX -= ipDotN * jpN[0];
+                      impY -= ipDotN * jpN[1];
+                      impZ -= ipDotN * jpN[2];
+                    }
+
+                    // Clamp 2 (max angle below horizon): impulse direction
+                    // can't dive more than `maxAngleBelowHorizonRad` below
+                    // world horizontal. Default 10° — enables wall-to-wall
+                    // ricochet jumps that go slightly downward, but you
+                    // never "jump down" steeply.
+                    let impMag = Math.hypot(impX, impY, impZ);
+                    if (impMag > 1e-6) {
+                      const minVertFrac = -Math.sin(profile.jump.maxAngleBelowHorizonRad);
+                      const minVertVal = minVertFrac * impMag;
+                      const ipDotGUp = impX * gUpX + impY * gUpY + impZ * gUpZ;
+                      if (ipDotGUp < minVertVal) {
+                        // Decompose into world-horizontal + gravity-vertical;
+                        // set vertical to the floor, scale horizontal to keep
+                        // total magnitude unchanged. Rotates the impulse up
+                        // to exactly the clamp boundary.
+                        const horizX = impX - ipDotGUp * gUpX;
+                        const horizY = impY - ipDotGUp * gUpY;
+                        const horizZ = impZ - ipDotGUp * gUpZ;
+                        const horizMag = Math.hypot(horizX, horizY, horizZ) || 1;
+                        const newHorizMag = Math.cos(profile.jump.maxAngleBelowHorizonRad) * impMag;
+                        const s = newHorizMag / horizMag;
+                        impX = horizX * s + minVertVal * gUpX;
+                        impY = horizY * s + minVertVal * gUpY;
+                        impZ = horizZ * s + minVertVal * gUpZ;
+                        impMag = Math.hypot(impX, impY, impZ);
+                      }
+                    }
+
+                    // Surface-availability scale: applied ONLY to the tangent
+                    // component of the impulse (the part PARALLEL to the
+                    // wall surface). The legs push away from the surface
+                    // with their full normal force; what's reduced on
+                    // slopes is the tangent push — that's the friction-
+                    // limited part, and friction is mostly spent holding
+                    // against tangent gravity on a wall. "Last push up the
+                    // wall" affects the up-along-wall component, not the
+                    // out-from-wall component.
+                    const NdotGUp = jpN[0] * gUpX + jpN[1] * gUpY + jpN[2] * gUpZ;
+                    const surfaceScale = Math.max(profile.jump.minSurfaceScale, NdotGUp);
+                    const ipDotN2 = impX * jpN[0] + impY * jpN[1] + impZ * jpN[2];
+                    const impNX = ipDotN2 * jpN[0];
+                    const impNY = ipDotN2 * jpN[1];
+                    const impNZ = ipDotN2 * jpN[2];
+                    const impTX = (impX - impNX) * surfaceScale;
+                    const impTY = (impY - impNY) * surfaceScale;
+                    const impTZ = (impZ - impNZ) * surfaceScale;
+                    impX = impNX + impTX;
+                    impY = impNY + impTY;
+                    impZ = impNZ + impTZ;
+                    impMag = Math.hypot(impX, impY, impZ);
+
+                    if (impMag > 1e-6) {
+                      const dirX = impX / impMag;
+                      const dirY = impY / impMag;
+                      const dirZ = impZ / impMag;
+                      const nSteps = Math.max(1, profile.jump.stepCount);
+                      const stepSize = impMag / nSteps;
+                      v.linear[0] += dirX * stepSize;
+                      v.linear[1] += dirY * stepSize;
+                      v.linear[2] += dirZ * stepSize;
+                      ctrl.jumpHolding = true;
+                      ctrl.jumpDir = [dirX, dirY, dirZ];
+                      ctrl.jumpImpulseMagMax = impMag;
+                      ctrl.jumpImpulseApplied = stepSize;
+                    }
+                  }
                   ctrl.locomotionMode = "volumeConstrained";
                   setState(ctrl, "airborne", "jump pressed", now);
                 }
               } else {
+                // Jump hold-window: while the jump button is held within
+                // `profile.jumpHoldMaxSec` of the press, integrate the
+                // remaining impulse along the locked `ctrl.jumpDir`. The
+                // progress kernel (`heldImpulseProgress`) is frame-rate-
+                // independent and supports step-snapping for predictable
+                // press-timing. Direction was captured at press in the
+                // surface branch above; gravity bends the trajectory
+                // naturally afterwards.
+                if (ctrl.jumpHolding) {
+                  const progress = heldImpulseProgress(
+                    ctrl.timeInState,
+                    profile.jump.holdMaxSec,
+                    profile.jump.stepCount,
+                  );
+                  const targetImpulse = progress * ctrl.jumpImpulseMagMax;
+                  const delta = targetImpulse - ctrl.jumpImpulseApplied;
+                  if (delta > 0) {
+                    v.linear[0] += ctrl.jumpDir[0] * delta;
+                    v.linear[1] += ctrl.jumpDir[1] * delta;
+                    v.linear[2] += ctrl.jumpDir[2] * delta;
+                    ctrl.jumpImpulseApplied = targetImpulse;
+                  }
+                  if (input.jumpReleased || ctrl.timeInState >= profile.jump.holdMaxSec || progress >= 1) {
+                    ctrl.jumpHolding = false;
+                  }
+                }
+
                 // Air states: thrust in the plane PERPENDICULAR TO GRAVITY, not world XZ.
                 // World-XZ targeting fights radial gravity volumes — the character would
                 // hammer its velocity back into the world-XZ plane each tick, cancelling

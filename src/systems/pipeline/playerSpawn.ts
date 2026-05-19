@@ -123,6 +123,10 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
               target: [0, 0, 0, 1] as [number, number, number, number],
             },
             desiredFacingTangent: [0, 0, -1] as [number, number, number],
+            jumpHolding: false,
+            jumpDir: [0, 0, 0] as [number, number, number],
+            jumpImpulseMagMax: 0,
+            jumpImpulseApplied: 0,
           });
           setComponent(CHARACTER_INPUT_BUFFER_ID, emptyInput(0));
           setComponent(SURFACE_ATTACHMENT_BUFFER_ID, {

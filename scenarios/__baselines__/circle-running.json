@@ -60,6 +60,14 @@
             0,
             0.9776907316907192
           ],
+          "jumpDir": [
+            0,
+            0,
+            0
+          ],
+          "jumpHolding": false,
+          "jumpImpulseApplied": 0,
+          "jumpImpulseMagMax": 0,
           "lastTransitionReason": "grip exceeded",
           "locomotionMode": "surfaceConstrained",
           "orientation": {

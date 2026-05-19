@@ -122,6 +122,12 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
           const aExF = accel[0] * FtX + accel[1] * FtY + accel[2] * FtZ;
           const aExR = accel[0] * RtX + accel[1] * RtY + accel[2] * RtZ;
 
+          // Pick the curve bundle for the current FSM state. Each grounded
+          // state has its own 6DoF curve set on the profile; the controller
+          // and this mapper both consume the same selected set, so vDes (the
+          // x-intercept) and the per-direction ceiling stay consistent.
+          const curves = ctrl.state === "climb" ? profile.climb : profile;
+
           // Desired velocity along each axis = input fraction × x-intercept of the
           // shifted biomechanical curve. Sign-aware: forward intent uses forwardAccel
           // shifted by +aExF; backward intent uses backwardAccel shifted by −aExF
@@ -129,12 +135,12 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
           // is negated).
           const vDesF =
             input.moveY >= 0
-              ? input.moveY * xInterceptShifted(profile.forwardAccel, aExF)
-              : input.moveY * xInterceptShifted(profile.backwardAccel, -aExF);
+              ? input.moveY * xInterceptShifted(curves.forwardAccel, aExF)
+              : input.moveY * xInterceptShifted(curves.backwardAccel, -aExF);
           const vDesR =
             input.moveX >= 0
-              ? input.moveX * xInterceptShifted(profile.lateralAccel, aExR)
-              : input.moveX * xInterceptShifted(profile.lateralAccel, -aExR);
+              ? input.moveX * xInterceptShifted(curves.lateralAccel, aExR)
+              : input.moveX * xInterceptShifted(curves.lateralAccel, -aExR);
 
           d.byEntity.set(id, {
             forwardTangent: [FtX, FtY, FtZ],
