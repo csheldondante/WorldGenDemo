@@ -184,13 +184,18 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   // See [[worldgen-demo-controller-state-curves-and-triggers]].
                   const curves = ctrl.state === "climb" ? profile.climb : profile;
 
-                  // ----- Friction grip = μ × |normal force from existing forces| -----
-                  // Old (pre-batch) formula: gravity-only into-N. The friction-wiring
-                  // change that adds the body's self-applied downAccel push to this is
-                  // deferred to a later commit in this bisect series so we can isolate
-                  // whether it introduces the lurch.
-                  const selfNormalPush = 0;
-                  const gripBudget = sample.friction * Math.abs(aExN);
+                  // ----- Friction grip = μ × |effective normal force| -----
+                  // Effective normal force = external into-surface component (gravity)
+                  // + body's self-applied push into the surface (`downAccel` curve, the
+                  // -N axis of the 6DoF profile). Run sets downAccel=0 — legs aren't
+                  // pressing into the ground; gravity supplies all the normal load.
+                  // Climb sets it high (≈20 m/s²) — legs actively press into the wall
+                  // to generate friction grip on near-vertical / overhang surfaces
+                  // where gravity's into-N component alone is ~0. The same downAccel
+                  // curve feeds the detach-resist rule below — it's the unified
+                  // "force into -N" channel for the body.
+                  const selfNormalPush = evaluateLinearAccel(curves.downAccel, Math.max(0, vN));
+                  const gripBudget = sample.friction * (Math.abs(aExN) + selfNormalPush);
 
                   // ----- Per-direction biomechanical ceilings -----
                   // Each ceiling is the maximum voluntary thrust the character's limbs can

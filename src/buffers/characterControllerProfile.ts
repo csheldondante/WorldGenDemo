@@ -248,7 +248,11 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   // Normal curves stay constant — they're grip budgets, not velocity-shaped thrust.
   // Phase 4's leave rule reads downAccel at max(0,vN) → at attached (vN=0) returns accelAtZero.
   upAccel: { accelAtZero: 5, vMax: Infinity },
-  downAccel: { accelAtZero: 5, vMax: Infinity },
+  // Run sets downAccel=0 — body doesn't actively press into the ground;
+  // gravity supplies the normal load and friction. Climb sets it high (≈20)
+  // to grip walls/overhangs where gravity's into-N component is ~0.
+  // The friction-grip formula reads this curve to compute selfNormalPush.
+  downAccel: { accelAtZero: 0, vMax: Infinity },
   ragdollNormalInScale: 1.5,
   detachNormalOutScale: 1.0,
   slideGripScale: 1.0,
