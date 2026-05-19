@@ -152,11 +152,13 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
   }
 
   /**
-   * Smoothstep-interpolate the precomputed vertex normals at the given UV,
-   * then renormalize. Same per-axis `s = t²(3 - 2t)` blend factor as the
-   * height sampler — keeps the normal direction C1-continuous across tile
-   * boundaries, matching the height field's smoothness so `pos = h + radius·N`
-   * advances smoothly with no visible kinks.
+   * Bilinear-interpolate the precomputed vertex normals at the given UV, then
+   * renormalize. Per-vertex normals are themselves derived from central-
+   * difference height gradients at construction time, so they're already
+   * smoother than recomputing per-sample from a bilinear-h numeric gradient
+   * (which gave piecewise-constant slope per tile). C0-continuous across
+   * tile borders. NOT smoothstep — that was a workaround which hid corners
+   * the wheel-intersection corner detection needs to see.
    */
   private sampleNormalUV(u: number, v: number): [number, number, number] {
     const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
@@ -164,18 +166,16 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
     const x0 = Math.floor(fx), x1 = Math.min(this.heightmap.width - 1, x0 + 1);
     const z0 = Math.floor(fz), z1 = Math.min(this.heightmap.height - 1, z0 + 1);
     const tx = fx - x0, tz = fz - z0;
-    const sx = tx * tx * (3 - 2 * tx);
-    const sz = tz * tz * (3 - 2 * tz);
     const W = this.heightmap.width;
     const i00 = (z0 * W + x0) * 3;
     const i10 = (z0 * W + x1) * 3;
     const i01 = (z1 * W + x0) * 3;
     const i11 = (z1 * W + x1) * 3;
     const n = this.vertexNormals;
-    const w00 = (1 - sx) * (1 - sz);
-    const w10 = sx * (1 - sz);
-    const w01 = (1 - sx) * sz;
-    const w11 = sx * sz;
+    const w00 = (1 - tx) * (1 - tz);
+    const w10 = tx * (1 - tz);
+    const w01 = (1 - tx) * tz;
+    const w11 = tx * tz;
     let nx = w00 * n[i00] + w10 * n[i10] + w01 * n[i01] + w11 * n[i11];
     let ny = w00 * n[i00 + 1] + w10 * n[i10 + 1] + w01 * n[i01 + 1] + w11 * n[i11 + 1];
     let nz = w00 * n[i00 + 2] + w10 * n[i10 + 2] + w01 * n[i01 + 2] + w11 * n[i11 + 2];
@@ -183,33 +183,20 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
     return [nx / len, ny / len, nz / len];
   }
 
-  /**
-   * Smoothstep height sample at UV. The blend factor is `s = t²(3 - 2t)`
-   * applied per-axis instead of plain linear (which is what makes the
-   * bilinear-only form C0 but not C1). Smoothstep is monotone on [0, 1],
-   * preserves the corner values (s(0)=0, s(1)=1), AND its derivative is 0
-   * at both endpoints — so the height GRADIENT goes to 0 at tile borders
-   * and matches across the boundary, giving a C1-continuous height field.
-   * Without this, the body's pos.y had visible slope-jumps at every tile
-   * crossing on the steep climb-wall (cf. trace at frames 102-104 where
-   * crossing from a flat tile into a slope tile jumped Δh by 0.126 in
-   * one frame).
-   */
+  /** Bilinear height sample at UV. */
   private sampleHeightUV(u: number, v: number): number {
     const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
     const fz = Math.max(0, Math.min(1, v)) * (this.heightmap.height - 1);
     const x0 = Math.floor(fx), x1 = Math.min(this.heightmap.width - 1, x0 + 1);
     const z0 = Math.floor(fz), z1 = Math.min(this.heightmap.height - 1, z0 + 1);
     const tx = fx - x0, tz = fz - z0;
-    const sx = tx * tx * (3 - 2 * tx);
-    const sz = tz * tz * (3 - 2 * tz);
     const h00 = this.heightmap.data[z0 * this.heightmap.width + x0];
     const h10 = this.heightmap.data[z0 * this.heightmap.width + x1];
     const h01 = this.heightmap.data[z1 * this.heightmap.width + x0];
     const h11 = this.heightmap.data[z1 * this.heightmap.width + x1];
-    const h0 = h00 * (1 - sx) + h10 * sx;
-    const h1 = h01 * (1 - sx) + h11 * sx;
-    return h0 * (1 - sz) + h1 * sz;
+    const h0 = h00 * (1 - tx) + h10 * tx;
+    const h1 = h01 * (1 - tx) + h11 * tx;
+    return h0 * (1 - tz) + h1 * tz;
   }
 
   worldToUV(x: number, _y: number, z: number): [number, number] {
