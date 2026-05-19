@@ -67,6 +67,17 @@ export interface ControllerDebugRow {
   selfNormalPush: number;
   /** Magnitude of (vF, vR). */
   tangentSpeed: number;
+  /** Body's world position at the start of this tick (= end of previous
+   *  tick's surface-constrained integration). Lets a per-tick delta-pos
+   *  inspection catch lurches where WORLD motion exceeds what tangent
+   *  velocity should produce. */
+  posX: number;
+  posY: number;
+  posZ: number;
+  /** Body's world velocity at the start of this tick. */
+  velX: number;
+  velY: number;
+  velZ: number;
 }
 
 export interface CharacterControllerDebugComponent {

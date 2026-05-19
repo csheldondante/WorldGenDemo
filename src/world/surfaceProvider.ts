@@ -95,28 +95,121 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
   readonly heightmap: Heightmap;
   readonly worldWidth: number;
   readonly worldDepth: number;
+  /**
+   * Per-vertex (cell-corner) unit normals, packed (nx, ny, nz). Precomputed
+   * from central-difference gradients of the height field at construction.
+   * `sampleAtUV` bilinearly interpolates these and renormalizes — the
+   * result is a C0-continuous normal across tile boundaries, which removes
+   * the per-tile-crossing stutter that the per-sample bilinear-height
+   * gradient produced (`∂h/∂v` was piecewise constant within a tile and
+   * jumped at tile borders → normal jumped → velocity reprojection lurched
+   * the body vertical every N frames where N = ticks-to-cross-one-tile).
+   * Memory: 3 floats × W × H. For a 64×64 map that's 48 KB; negligible.
+   */
+  private readonly vertexNormals: Float32Array;
 
   constructor(id: SurfaceId, heightmap: Heightmap) {
     this.id = id;
     this.heightmap = heightmap;
     this.worldWidth = heightmap.width * heightmap.tileSize;
     this.worldDepth = heightmap.height * heightmap.tileSize;
+    this.vertexNormals = new Float32Array(heightmap.width * heightmap.height * 3);
+    this.precomputeVertexNormals();
   }
 
-  /** Bilinear height sample at UV. */
+  /**
+   * Compute a smooth unit normal at every grid vertex via central differences
+   * over the height field. Edges clamp to one-sided differences. Normal at
+   * (i, j) = normalize(-∂h/∂x, 1, -∂h/∂z) — points "up" relative to the
+   * height field with magnitude 1.
+   */
+  private precomputeVertexNormals(): void {
+    const W = this.heightmap.width;
+    const H = this.heightmap.height;
+    const ts = this.heightmap.tileSize;
+    const data = this.heightmap.data;
+    for (let j = 0; j < H; j++) {
+      for (let i = 0; i < W; i++) {
+        const ileft = i > 0 ? i - 1 : i;
+        const iright = i < W - 1 ? i + 1 : i;
+        const jdown = j > 0 ? j - 1 : j;
+        const jup = j < H - 1 ? j + 1 : j;
+        const dxSpan = (iright - ileft) * ts;
+        const dzSpan = (jup - jdown) * ts;
+        const dhdx = dxSpan > 0 ? (data[j * W + iright] - data[j * W + ileft]) / dxSpan : 0;
+        const dhdz = dzSpan > 0 ? (data[jup * W + i] - data[jdown * W + i]) / dzSpan : 0;
+        let nx = -dhdx;
+        let ny = 1;
+        let nz = -dhdz;
+        const len = Math.hypot(nx, ny, nz);
+        nx /= len; ny /= len; nz /= len;
+        const idx = (j * W + i) * 3;
+        this.vertexNormals[idx + 0] = nx;
+        this.vertexNormals[idx + 1] = ny;
+        this.vertexNormals[idx + 2] = nz;
+      }
+    }
+  }
+
+  /**
+   * Smoothstep-interpolate the precomputed vertex normals at the given UV,
+   * then renormalize. Same per-axis `s = t²(3 - 2t)` blend factor as the
+   * height sampler — keeps the normal direction C1-continuous across tile
+   * boundaries, matching the height field's smoothness so `pos = h + radius·N`
+   * advances smoothly with no visible kinks.
+   */
+  private sampleNormalUV(u: number, v: number): [number, number, number] {
+    const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
+    const fz = Math.max(0, Math.min(1, v)) * (this.heightmap.height - 1);
+    const x0 = Math.floor(fx), x1 = Math.min(this.heightmap.width - 1, x0 + 1);
+    const z0 = Math.floor(fz), z1 = Math.min(this.heightmap.height - 1, z0 + 1);
+    const tx = fx - x0, tz = fz - z0;
+    const sx = tx * tx * (3 - 2 * tx);
+    const sz = tz * tz * (3 - 2 * tz);
+    const W = this.heightmap.width;
+    const i00 = (z0 * W + x0) * 3;
+    const i10 = (z0 * W + x1) * 3;
+    const i01 = (z1 * W + x0) * 3;
+    const i11 = (z1 * W + x1) * 3;
+    const n = this.vertexNormals;
+    const w00 = (1 - sx) * (1 - sz);
+    const w10 = sx * (1 - sz);
+    const w01 = (1 - sx) * sz;
+    const w11 = sx * sz;
+    let nx = w00 * n[i00] + w10 * n[i10] + w01 * n[i01] + w11 * n[i11];
+    let ny = w00 * n[i00 + 1] + w10 * n[i10 + 1] + w01 * n[i01 + 1] + w11 * n[i11 + 1];
+    let nz = w00 * n[i00 + 2] + w10 * n[i10 + 2] + w01 * n[i01 + 2] + w11 * n[i11 + 2];
+    const len = Math.hypot(nx, ny, nz) || 1;
+    return [nx / len, ny / len, nz / len];
+  }
+
+  /**
+   * Smoothstep height sample at UV. The blend factor is `s = t²(3 - 2t)`
+   * applied per-axis instead of plain linear (which is what makes the
+   * bilinear-only form C0 but not C1). Smoothstep is monotone on [0, 1],
+   * preserves the corner values (s(0)=0, s(1)=1), AND its derivative is 0
+   * at both endpoints — so the height GRADIENT goes to 0 at tile borders
+   * and matches across the boundary, giving a C1-continuous height field.
+   * Without this, the body's pos.y had visible slope-jumps at every tile
+   * crossing on the steep climb-wall (cf. trace at frames 102-104 where
+   * crossing from a flat tile into a slope tile jumped Δh by 0.126 in
+   * one frame).
+   */
   private sampleHeightUV(u: number, v: number): number {
     const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
     const fz = Math.max(0, Math.min(1, v)) * (this.heightmap.height - 1);
     const x0 = Math.floor(fx), x1 = Math.min(this.heightmap.width - 1, x0 + 1);
     const z0 = Math.floor(fz), z1 = Math.min(this.heightmap.height - 1, z0 + 1);
     const tx = fx - x0, tz = fz - z0;
+    const sx = tx * tx * (3 - 2 * tx);
+    const sz = tz * tz * (3 - 2 * tz);
     const h00 = this.heightmap.data[z0 * this.heightmap.width + x0];
     const h10 = this.heightmap.data[z0 * this.heightmap.width + x1];
     const h01 = this.heightmap.data[z1 * this.heightmap.width + x0];
     const h11 = this.heightmap.data[z1 * this.heightmap.width + x1];
-    const h0 = h00 * (1 - tx) + h10 * tx;
-    const h1 = h01 * (1 - tx) + h11 * tx;
-    return h0 * (1 - tz) + h1 * tz;
+    const h0 = h00 * (1 - sx) + h10 * sx;
+    const h1 = h01 * (1 - sx) + h11 * sx;
+    return h0 * (1 - sz) + h1 * sz;
   }
 
   worldToUV(x: number, _y: number, z: number): [number, number] {
@@ -135,42 +228,47 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
 
   sampleAtUV(u: number, v: number): SurfaceSample {
     const [x, y, z] = this.uvToWorld(u, v);
-    // Numeric gradient via central differences in UV space (small epsilon).
+    // Smooth normal: bilinear-interpolated from precomputed per-vertex
+    // normals. C0-continuous across tile boundaries — eliminates the per-
+    // tile-crossing slope jump that piecewise-bilinear-height gradient
+    // produced (see `precomputeVertexNormals` doc above).
+    const [nx, ny, nz] = this.sampleNormalUV(u, v);
+
+    // Derive an orthonormal tangent frame from the smooth normal so
+    // (tangentU, tangentV, normal) is a clean basis. Project world +X onto
+    // the tangent plane for tangentU, then tangentV = normal × tangentU.
+    // For a heightmap-style world where the surface is nearly flat (N close
+    // to +Y), this gives tangentU ≈ +X and tangentV ≈ +Z — same convention
+    // as the previous bilinear-tu-tv form, just continuous now.
+    const eXdotN = nx;
+    let tuX = 1 - eXdotN * nx;
+    let tuY = -eXdotN * ny;
+    let tuZ = -eXdotN * nz;
+    let tuLen = Math.hypot(tuX, tuY, tuZ) || 1;
+    tuX /= tuLen; tuY /= tuLen; tuZ /= tuLen;
+    // tangentV = tangentU × normal (matches the original convention where the
+    // bilinear-derived ∂P/∂v pointed in +Z on flat ground; N × tU would point -Z
+    // and invert the v-direction velocity decomposition).
+    const tvX = tuY * nz - tuZ * ny;
+    const tvY = tuZ * nx - tuX * nz;
+    const tvZ = tuX * ny - tuY * nx;
+    const tangentU: [number, number, number] = [tuX, tuY, tuZ];
+    const tangentV: [number, number, number] = [tvX, tvY, tvZ];
+
+    // tangentUNorm / tangentVNorm = world meters per UV unit. Position is
+    // still bilinear in height, so |∂P/∂u| = √(worldWidth² + (∂H/∂u)²).
+    // Compute ∂H/∂u from the bilinear height field with a small UV epsilon
+    // (this is for the magnitude only; the *direction* now comes from the
+    // smooth normal above). Cheap and keeps UV→world velocity scaling
+    // consistent with the height field.
     const eps = 1 / Math.max(this.heightmap.width, this.heightmap.height) * 0.5;
-    const huPlus = this.sampleHeightUV(u + eps, v);
-    const huMinus = this.sampleHeightUV(u - eps, v);
-    const hvPlus = this.sampleHeightUV(u, v + eps);
-    const hvMinus = this.sampleHeightUV(u, v - eps);
-    // dPosition/du and dPosition/dv (tangent, not yet unit)
-    const dx = this.worldWidth * (2 * eps);   // span in X for 2eps in u
-    const dz = this.worldDepth * (2 * eps);   // span in Z for 2eps in v
-    const tu: [number, number, number] = [dx, huPlus - huMinus, 0];
-    const tv: [number, number, number] = [0, hvPlus - hvMinus, dz];
-    // Normal = tu × tv (then normalize, point upward)
-    let nx = tu[1] * tv[2] - tu[2] * tv[1];
-    let ny = tu[2] * tv[0] - tu[0] * tv[2];
-    let nz = tu[0] * tv[1] - tu[1] * tv[0];
-    let nLen = Math.hypot(nx, ny, nz) || 1;
-    nx /= nLen; ny /= nLen; nz /= nLen;
-    if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
-    // Normalize tangents
-    const tuLen = Math.hypot(tu[0], tu[1], tu[2]) || 1;
-    const tvLen = Math.hypot(tv[0], tv[1], tv[2]) || 1;
-    const tangentU: [number, number, number] = [tu[0] / tuLen, tu[1] / tuLen, tu[2] / tuLen];
-    const tangentV: [number, number, number] = [tv[0] / tvLen, tv[1] / tvLen, tv[2] / tvLen];
+    const dhu = this.sampleHeightUV(u + eps, v) - this.sampleHeightUV(u - eps, v);
+    const dhv = this.sampleHeightUV(u, v + eps) - this.sampleHeightUV(u, v - eps);
+    const dxSpan = this.worldWidth * (2 * eps);
+    const dzSpan = this.worldDepth * (2 * eps);
+    const tangentUNorm = Math.hypot(dxSpan, dhu) / (2 * eps);
+    const tangentVNorm = Math.hypot(dzSpan, dhv) / (2 * eps);
     const slopeRad = Math.acos(Math.max(0, Math.min(1, ny)));
-    // |∂P/∂u| and |∂P/∂v| — world meters per UV unit, including the height gradient.
-    // P(u, v) = (worldWidth·(u−0.5), H(u,v), worldDepth·(v−0.5))
-    //   → ∂P/∂u = (worldWidth, ∂H/∂u, 0); |∂P/∂u| = √(worldWidth² + (∂H/∂u)²)
-    //   → ∂P/∂v = (0, ∂H/∂v, worldDepth); |∂P/∂v| = √(worldDepth² + (∂H/∂v)²)
-    // The `tu` and `tv` vectors above are 2·eps·(∂P/∂u, ∂P/∂v), so their magnitudes
-    // divided by 2·eps give the true norms. Hardcoding `worldWidth` here (the old form)
-    // was correct only on perfectly flat terrain — on slopes it underestimated |∂P/∂u|
-    // so UV-space velocity came out 15% too high on a 30° slope, making the character
-    // move faster than expected along the surface.
-    const inv2eps = 1 / (2 * eps);
-    const tangentUNorm = tuLen * inv2eps;
-    const tangentVNorm = tvLen * inv2eps;
     return {
       position: [x, y, z],
       normal: [nx, ny, nz],

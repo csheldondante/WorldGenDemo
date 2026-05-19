@@ -417,6 +417,13 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                   // Captures every intermediate the surface-frame solver computes; the
                   // buffer-snapshot regression framework compares histories tick-for-tick.
                   if (dbgEnabled) {
+                    const tForDebug = readBuffer(tBuf).byEntity.get(id);
+                    const pX = tForDebug ? tForDebug.position[0] : 0;
+                    const pY = tForDebug ? tForDebug.position[1] : 0;
+                    const pZ = tForDebug ? tForDebug.position[2] : 0;
+                    const vX = v.linear[0];
+                    const vY = v.linear[1];
+                    const vZ = v.linear[2];
                     writeBuffer(dbgBuf, (d) => {
                       let entry = d.byEntity.get(id);
                       if (!entry) {
@@ -441,6 +448,8 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                         pullDemand,
                         selfNormalPush,
                         tangentSpeed,
+                        posX: pX, posY: pY, posZ: pZ,
+                        velX: vX, velY: vY, velZ: vZ,
                       });
                     });
                   }
