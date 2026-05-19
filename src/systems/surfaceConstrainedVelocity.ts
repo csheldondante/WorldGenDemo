@@ -22,6 +22,8 @@ import {
 } from "../buffers/surfaceProvider";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { assertDev } from "../runtime/dev";
+import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
+import { buildSurfaceProfile } from "../world/surfaceProfile";
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
@@ -160,7 +162,99 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               // Step 4: sample new UV (clamped only on non-wrapping axes for the actual sample call).
               const u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
               const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
-              const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
+              let sample_new = surface.sampleAtUV(u_clamped, v_clamped);
+
+              // Step 4b: wheel-vs-surface concave-corner detection. Model the body
+              // as a wheel (circle of radius R) in its velocity plane (the vertical
+              // plane through the body containing the horizontal velocity direction).
+              // The smooth-roll integrator above advances UV along the OLD surface
+              // and derives a single tangent contact — it never notices that the
+              // wheel may already intersect a NEW segment (concave corner ahead).
+              // If we find ≥2 intersections of the wheel with the surface profile in
+              // the velocity plane and they straddle a cell boundary (different
+              // segment indices), discretely jump UV to the forward intersection —
+              // the new contact point — so the next position derivation in step 5
+              // uses the new segment's normal. Convex corners are already handled
+              // by the existing single-contact rolling.
+              // Velocity-plane direction: prefer body's current horizontal
+              // velocity; if essentially at rest, fall back to the user's
+              // desired-tangent direction (the input/intent). One of those is
+              // always meaningful unless the body is at rest with no input —
+              // in which case there is no momentum and no corner-step to do.
+              let dirX = 0;
+              let dirZ = 0;
+              const vHx = vel.linear[0];
+              const vHz = vel.linear[2];
+              const horizSpeed = Math.hypot(vHx, vHz);
+              if (horizSpeed > 1e-4) {
+                dirX = vHx / horizSpeed;
+                dirZ = vHz / horizSpeed;
+              } else {
+                const desX = ctrl.desiredFacingTangent[0];
+                const desZ = ctrl.desiredFacingTangent[2];
+                const desLen = Math.hypot(desX, desZ);
+                if (desLen > 1e-4) {
+                  dirX = desX / desLen;
+                  dirZ = desZ / desLen;
+                }
+              }
+              if (dirX * dirX + dirZ * dirZ > 0.5) {
+                const predBodyX = sample_new.position[0] + sample_new.normal[0] * radius;
+                const predBodyY = sample_new.position[1] + sample_new.normal[1] * radius;
+                const predBodyZ = sample_new.position[2] + sample_new.normal[2] * radius;
+                // Window covers ≥1 wheel diameter so corners 1 cell ahead/behind are visible.
+                const halfWidth = radius * 1.5;
+                const step = radius * 0.1;
+                const profile = buildSurfaceProfile(
+                  surface,
+                  predBodyX,
+                  predBodyZ,
+                  dirX,
+                  dirZ,
+                  halfWidth,
+                  step,
+                );
+                const intersections = findCircleProfileIntersections(
+                  0,
+                  predBodyY,
+                  radius,
+                  profile,
+                );
+                if (intersections.length >= 2) {
+                  let minSeg = Infinity;
+                  let maxSeg = -Infinity;
+                  for (const isct of intersections) {
+                    if (isct.segmentIndex < minSeg) minSeg = isct.segmentIndex;
+                    if (isct.segmentIndex > maxSeg) maxSeg = isct.segmentIndex;
+                  }
+                  // Different segments → real corner, not chord through one segment.
+                  if (maxSeg > minSeg) {
+                    // Pick the intersection furthest forward in momentum direction.
+                    let best = intersections[0];
+                    for (const isct of intersections) {
+                      if (isct.s > best.s) best = isct;
+                    }
+                    if (best.s > 0) {
+                      const contactX = predBodyX + best.s * dirX;
+                      const contactZ = predBodyZ + best.s * dirZ;
+                      const [u_jump, v_jump] = surface.worldToUV(
+                        contactX,
+                        best.y,
+                        contactZ,
+                      );
+                      const u_jc = surface.wrapsU()
+                        ? ((u_jump % 1) + 1) % 1
+                        : Math.max(0, Math.min(1, u_jump));
+                      const v_jc = surface.wrapsV()
+                        ? ((v_jump % 1) + 1) % 1
+                        : Math.max(0, Math.min(1, v_jump));
+                      sample_new = surface.sampleAtUV(u_jc, v_jc);
+                      u_raw = u_jump;
+                      v_raw = v_jump;
+                    }
+                  }
+                }
+              }
 
               // Step 5: world position = new surface point + radius along new normal.
               t.position[0] = sample_new.position[0] + sample_new.normal[0] * radius;
