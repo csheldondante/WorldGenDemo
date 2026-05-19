@@ -1,0 +1,15 @@
+{
+  "name": "gym-climb-tall",
+  "tileSize": 1,
+  "labels": [],
+  "parametric": {
+    "type": "heightmap-mesa",
+    "width": 60,
+    "height": 60,
+    "tileSize": 1,
+    "peak": 50,
+    "topRadius": 5,
+    "slopeWidth": 2
+  },
+  "spawn": { "uv": [0.2, 0.5] }
+}

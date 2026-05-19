@@ -11,6 +11,7 @@ import { test as heightmapHillTraverse } from "./heightmap-hill-traverse";
 import { test as cameraLookInput } from "./camera-look-input";
 import { test as steepHillStuck } from "./steep-hill-stuck";
 import { test as climbSteepWall } from "./climb-steep-wall";
+import { test as climbTallWall } from "./climb-tall-wall";
 import { test as cliffRunoff } from "./cliff-runoff";
 import { test as circleRunning } from "./circle-running";
 import { test as halfpipeAxisTraverse } from "./halfpipe-axis-traverse";
@@ -26,6 +27,7 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [cameraLookInput.name]: cameraLookInput,
   [steepHillStuck.name]: steepHillStuck,
   [climbSteepWall.name]: climbSteepWall,
+  [climbTallWall.name]: climbTallWall,
   [cliffRunoff.name]: cliffRunoff,
   [circleRunning.name]: circleRunning,
   [halfpipeAxisTraverse.name]: halfpipeAxisTraverse,
