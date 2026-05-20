@@ -117,21 +117,25 @@ Cross-cutting rules (apply across non-nested folders) live in `.claude/rules/`:
 
 This codebase has buffer-snapshot scenario baselines (`scenarios/__baselines__/*.json`) and ranged-baseline trajectory tests (`tests/systems/characterController.trajectory.test.ts`) for exactly one reason: **every change in computed quantity must be visible, explainable, and justified before you call a fix done.** The framework lets you flag changes pre-commit. Skipping it produces silent regressions and tech debt that compound.
 
+**The scenario suite is wired into vitest at `tests/scenarios/baselines.test.ts`.** Every `npm test` run loads every baseline, runs every scenario via `runBufferTest`, and asserts zero flags. A baseline diff fails the test — there is no longer any way to silently ignore it. Treat it the same as a failing unit test.
+
 ### Before every batch of edits
 
 1. **Identify which baselines / scenarios will be touched.** If you can't list them, you don't understand the change's scope.
-2. **Run them.** `npx vitest run scenarios/` and any relevant `tests/systems/*.test.ts`.
+2. **Run them.** `npx vitest run tests/scenarios/baselines.test.ts` covers all scenarios; add the relevant `tests/systems/*.test.ts` for system-level diagnostic tests.
 3. **Capture the pre-state.** Either by running once and copying the JSON snapshots aside, or noting the failing-test output (which IS the diff against baseline).
 
-### After every batch of edits
+### After every batch of edits — what to do when scenario baselines fail
 
-1. **Re-run the same scenarios and tests.**
+1. **Re-run the suite.** `npx vitest run tests/scenarios/baselines.test.ts`. Any flagged scenario is a behavior change that needs explaining.
 2. **For EVERY diff against baseline, write up:**
    - **Classification**: **lateral** (different but equivalent), **regression** (worse), or **improvement** (better).
    - **Mechanism**: WHY did your change cause this specific diff? Trace it to a line of code. "Probably from..." is not acceptable. If you can't explain it, you don't understand what your change does — go investigate.
    - **Per-quantity**: every changed value gets its own line. `vy increased by 0.3 at frame 104 BECAUSE the new gripBudget formula raised fwdMax from 9.81 to 14.81 m/s², and the controller used the extra headroom to push tangent harder, which the rescale step propagated into vy.`
-3. **Then** ask the user whether each classification + explanation is acceptable. Lateral changes still need sign-off because the user knows feel-implications the snapshot doesn't capture.
-4. **DO NOT** run `vitest run --update` to accept new snapshots without that writeup. Auto-accepting is the most common source of silent regressions in this codebase.
+3. **If you can't confidently classify a diff, surface it to the user.** Show the flag (path, baseline value, actual value, your candidate mechanism), say "I'm not sure whether this is improvement / lateral / regression," and ask them to look at the test + data with you. Do NOT guess.
+4. **Get the user's sign-off on the classifications.** Lateral changes still need sign-off because the user knows feel-implications the snapshot doesn't capture. Improvements still need sign-off so the user can confirm you understand WHY it's an improvement.
+5. **Only after sign-off, re-record the baseline.** `npx vite-node scripts/runScenario.ts <name> --record --force` for one scenario, or loop over all changed scenarios. Commit the new baseline JSON in the same commit as the code change that caused the diff, with the classification + mechanism in the commit message.
+6. **DO NOT** run `vitest run --update` to accept new snapshots without that writeup. Auto-accepting is the most common source of silent regressions in this codebase.
 
 ### Investigative changes
 
