@@ -12,6 +12,19 @@ export interface LoopHandle {
 
 const TIMING_BUFFER_ID_LOCAL = "timing"; // avoid circular import on src/buffers/timing
 
+export interface StartLoopOptions {
+  /**
+   * Pin per-tick dt to a fixed value (seconds). When set, every tick uses
+   * `dt = fixedDt` regardless of real wall-clock dt — required for
+   * deterministic replays (input timeline is per-tick-indexed, so any dt
+   * drift desyncs physics from inputs). `now` is still advanced by the
+   * fixed amount each tick so timestamp-based logic remains consistent.
+   *
+   * Leave `null` for the variable-dt rAF mode used in free play.
+   */
+  fixedDt?: number | null;
+}
+
 /**
  * Start the rAF-driven runtime loop. Each tick:
  *   1. Read activeGraph from StateMachineBuffer.
@@ -25,15 +38,29 @@ const TIMING_BUFFER_ID_LOCAL = "timing"; // avoid circular import on src/buffers
  * The loop survives so the user sees a recoverable error rather than a
  * frozen page.
  */
-export function startLoop(registry: Registry): LoopHandle {
+export function startLoop(registry: Registry, options: StartLoopOptions = {}): LoopHandle {
   let stopped = false;
   let last = performance.now();
+  let simNow = performance.now(); // advanced by either real dt or fixedDt per tick
+  const fixedDt = options.fixedDt ?? null;
 
   function tick() {
     if (stopped) return;
-    const now = performance.now();
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
+    const real = performance.now();
+    let dt: number;
+    let now: number;
+    if (fixedDt !== null) {
+      // Deterministic mode: pin dt; advance simNow by exactly fixedDt per
+      // tick. This decouples gameplay state from the browser's rAF cadence
+      // — replays trace the same trajectory across runs.
+      dt = fixedDt;
+      simNow += dt * 1000;
+      now = simNow;
+    } else {
+      dt = Math.min(0.05, (real - last) / 1000);
+      now = real;
+    }
+    last = real;
 
     try {
       const smBuf = registry.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID);

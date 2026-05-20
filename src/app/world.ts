@@ -252,7 +252,7 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
     graphs: reg.listGraphs().map((g) => ({ id: g.id, order: g.order })),
   });
 
-  startLoop(reg);
+  startLoop(reg, { fixedDt: 1 / 60 });
 
   return {
     requestMode() { /* scenarios don't switch modes */ },
