@@ -75,9 +75,14 @@ describe("resolveDiscContacts", () => {
     const b: ProfileIntersection = { s: 0.4, y: 0, segmentIndex: 0, t: 0.6 };
     const res = resolveDiscContacts([a, b], profile, R)!;
     expect(res.kind).toBe("pop-out");
-    // Chord midpoint at (0, 0), perp distance = √(R² - 0.4²) = 0.3.
+    // Pop-out semantics: move the disc so it's TANGENT to the segment (no
+    // longer crosses through it). For a flat segment with chord midpoint at
+    // (0, 0), the tangent disc-center is at (0, R) = (0, 0.5). Earlier
+    // version of this test expected perpDist = √(R²-half²) = 0.3, which
+    // would leave the disc embedded; that was the buggy math (see
+    // resolvePopOut in discContact.ts).
     expect(res.centerS).toBeCloseTo(0, 6);
-    expect(res.centerY).toBeCloseTo(0.3, 6);
+    expect(res.centerY).toBeCloseTo(0.5, 6);
     expect(res.normalS).toBeCloseTo(0, 6);
     expect(res.normalY).toBeCloseTo(1, 6);
   });

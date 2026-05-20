@@ -259,14 +259,21 @@ function resolvePopOut(
   // Chord midpoint on the segment.
   const midS = (a.s + b.s) / 2;
   const midY = (a.y + b.y) / 2;
-  // Chord half-length.
-  const halfChord = Math.hypot(a.s - b.s, a.y - b.y) / 2;
-  // Perpendicular distance from chord midpoint to the disc center.
-  // disc_center = midpoint + perp · sqrt(R² − halfChord²).
-  const perpDist = Math.sqrt(Math.max(0, R * R - halfChord * halfChord));
+  // Move the disc center to the TANGENT position above the chord midpoint.
+  // The disc circle of radius R centered at (midpoint + R · outward_normal)
+  // just kisses the segment at the chord midpoint — body fully popped out of
+  // the surface, no penetration.
+  //
+  // (An earlier version of this function used perpDist = sqrt(R² − halfChord²)
+  // here, which is the perpendicular distance from the chord midpoint to a
+  // disc center whose CIRCLE STILL CROSSES the segment through the two chord
+  // endpoints. That LEAVES the disc penetrating the segment, which is
+  // physically wrong for "pop out". Over many ticks of small gravity-induced
+  // penetration on flat ground, the body's center drifted ~g·dt² below R
+  // per tick. Fixed 2026-05-20.)
   return {
-    centerS: midS + perpDist * seg.nx,
-    centerY: midY + perpDist * seg.ny,
+    centerS: midS + R * seg.nx,
+    centerY: midY + R * seg.ny,
     normalS: seg.nx,
     normalY: seg.ny,
     kind: "pop-out",
