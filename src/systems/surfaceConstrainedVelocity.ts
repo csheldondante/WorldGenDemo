@@ -252,23 +252,102 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                       u_raw = u_jump;
                       v_raw = v_jump;
 
-                      // Kinetic-energy-preserving velocity rotation. The body's
-                      // wheel has rolled onto the new segment — its forward
-                      // momentum doesn't get absorbed into the new normal, it
-                      // rotates to align with the new surface tangent. Capture
-                      // the pre-tick speed (start-of-tick, before this tick's
-                      // accumulator integration) as the magnitude to preserve,
-                      // project current velocity onto the new tangent plane,
-                      // then rescale to that magnitude. Without this, the
-                      // straight-from-step-6 projection drops the normal
-                      // component, which on a steep wall is most of |v| —
-                      // body would instantly lose forward speed and "stall"
-                      // at the wall rather than rolling up it.
-                      const speedPre = Math.hypot(
-                        vel.prevLinear[0],
-                        vel.prevLinear[1],
-                        vel.prevLinear[2],
-                      );
+                      // Project the new sample's surface normal into the
+                      // velocity plane (= the plane the wheel is rolling in,
+                      // spanned by horizontal velocity dir + world-up). The
+                      // velocity-plane normal is `cross((dirX, 0, dirZ),
+                      // (0, 1, 0)) = (-dirZ, 0, dirX)`. Without this projection
+                      // the body's center derives from `sample + R · N`, and
+                      // on a wall whose outward normal isn't aligned with the
+                      // velocity direction the perpendicular component of
+                      // R · N teleports the body sideways out of the velocity
+                      // plane — visible as the sphere drifting/twisting off
+                      // the line it was running along.
+                      //
+                      // Geometrically: a wheel rolling in a vertical plane
+                      // must keep its center in that plane. We discard the
+                      // out-of-plane component of N before applying the
+                      // radius offset; the in-plane component still points
+                      // "up away from the surface" within the slice, which
+                      // is what the wheel rolls against.
+                      const velPlaneNx = -dirZ;
+                      const velPlaneNz = dirX;
+                      const nDotPlaneN =
+                        sample_new.normal[0] * velPlaneNx +
+                        sample_new.normal[2] * velPlaneNz;
+                      let nProjX = sample_new.normal[0] - nDotPlaneN * velPlaneNx;
+                      let nProjY = sample_new.normal[1];
+                      let nProjZ = sample_new.normal[2] - nDotPlaneN * velPlaneNz;
+                      const nProjLen = Math.hypot(nProjX, nProjY, nProjZ);
+                      if (nProjLen > 1e-6) {
+                        nProjX /= nProjLen;
+                        nProjY /= nProjLen;
+                        nProjZ /= nProjLen;
+                        // Mutate sample_new.normal so steps 5 + 6 below
+                        // (position derivation + velocity tangent projection)
+                        // use the in-plane normal automatically. This keeps
+                        // the change local — no extra "effective normal"
+                        // variable threading through the rest of the loop.
+                        sample_new.normal[0] = nProjX;
+                        sample_new.normal[1] = nProjY;
+                        sample_new.normal[2] = nProjZ;
+                      }
+                      // (If the surface normal was almost exactly perpendicular
+                      // to the velocity plane the projection collapses to zero
+                      // — degenerate case where the wheel can't actually be in
+                      // contact with this surface while traveling in the velocity
+                      // plane. Leave sample_new.normal untouched in that edge
+                      // case; downstream logic handles the "no contact" state.)
+
+                      // Energy-conserving velocity rotation across the UV
+                      // jump. The wheel pivots around the corner: total
+                      // mechanical energy is invariant, so any rise in PE
+                      // must be paid for out of KE. If the body lacks enough
+                      // KE to make the height gain, it stalls (post-KE
+                      // clamped to 0).
+                      //
+                      // PE bookkeeping uses world-up gravity (Y axis) for
+                      // now — generalizes to per-entity gravity direction
+                      // later when we have non-Y gravity fields. The
+                      // pre-position is `t.position[1]` (still last tick's
+                      // value at this point; step 5 hasn't run yet). The
+                      // post-position is what step 5 will write —
+                      // `sample_new.position[1] + sample_new.normal[1] *
+                      // radius` (sample_new.normal has already been
+                      // projected into the velocity plane above).
+                      //
+                      // Use start-of-tick velocity (`prevLinear`) and
+                      // start-of-tick position (`t.position` — step 5 hasn't
+                      // run) as the consistent pre-state. Mixing post-step-1
+                      // velocity (which has gravity's impulse baked in over
+                      // this tick's dt) with the pre-step-5 position double-
+                      // counts gravity's "future work": gravity gave us KE
+                      // worth a fall that the body never took because the
+                      // UV jump intervened. Using prevLinear keeps the
+                      // energy ledger honest.
+                      //
+                      // Side effect: input thrust applied this tick (the
+                      // accel from the accumulator integration in step 1)
+                      // doesn't contribute to the corner's KE budget either.
+                      // That's deliberate — on a tick where the wheel
+                      // pivots, treating the thrust as "rolling input" would
+                      // route it into the vertical climb, which is the kind
+                      // of magic-energy injection we just removed.
+                      const G = 9.81;
+                      const preKE =
+                        0.5 *
+                        (vel.prevLinear[0] * vel.prevLinear[0] +
+                          vel.prevLinear[1] * vel.prevLinear[1] +
+                          vel.prevLinear[2] * vel.prevLinear[2]);
+                      const preY = t.position[1];
+                      const postY =
+                        sample_new.position[1] + sample_new.normal[1] * radius;
+                      const dPE = G * (postY - preY);
+                      const targetKE = Math.max(0, preKE - dPE);
+                      const targetSpeed = Math.sqrt(2 * targetKE);
+
+                      // Project velocity onto the new (in-plane) tangent
+                      // plane to get the direction for the rescale.
                       const Nnx = sample_new.normal[0];
                       const Nny = sample_new.normal[1];
                       const Nnz = sample_new.normal[2];
@@ -284,19 +363,26 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                         vel.linear[1],
                         vel.linear[2],
                       );
-                      if (vMagTan > 1e-6 && speedPre > 1e-6) {
-                        const scale = speedPre / vMagTan;
+                      if (targetSpeed < 1e-6) {
+                        // Insufficient KE to reach the new height — body
+                        // stalls at the corner. (Future: trigger a fall-
+                        // back transition; for now zero velocity is the
+                        // honest answer to "you can't make it.")
+                        vel.linear[0] = 0;
+                        vel.linear[1] = 0;
+                        vel.linear[2] = 0;
+                      } else if (vMagTan > 1e-6) {
+                        const scale = targetSpeed / vMagTan;
                         vel.linear[0] *= scale;
                         vel.linear[1] *= scale;
                         vel.linear[2] *= scale;
-                      } else if (speedPre > 1e-6) {
-                        // Velocity was almost entirely along the new normal —
-                        // pick the forward surface tangent in the velocity
-                        // plane: t = (velPlaneNormal × N), aligned with
-                        // momentum direction.
+                      } else {
+                        // Velocity was almost entirely along the new normal
+                        // — synthesize the forward tangent in the velocity
+                        // plane (velPlaneNormal × N), align with momentum,
+                        // and scale to targetSpeed.
                         const velPlaneNx = -dirZ;
                         const velPlaneNz = dirX;
-                        // velPlaneN × N_new:
                         let tx = 0 * Nnz - velPlaneNz * Nny;
                         let ty = velPlaneNz * Nnx - velPlaneNx * Nnz;
                         let tz = velPlaneNx * Nny - 0 * Nnx;
@@ -306,9 +392,9 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                           if (tx * dirX + tz * dirZ < 0) {
                             tx = -tx; ty = -ty; tz = -tz;
                           }
-                          vel.linear[0] = speedPre * tx;
-                          vel.linear[1] = speedPre * ty;
-                          vel.linear[2] = speedPre * tz;
+                          vel.linear[0] = targetSpeed * tx;
+                          vel.linear[1] = targetSpeed * ty;
+                          vel.linear[2] = targetSpeed * tz;
                         }
                       }
                     }
