@@ -20,6 +20,7 @@ import { test as cameraStareDown } from "./camera-stare-down";
 import { test as cylinderGalaxy } from "./cylinder-galaxy";
 import { test as sphereGalaxy } from "./sphere-galaxy";
 import { test as torusGalaxy } from "./torus-galaxy";
+import { test as tallWallLaunchReplay } from "./tall-wall-launch-replay";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
@@ -36,6 +37,7 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [cylinderGalaxy.name]: cylinderGalaxy,
   [sphereGalaxy.name]: sphereGalaxy,
   [torusGalaxy.name]: torusGalaxy,
+  [tallWallLaunchReplay.name]: tallWallLaunchReplay,
 };
 
 export function getScenario(name: string): BufferTest {
