@@ -22,6 +22,10 @@ import {
 } from "../buffers/surfaceProvider";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { assertDev } from "../runtime/dev";
+import { HeightmapSurfaceProvider } from "../world/surfaceProvider";
+import { buildSurfaceProfile } from "../world/surfaceProfile";
+import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
+import { resolveDiscContacts } from "../lib/math/discContact";
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
@@ -163,17 +167,98 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
 
               // Step 5: world position = new surface point + radius along new normal.
-              t.position[0] = sample_new.position[0] + sample_new.normal[0] * radius;
-              t.position[1] = sample_new.position[1] + sample_new.normal[1] * radius;
-              t.position[2] = sample_new.position[2] + sample_new.normal[2] * radius;
+              // Default = legacy sphere offset. Step 5b below MAY override this when
+              // the disc-vs-profile collision detects a real concave heightmap corner.
+              let bodyX = sample_new.position[0] + sample_new.normal[0] * radius;
+              let bodyY = sample_new.position[1] + sample_new.normal[1] * radius;
+              let bodyZ = sample_new.position[2] + sample_new.normal[2] * radius;
+              // Contact normal used by step 6's velocity projection. Defaults to
+              // sample.normal; Step 5b may override with the disc-bisector normal
+              // for the concave-corner case.
+              let contactNx = sample_new.normal[0];
+              let contactNy = sample_new.normal[1];
+              let contactNz = sample_new.normal[2];
+
+              // Step 5b: disc-vs-profile concave-corner check (heightmap only).
+              //
+              // Model the body as a disc of radius R in the velocity plane spanned
+              // by (vel_horizontal, sample.normal). On a heightmap, cell-boundary
+              // kinks can produce a real concave corner — the legacy `sample + R·N`
+              // teleports the body across the kink because sample.normal flips
+              // between cells. The disc-resolution finds 2 contacts on different
+              // segments and computes the disc-tucked center (circumcenter of the
+              // two offset lines).
+              //
+              // Surgical scope per the 2026-05-20 plan:
+              //   - Heightmap surfaces only (parametric surfaces are smooth, the
+              //     analytical `sample + R·sample.normal` is exact there).
+              //   - Override position ONLY for res.kind === "corner" — a REAL
+              //     slope-change above the near-parallel rejection threshold (~5°).
+              //     Smooth surface kinds (tangent / fallback-parallel / pop-out)
+              //     keep the legacy derivation; the piecewise-linear segment
+              //     normal would otherwise drift ~mm/tick from the analytical
+              //     bilinear-gradient normal and accumulate.
+              //
+              // Convex corners are not handled here — the controller's centripetal-
+              // detach rule already triggers airborne FSM transitions for those.
+              if (surface instanceof HeightmapSurfaceProvider) {
+                const Nupx = sample_new.normal[0];
+                const Nupy = sample_new.normal[1];
+                const Nupz = sample_new.normal[2];
+                // Velocity-plane horizontal direction = velocity projected onto
+                // sample's tangent plane, normalized.
+                let dirX = vel.linear[0];
+                let dirY = vel.linear[1];
+                let dirZ = vel.linear[2];
+                const vDotN = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
+                dirX -= vDotN * Nupx;
+                dirY -= vDotN * Nupy;
+                dirZ -= vDotN * Nupz;
+                const dirMag = Math.hypot(dirX, dirY, dirZ);
+                if (dirMag > 1e-4) {
+                  dirX /= dirMag;
+                  dirY /= dirMag;
+                  dirZ /= dirMag;
+                  // Profile half-window 1.5·R covers the disc; step 0.25 m is
+                  // smaller than the typical 1 m heightmap cell so cell-boundary
+                  // corners are resolved.
+                  const profileVerts = buildSurfaceProfile(
+                    surface,
+                    bodyX, bodyY, bodyZ,
+                    dirX, dirY, dirZ,
+                    Nupx, Nupy, Nupz,
+                    radius * 1.5, 0.25,
+                  );
+                  // Disc center candidate at profile (0, 0) = predicted body.
+                  // Surface samples are at y ≈ −R near s=0 (body is R "above"
+                  // surface along sample.normal).
+                  const intersections = findCircleProfileIntersections(
+                    0, 0, radius, profileVerts,
+                  );
+                  const res = resolveDiscContacts(intersections, profileVerts, radius);
+                  if (res !== null && res.kind === "corner") {
+                    // Map (s, y) → world: world = bodyPred + s·dir + y·up.
+                    bodyX = bodyX + res.centerS * dirX + res.centerY * Nupx;
+                    bodyY = bodyY + res.centerS * dirY + res.centerY * Nupy;
+                    bodyZ = bodyZ + res.centerS * dirZ + res.centerY * Nupz;
+                    contactNx = res.normalS * dirX + res.normalY * Nupx;
+                    contactNy = res.normalS * dirY + res.normalY * Nupy;
+                    contactNz = res.normalS * dirZ + res.normalY * Nupz;
+                  }
+                }
+              }
+              t.position[0] = bodyX;
+              t.position[1] = bodyY;
+              t.position[2] = bodyZ;
               transforms.byEntity.set(id, t);
 
-              // Step 6: project world velocity onto the new tangent plane (drop the
-              // component along the new normal — the surface absorbs it as a constraint
-              // reaction). This is independent of whether tangents are orthogonal.
-              const Nnx = sample_new.normal[0];
-              const Nny = sample_new.normal[1];
-              const Nnz = sample_new.normal[2];
+              // Step 6: project world velocity onto the contact normal (drop the
+              // component along it — the surface absorbs it as a constraint reaction).
+              // contactN comes from step 5: sample.normal by default, or the disc-
+              // resolution bisector normal for corner-kind overrides.
+              const Nnx = contactNx;
+              const Nny = contactNy;
+              const Nnz = contactNz;
               const vNnew =
                 vel.linear[0] * Nnx +
                 vel.linear[1] * Nny +
