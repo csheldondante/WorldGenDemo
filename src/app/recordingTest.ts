@@ -96,6 +96,10 @@ export interface RecordingTestOptions {
   systemIds?: readonly string[];
   /** Override the tick count (default = recording.frames). */
   ticks?: number;
+  /** Pass through to the BufferTest's `backdrop` field — used by browser
+   *  playback to render the surface mesh, axis gizmo, etc. Headless test
+   *  runs ignore it. */
+  backdrop?: import("./bufferTest").BufferTest["backdrop"];
 }
 
 /**
@@ -166,5 +170,6 @@ export function bufferTestFromRecording(
     output: {
       snapshot: [...(opts.outputBuffers ?? RECORDING_REPLAY_OUTPUT_BUFFERS)],
     },
+    backdrop: opts.backdrop,
   };
 }

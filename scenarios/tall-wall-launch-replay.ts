@@ -19,4 +19,7 @@ import { bufferTestFromRecording } from "../src/app/recordingTest";
 
 export const test = bufferTestFromRecording(recording as unknown as RecordingFile, {
   name: "tall-wall-launch-replay",
+  // Same backdrop config the source climb-tall-wall scenario uses — render
+  // the heightmap as a wireframe so the visible launch is actually visible.
+  backdrop: { surfaceDebugMesh: true, surfaceMeshResolution: 60, axisGizmo: true },
 });
