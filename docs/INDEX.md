@@ -31,6 +31,7 @@ A single page mapping "I want to learn / change X" → "read these files first."
 4. `src/world/surfaceProvider.ts` — `SurfaceProvider` interface + `HeightmapSurfaceProvider`
 5. `src/systems/characterController.ts` — the solver
 6. `src/buffers/characterControllerProfile.ts` — directional accel caps + state thresholds
+7. `docs/character-profile-current-audit.md` — audit of the current profile shape: every field, what it controls, where it's read, what's dead (2026-05-19)
 7. `tests/systems/characterController.test.ts` — flat / slope / brake / icySlide / detach / ragdoll / jump
 
 ### …the editor (paint maps, palette, send-to-world)
