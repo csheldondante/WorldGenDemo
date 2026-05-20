@@ -166,6 +166,13 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
               const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
 
+              // Capture body's position BEFORE step 5 rewrites it. Used by Step
+              // 6b's energy-conservation rescale (work = a · Δr_body across the
+              // tick) when the disc-corner branch overrides position.
+              const bodyPreX = t.position[0];
+              const bodyPreY = t.position[1];
+              const bodyPreZ = t.position[2];
+
               // Step 5: world position = new surface point + radius along new normal.
               // Default = legacy sphere offset. Step 5b below MAY override this when
               // the disc-vs-profile collision detects a real concave heightmap corner.
@@ -178,6 +185,9 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               let contactNx = sample_new.normal[0];
               let contactNy = sample_new.normal[1];
               let contactNz = sample_new.normal[2];
+              // Set by Step 5b when the disc-corner branch fires; consumed by Step
+              // 6b to gate the energy-conservation rescale.
+              let cornerFired = false;
 
               // Step 5b: disc-vs-profile concave-corner check (heightmap only).
               //
@@ -244,6 +254,7 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                     contactNx = res.normalS * dirX + res.normalY * Nupx;
                     contactNy = res.normalS * dirY + res.normalY * Nupy;
                     contactNz = res.normalS * dirZ + res.normalY * Nupz;
+                    cornerFired = true;
                   }
                 }
               }
@@ -266,6 +277,68 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               vel.linear[0] -= vNnew * Nnx;
               vel.linear[1] -= vNnew * Nny;
               vel.linear[2] -= vNnew * Nnz;
+
+              // Step 6b: energy conservation across the disc-corner UV jump.
+              //
+              // When Step 5b's corner branch fires, the body's position is moved
+              // discontinuously from the legacy `sample + R·sample.normal` to the
+              // disc-circumcenter. That position change isn't backed by gravity's
+              // work over dt — the body teleported. Without compensation, total
+              // mechanical energy (KE + work_by_external_forces · position)
+              // drifts each time a corner fires.
+              //
+              // Work-energy theorem with the accumulator's total force F treated
+              // as constant over the tick (per user 2026-05-20):
+              //   KE_post = KE_pre + F · Δr_body
+              // where:
+              //   KE_pre  = 0.5 · |vel.prevLinear|² (start-of-tick KE)
+              //   F       = accumulator.accel for this tick (gravity + thrust +
+              //             friction + any constant volume fields — all of them
+              //             contribute to PE work)
+              //   Δr_body = body_after - body_before (this tick's full body
+              //             displacement, including the corner override)
+              //
+              // Rescale the post-step-6 velocity (= tangent-projected) to produce
+              // the target KE, preserving direction. If KE_post ≤ 0 the body
+              // didn't have the kinetic budget for the corner-induced height gain
+              // — stall: zero velocity, FSM reacts next tick.
+              //
+              // Applied ONLY when cornerFired === true. For non-corner ticks the
+              // natural integration's energy bookkeeping (step 1 + step 6) is
+              // already correct — applying the rescale unconditionally would
+              // introduce discretization drift over time on long straight-line
+              // motion. Verified by trying it during the first attempt at this
+              // disc-collider work (saw ~0.345 m position drift on flat-plane-
+              // forward over 180 ticks); gating to corner ticks only kept flat
+              // scenarios at baseline.
+              if (cornerFired && a) {
+                const kePre =
+                  0.5 *
+                  (vel.prevLinear[0] * vel.prevLinear[0] +
+                   vel.prevLinear[1] * vel.prevLinear[1] +
+                   vel.prevLinear[2] * vel.prevLinear[2]);
+                const work =
+                  a.accel[0] * (bodyX - bodyPreX) +
+                  a.accel[1] * (bodyY - bodyPreY) +
+                  a.accel[2] * (bodyZ - bodyPreZ);
+                const kePost = kePre + work;
+                if (kePost <= 0) {
+                  vel.linear[0] = 0;
+                  vel.linear[1] = 0;
+                  vel.linear[2] = 0;
+                } else {
+                  const vMag = Math.hypot(
+                    vel.linear[0], vel.linear[1], vel.linear[2],
+                  );
+                  if (vMag > 1e-9) {
+                    const targetMag = Math.sqrt(2 * kePost);
+                    const scale = targetMag / vMag;
+                    vel.linear[0] *= scale;
+                    vel.linear[1] *= scale;
+                    vel.linear[2] *= scale;
+                  }
+                }
+              }
 
               // Step 7 (DISABLED — bug audit 2026-05-19): the previous rescale-to-
               // speedTarget step preserved the wrong invariant. `speedTarget` is
