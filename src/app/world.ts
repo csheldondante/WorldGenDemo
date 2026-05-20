@@ -21,6 +21,12 @@ import { createSceneBundle } from "../render/scene";
 import { bootstrapApp } from "./bootstrap";
 import { SCENARIOS } from "../../scenarios/index";
 import { applyScenarioBackdrop } from "./scenarioBackdrop";
+import {
+  beginRecordingSnapshot,
+  finalizeRecording,
+  downloadRecording,
+  type RecordingSnapshotInProgress,
+} from "./recording";
 
 export interface WorldOptions {
   hudEl: HTMLElement;
@@ -62,7 +68,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     sceneName,
   });
   const reg = app.registry;
-  const { inputAccumulator, builderAccumulator, builderDom } = app.coreSystems;
+  const { inputAccumulator, builderAccumulator, builderDom, inputRecordingState } = app.coreSystems;
 
   // 2. Sync camera aspect to viewport; observe panel resize.
   const cam = reg.getBuffer<CameraBufferData>(CAMERA_BUFFER_ID);
@@ -91,9 +97,16 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     });
   }
 
-  // 4. Top-bar with scenario selector — visible in normal play so the user
-  // can jump straight to a scenario without manually typing the URL param.
-  attachTopMenu(opts.panelEl, { mode: "normal" });
+  // 4. Top-bar with scenario selector + Record/Stop buttons. The recording
+  // controls work in normal play too (snapshot at Record-press, dump file
+  // at Stop); scenario mode also gets the ▶ Play button to swap from
+  // playback to live input.
+  attachTopMenu(opts.panelEl, {
+    mode: "normal",
+    sceneName,
+    registry: reg,
+    recordingState: inputRecordingState,
+  });
 
   // 5. Start the runtime loop.
   startLoop(reg);
@@ -271,13 +284,20 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
 interface TopMenuOptions {
   mode: "normal" | "scenario";
   scenarioName?: string;
-  /** Registry — used to swap the active inputSystem when the user clicks play/record. */
+  /** Scene name from `?map=` (free play) or null (scenario). Latched into
+   *  the recording file's `scenarioContext.sceneName`. */
+  sceneName?: string | null;
+  /** Registry — used to swap the active inputSystem when the user clicks
+   *  play/record (scenario only) and to snapshot buffers at Record-press
+   *  (both modes). */
   registry?: Registry;
   /** Live DOM accumulator (always collecting). The real inputSystem reads from this. */
   liveAccumulator?: InputAccumulator;
-  /** The scenario's original inputSystem; we swap back to it when the user "stops" without recording. */
+  /** The scenario's original inputSystem; we swap back to it when the user
+   *  "stops" without recording. Only present in scenario mode. */
   scenarioInputSystem?: SystemDescriptor;
-  /** State for the always-registered InputRecordingSystem. We toggle .active and reset to start. */
+  /** State for the always-registered InputRecordingSystem. We toggle .active
+   *  and reset to start. Present in both modes when recording is enabled. */
   recordingState?: InputRecordingState;
 }
 
@@ -340,18 +360,19 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     bar.appendChild(playNormal);
   }
 
-  if (
-    opts.mode === "scenario" &&
-    opts.registry && opts.liveAccumulator && opts.recordingState && opts.scenarioInputSystem
-  ) {
+  // Recording controls are available whenever a registry + recordingState is
+  // provided — both free play and scenario playback. The Play button only
+  // appears in scenario mode (it swaps from scenario-input to live-DOM); free
+  // play is already on live input and doesn't need it.
+  if (opts.registry && opts.recordingState) {
     const sep = document.createElement("span");
     sep.textContent = "│";
     sep.style.color = "#444";
     bar.appendChild(sep);
 
     const status = document.createElement("span");
-    status.textContent = "▶ playback";
-    status.style.color = "#9b9";
+    status.textContent = opts.mode === "scenario" ? "▶ playback" : "● live";
+    status.style.color = opts.mode === "scenario" ? "#9b9" : "#fa3";
     bar.appendChild(status);
 
     function makeBtn(text: string, bg: string): HTMLButtonElement {
@@ -364,17 +385,22 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     const recBtn = makeBtn("⏺ record", "#a33");
     const stopBtn = makeBtn("⏹ stop", "#666");
     stopBtn.style.display = "none";
-    bar.appendChild(playBtn);
+    // Play button only in scenario mode — it's how you swap from the
+    // scenario's playback input to live DOM input.
+    if (opts.mode === "scenario") bar.appendChild(playBtn);
+    else playBtn.style.display = "none";
     bar.appendChild(recBtn);
     bar.appendChild(stopBtn);
 
     const reg = opts.registry;
-    const liveAcc = opts.liveAccumulator;
     const recording = opts.recordingState;
-    const scenarioInput = opts.scenarioInputSystem;
-    // The live inputSystem is constructed once and reused across swaps.
-    const liveInput = createInputSystem(liveAcc);
-    let currentMode: "playback" | "live" = "playback";
+    const scenarioInput = opts.scenarioInputSystem ?? null;
+    const liveAcc = opts.liveAccumulator ?? null;
+    const liveInput = liveAcc ? createInputSystem(liveAcc) : null;
+    // Normal mode is "live" from the start; scenario mode starts in "playback".
+    let currentMode: "playback" | "live" = opts.mode === "scenario" ? "playback" : "live";
+    // Latched at Record-press; consumed at Stop.
+    let pendingSnapshot: RecordingSnapshotInProgress | null = null;
 
     function setStatus(text: string, color: string): void {
       status.textContent = text;
@@ -382,12 +408,12 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     }
     function swapToLive(): void {
       if (currentMode === "live") return;
-      reg.replaceSystem(liveInput);
+      if (liveInput) reg.replaceSystem(liveInput);
       currentMode = "live";
     }
     function swapToPlayback(): void {
       if (currentMode === "playback") return;
-      reg.replaceSystem(scenarioInput);
+      if (scenarioInput) reg.replaceSystem(scenarioInput);
       currentMode = "playback";
     }
 
@@ -400,30 +426,48 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
       stopBtn.textContent = "⏹ back to playback";
     }
     function startRecording(): void {
-      swapToLive();
+      // In scenario mode the user's keyboard isn't driving the world yet;
+      // swap to live so the recording captures real input. Free play is
+      // already live — no-op.
+      if (opts.mode === "scenario") swapToLive();
+      // Snapshot every gameplay buffer NOW so replay reproduces this moment.
+      // tickIndex is informational here; the scheduler doesn't expose an
+      // absolute tick counter, so we report 0 and let replay restart at 0.
+      pendingSnapshot = beginRecordingSnapshot({
+        reg,
+        sceneName: opts.sceneName ?? null,
+        scenarioName: opts.scenarioName ?? null,
+        nowMs: performance.now(),
+        tickIndex: 0,
+        dtSeconds: 1 / 60,
+      });
       resetInputRecording(recording);
       recording.active = true;
       setStatus(`⏺ recording 0/${recording.frameCap}`, "#f44");
       playBtn.style.display = "none";
       recBtn.style.display = "none";
       stopBtn.style.display = "";
-      stopBtn.textContent = "⏹ stop + dump";
+      stopBtn.textContent = "⏹ stop + save";
     }
     function stop(): void {
       const wasRecording = recording.active;
       recording.active = false;
-      swapToPlayback();
-      if (wasRecording) {
-        const blob = JSON.stringify(recording.recording, null, 2);
+      if (opts.mode === "scenario") swapToPlayback();
+      if (wasRecording && pendingSnapshot) {
+        const file = finalizeRecording(pendingSnapshot, recording.recording);
+        downloadRecording(file);
         // eslint-disable-next-line no-console
-        console.log(`[record] scenario=${opts.scenarioName} frames=${recording.cursor}/${recording.frameCap} events=${recording.recording.events.length}`);
-        // eslint-disable-next-line no-console
-        console.log(blob);
-        setStatus(`saved ${recording.cursor}f → console`, "#9d9");
+        console.log(
+          `[record] ${opts.mode}=${opts.scenarioName ?? opts.sceneName ?? "(none)"} ` +
+            `frames=${recording.cursor}/${recording.frameCap} ` +
+            `events=${recording.recording.events.length} → downloaded`,
+        );
+        setStatus(`saved ${recording.cursor}f → file`, "#9d9");
+        pendingSnapshot = null;
       } else {
-        setStatus("▶ playback", "#9b9");
+        setStatus(opts.mode === "scenario" ? "▶ playback" : "● live", opts.mode === "scenario" ? "#9b9" : "#fa3");
       }
-      playBtn.style.display = "";
+      if (opts.mode === "scenario") playBtn.style.display = "";
       recBtn.style.display = "";
       stopBtn.style.display = "none";
     }
@@ -433,6 +477,9 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     stopBtn.addEventListener("click", stop);
     window.addEventListener("keydown", (e) => {
       if (e.code === "Escape" && (currentMode === "live" || recording.active)) {
+        // In free play we never want Esc to swap modes (there's no playback
+        // to return to) — only Stop a recording.
+        if (opts.mode === "normal" && !recording.active) return;
         e.preventDefault();
         stop();
       }
@@ -444,7 +491,7 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
       if (recording.active) {
         setStatus(`⏺ recording ${recording.cursor}/${recording.frameCap}`, "#f44");
         if (recording.cursor >= recording.frameCap) {
-          // Recording system auto-stopped at cap; mirror UI + swap back.
+          // Recording system auto-stopped at cap; mirror UI + finalize.
           stop();
         }
       }
