@@ -20,11 +20,16 @@ import {
   SURFACE_PROVIDER_BUFFER_ID,
   type SurfaceProviderBufferData,
 } from "../buffers/surfaceProvider";
+import {
+  VOLUME_FIELD_BUFFER_ID,
+  type VolumeFieldBufferData,
+} from "../buffers/volumeField";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { assertDev } from "../runtime/dev";
 import { buildSurfaceProfile } from "../world/surfaceProfile";
 import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
 import { resolveDiscContacts } from "../lib/math/discContact";
+import { pickGravity, sortVolumesByPriority } from "../lib/math/gravityVolume";
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
@@ -69,6 +74,7 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
       { id: CHARACTER_CONTROLLER_BUFFER_ID, access: "read" },
       { id: CHARACTER_CONTROLLER_PROFILE_BUFFER_ID, access: "read" },
       { id: SURFACE_PROVIDER_BUFFER_ID, access: "read" },
+      { id: VOLUME_FIELD_BUFFER_ID, access: "read" },
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "readwrite" },
       { id: FORCE_ACCUMULATOR_BUFFER_ID, access: "readwrite" },
       { id: VELOCITY_BUFFER_ID, access: "readwrite" },
@@ -80,6 +86,8 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
       const profiles = readBuffer(buffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
       const sp = readBuffer(buffer<SurfaceProviderBufferData>(SURFACE_PROVIDER_BUFFER_ID));
       const surface = sp.heightmap;
+      const vf = readBuffer(buffer<VolumeFieldBufferData>(VOLUME_FIELD_BUFFER_ID));
+      const gravityVolumes = sortVolumesByPriority(vf.volumes);
       const fa = buffer<ForceAccumulatorBufferData>(FORCE_ACCUMULATOR_BUFFER_ID);
       const vBuf = buffer<VelocityBufferData>(VELOCITY_BUFFER_ID);
       const tBuf = buffer<TransformBufferData>(TRANSFORM_BUFFER_ID);
@@ -178,70 +186,94 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               //
               // The body is modeled as a 2D disc of radius R in its velocity
               // plane. The velocity plane is spanned by:
-              //   - `dir` = velocity projected onto sample's tangent plane,
-              //     normalized. This is the body's instantaneous direction of
-              //     motion along the surface. Falls back to projected
-              //     `desiredFacingTangent` when velocity is near zero.
-              //   - `up`  = sample.normal at the post-integration UV. Purely
-              //     geometric — no gravity-up assumption. For heightmaps this
-              //     is the bilinear-gradient normal; for spheres / cylinders /
-              //     toruses it's the radial outward direction. Works in any
-              //     gravity field.
+              //   - `dir`     = velocity projected onto the disc-up-
+              //                 perpendicular plane, normalized. Falls back to
+              //                 projected `desiredFacingTangent` when velocity
+              //                 is near zero.
+              //   - `disc_up` = direction of the body's "up" in its disc
+              //                 frame. For now (no balance lean) this is
+              //                 -normalize(net_external_force) where net
+              //                 external force = pickGravity at the body
+              //                 (gravity is the only external constant force
+              //                 in this prototype). When lean lands later,
+              //                 disc_up will tilt away from gravity to balance
+              //                 COM torque, and the wheel will roll along this
+              //                 tilted plane.
               //
-              // `buildSurfaceProfile` samples the surface along the line
-              // `body + s·dir`, projects each sample's offset onto `up`, and
-              // returns (s, y) vertices. `findCircleProfileIntersections` finds
+              // Choosing gravity-derived disc_up (NOT sample.normal) keeps the
+              // profile coordinate system STABLE across ticks. sample.normal
+              // jumps between adjacent heightmap cells' bilinear gradients,
+              // which makes the profile's reference frame rotate every tick →
+              // the disc-corner branch sees discontinuous geometry → the body
+              // teleports. Gravity-up is one ambient direction, doesn't jump.
+              //
+              // `buildSurfaceProfile` samples the surface along `body + s·dir`,
+              // projects each sample's offset onto `disc_up`, and returns
+              // (s, y) vertices. `findCircleProfileIntersections` finds
               // disc-vs-profile contacts; `resolveDiscContacts` resolves them:
-              //   "tangent"            — single smooth contact, disc tangent
-              //                          to surface.
-              //   "corner"             — two contacts on different segments
-              //                          (concave corner); disc tucks into the
-              //                          circumcenter. This is the case the
-              //                          legacy `sample + R·N` mis-handled at
-              //                          heightmap cell boundaries.
-              //   "fallback-parallel"  — two collinear segments, no real
-              //                          corner; treated as single-tangent on
-              //                          the forward contact.
-              //   "pop-out"            — disc partially embedded in one
-              //                          segment; pop out perpendicular.
+              //   "tangent"            single smooth contact.
+              //   "corner"             two contacts on different segments
+              //                        (concave corner); disc tucks into the
+              //                        circumcenter — the case the legacy
+              //                        `sample + R·N` mis-handled at heightmap
+              //                        cell boundaries.
+              //   "fallback-parallel"  segments nearly collinear (small slope
+              //                        change) — falls through to tangent.
+              //   "pop-out"            disc embedded in one segment; pop out
+              //                        perpendicular.
               //
               // Convex corners are NOT handled here — the controller's
-              // centripetal-detach rule already triggers airborne FSM
-              // transitions for those, and surfaceConstraint re-lands when the
-              // body re-contacts the next surface.
-              const Nupx = sample_new.normal[0];
-              const Nupy = sample_new.normal[1];
-              const Nupz = sample_new.normal[2];
-              // Predicted body via legacy offset, used as the profile's origin
-              // (disc-center prediction). Disc-resolution refines this.
-              const predX = sample_new.position[0] + Nupx * radius;
-              const predY = sample_new.position[1] + Nupy * radius;
-              const predZ = sample_new.position[2] + Nupz * radius;
+              // centripetal-detach rule triggers airborne FSM transitions for
+              // those.
 
-              // Horizontal direction = velocity projected onto sample's tangent
-              // plane, normalized. Tangent-plane projection makes this work for
-              // radial-gravity surfaces (sphere/cylinder/torus) too — velocity
-              // is already tangent there, projection is a no-op; on a tilted
-              // heightmap slope, projection drops the velocity-into-surface
-              // component before normalizing.
+              // disc_up = -normalize(gravity_at_body). For radial-gravity scenes
+              // pickGravity returns the local gravity vector (varies with body
+              // position). For Y-gravity heightmaps it returns the universal
+              // (0, -9.81, 0) regardless of position.
+              const bodyForGravityX = t.position[0];
+              const bodyForGravityY = t.position[1];
+              const bodyForGravityZ = t.position[2];
+              const gAtBody = pickGravity(gravityVolumes, vf.gravity, [
+                bodyForGravityX, bodyForGravityY, bodyForGravityZ,
+              ]);
+              const gMag = Math.hypot(gAtBody[0], gAtBody[1], gAtBody[2]);
+              // Fallback to sample.normal if gravity is zero (no field
+              // defined) — no PE to conserve in that limit anyway.
+              const Nupx = gMag > 1e-9 ? -gAtBody[0] / gMag : sample_new.normal[0];
+              const Nupy = gMag > 1e-9 ? -gAtBody[1] / gMag : sample_new.normal[1];
+              const Nupz = gMag > 1e-9 ? -gAtBody[2] / gMag : sample_new.normal[2];
+
+              // Predicted body via legacy offset, used as the profile's origin
+              // (disc-center prediction). Uses sample.normal not disc_up so
+              // the body sits AT distance R perpendicular to the local surface
+              // — that's the geometrically correct starting point for the
+              // disc-vs-profile intersection check.
+              const predX = sample_new.position[0] + sample_new.normal[0] * radius;
+              const predY = sample_new.position[1] + sample_new.normal[1] * radius;
+              const predZ = sample_new.position[2] + sample_new.normal[2] * radius;
+
+              // Horizontal direction = velocity projected onto the disc-up-
+              // perpendicular plane, normalized. The velocity plane is
+              // (dir, disc_up); projecting out the disc-up component of
+              // velocity gives the in-plane horizontal direction.
               let dirX = vel.linear[0];
               let dirY = vel.linear[1];
               let dirZ = vel.linear[2];
-              let vDotN = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
-              dirX -= vDotN * Nupx;
-              dirY -= vDotN * Nupy;
-              dirZ -= vDotN * Nupz;
+              let vDotUp = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
+              dirX -= vDotUp * Nupx;
+              dirY -= vDotUp * Nupy;
+              dirZ -= vDotUp * Nupz;
               let dirMag = Math.hypot(dirX, dirY, dirZ);
               if (dirMag < 1e-4) {
                 // Near-rest fallback: use desiredFacingTangent (input intent),
-                // also projected onto sample's tangent plane.
+                // also projected onto the disc-up-perpendicular plane.
                 dirX = ctrl.desiredFacingTangent[0];
                 dirY = ctrl.desiredFacingTangent[1];
                 dirZ = ctrl.desiredFacingTangent[2];
-                vDotN = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
-                dirX -= vDotN * Nupx;
-                dirY -= vDotN * Nupy;
-                dirZ -= vDotN * Nupz;
+                vDotUp = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
+                dirX -= vDotUp * Nupx;
+                dirY -= vDotUp * Nupy;
+                dirZ -= vDotUp * Nupz;
                 dirMag = Math.hypot(dirX, dirY, dirZ);
               }
 

@@ -50,6 +50,20 @@ export interface DiscContactResolution {
 }
 
 const PARALLEL_EPS = 1e-6;
+/**
+ * Minimum cos(angle) between the two segments' outward normals for the
+ * circumcenter math to fire. Above this threshold the segments are
+ * "nearly collinear" (small slope change) — the determinant in the
+ * offset-line intersection is small but non-zero, so naively solving for
+ * tA produces a wildly off-position circumcenter (tA blows up as det
+ * shrinks). Fall through to single-tangent in that regime; the result
+ * stays continuous as slope-change → 0.
+ *
+ * cos(5°) ≈ 0.9962. Real concave corners on heightmap cell boundaries
+ * have slope changes of tens of degrees; sub-cell sampling artifacts
+ * sit well above 0.9962 and are correctly rejected.
+ */
+const NEAR_PARALLEL_COS = 0.9962;
 
 /**
  * Resolve contacts into a single disc center. Returns `null` when the disc
@@ -175,6 +189,20 @@ function resolveTwo(
     return resolveTangent(a.s > b.s ? a : b, profile, R);
   }
 
+  // Near-parallel rejection. When the two segments' outward normals are
+  // nearly aligned (slope change < ~5°), the offset-line intersection is
+  // numerically ill-conditioned: the determinant scales as sin(slope-
+  // change), and `tA = numerator / det` blows up. For small slope changes
+  // the body's correct position is essentially the single-tangent
+  // position; fall through. This eliminates sub-cell-sampling-artifact
+  // "corners" inside a single bilinear heightmap cell, which were the
+  // source of the climb-steep-wall teleport bug (2026-05-20).
+  const normalDot = segA.nx * segB.nx + segA.ny * segB.ny;
+  if (normalDot > NEAR_PARALLEL_COS) {
+    const fallback = resolveTangent(a.s >= b.s ? a : b, profile, R);
+    return { ...fallback, kind: "fallback-parallel" };
+  }
+
   // Offset lines: parallel to each segment, displaced by R along the
   // outward normal. Intersect them. The corner-tucked disc center is the
   // unique point at distance R from both segment lines (signed positive
@@ -187,9 +215,8 @@ function resolveTwo(
   // Solve A0 + tA·dA = B0 + tB·dB. Matrix [dA.x, -dB.x; dA.y, -dB.y].
   const det = segA.dx * -segB.dy - -segB.dx * segA.dy;
   if (Math.abs(det) < PARALLEL_EPS) {
-    // Parallel segments (no real corner — e.g. two flat segments meeting
-    // at zero slope-change). Fall through to single-contact tangent on
-    // the forward intersection.
+    // Truly parallel direction vectors (degenerate beyond the normal-dot
+    // check above) — defensive fallthrough.
     const fallback = resolveTangent(a.s >= b.s ? a : b, profile, R);
     return { ...fallback, kind: "fallback-parallel" };
   }
