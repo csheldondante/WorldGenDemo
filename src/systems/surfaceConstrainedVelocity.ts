@@ -124,19 +124,17 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               const radius = profile.bodyRadius;
 
               // Snapshot pre-integration world velocity for downstream consumers
-              // (chain dynamics, hit reactions, future ragdoll triggers).
+              // (chain dynamics, hit reactions, future ragdoll triggers) AND for
+              // the energy-conservation rescale below — KE_pre = 0.5|prevLinear|².
               vel.prevLinear[0] = vel.linear[0];
               vel.prevLinear[1] = vel.linear[1];
               vel.prevLinear[2] = vel.linear[2];
 
-              // Integration: keep world velocity as the primary state and project onto
-              // the surface each step. The tangent-frame-scalar form (vTanU·tangentU +
-              // vTanV·tangentV) is energy-conserving ONLY when the tangents are
-              // orthogonal — but on a heightmap with non-zero gradients in BOTH u and v,
-              // tangentU·tangentV ≠ 0, and reconstruction injects spurious energy via
-              // the cross term. This formulation avoids the decomposition entirely.
-              //
-              // Step 1: read accumulator accel; integrate world velocity (semi-implicit Euler).
+              // Step 1: read accumulator accel; integrate world velocity (semi-
+              // implicit Euler). The accumulator's accel is the total per-tick
+              // force on the body: gravity, input thrust, friction, any volume
+              // fields. Per user 2026-05-20 it is treated as constant over the
+              // tick for the energy rescale below.
               const a = accels.byEntity.get(id);
               if (a) {
                 vel.linear[0] += a.accel[0] * dt;
@@ -144,40 +142,12 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                 vel.linear[2] += a.accel[2] * dt;
               }
 
-              // Step 2: capture post-acceleration speed (energy anchor).
-              const speedTarget = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
-
-              // Step 3: advance UV from the world velocity projected onto current
-              // sample's tangent UNIT vectors, divided by tangent magnitudes.
-              const safeTU = sample.tangentUNorm > 0 ? sample.tangentUNorm : 1;
-              const safeTV = sample.tangentVNorm > 0 ? sample.tangentVNorm : 1;
-              const vTanU_proj =
-                vel.linear[0] * sample.tangentU[0] +
-                vel.linear[1] * sample.tangentU[1] +
-                vel.linear[2] * sample.tangentU[2];
-              const vTanV_proj =
-                vel.linear[0] * sample.tangentV[0] +
-                vel.linear[1] * sample.tangentV[1] +
-                vel.linear[2] * sample.tangentV[2];
-              let u_raw = att.uv[0] + (vTanU_proj * dt) / safeTU;
-              let v_raw = att.uv[1] + (vTanV_proj * dt) / safeTV;
-
-              // Closed surfaces wrap. Folding here keeps the stored UV in [0, 1)
-              // and prevents surfaceConstraintSystem from interpreting "ran around
-              // the perimeter" as "walked off edge."
-              if (surface.wrapsU()) u_raw = ((u_raw % 1) + 1) % 1;
-              if (surface.wrapsV()) v_raw = ((v_raw % 1) + 1) % 1;
-
-              // Step 4: sample new UV (clamped only on non-wrapping axes for the actual sample call).
-              const u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
-              const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
-              const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
-
-              // Capture body's world position BEFORE step 5 rewrites it. Used by
-              // step 6b for the energy-conservation rescale across the disc-
-              // resolution position derivation: KE_post = KE_pre + F · Δr, where
-              // Δr = body_after − body_before and F = accumulator.accel (treated
-              // constant over the tick per user 2026-05-20).
+              // Capture body's world position BEFORE step 5 derives a new one.
+              // Used by:
+              //   - Step 2's natural-integration prediction (predicted_body =
+              //     bodyPre + vel·dt, semi-implicit Euler).
+              //   - Step 6b's energy-conservation rescale (work = a · (body_after
+              //     − body_before), KE_post = KE_pre + work).
               const bodyPreX = t.position[0];
               const bodyPreY = t.position[1];
               const bodyPreZ = t.position[2];
@@ -226,31 +196,42 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               // centripetal-detach rule triggers airborne FSM transitions for
               // those.
 
-              // disc_up = -normalize(gravity_at_body). For radial-gravity scenes
-              // pickGravity returns the local gravity vector (varies with body
-              // position). For Y-gravity heightmaps it returns the universal
-              // (0, -9.81, 0) regardless of position.
-              const bodyForGravityX = t.position[0];
-              const bodyForGravityY = t.position[1];
-              const bodyForGravityZ = t.position[2];
+              // disc_up = -normalize(gravity_at_body). Stable per-body axis for
+              // the velocity-plane / profile coordinate system. Per user
+              // 2026-05-20: when gravity is the only external force the up axis
+              // is stable, and once balance lean lands the disc_up will tilt
+              // relative to gravity but still be a stable per-body quantity (a
+              // function of the body's COM and contact-torque, not of the
+              // surface sample's analytical normal).
+              //
+              // pickGravity returns the local gravity vector: constant for
+              // world-Y heightmaps, varies in radial-gravity scenes (sphere /
+              // cylinder / torus). Sample-normal fallback only if gravity is
+              // zero (no field defined).
               const gAtBody = pickGravity(gravityVolumes, vf.gravity, [
-                bodyForGravityX, bodyForGravityY, bodyForGravityZ,
+                bodyPreX, bodyPreY, bodyPreZ,
               ]);
               const gMag = Math.hypot(gAtBody[0], gAtBody[1], gAtBody[2]);
-              // Fallback to sample.normal if gravity is zero (no field
-              // defined) — no PE to conserve in that limit anyway.
-              const Nupx = gMag > 1e-9 ? -gAtBody[0] / gMag : sample_new.normal[0];
-              const Nupy = gMag > 1e-9 ? -gAtBody[1] / gMag : sample_new.normal[1];
-              const Nupz = gMag > 1e-9 ? -gAtBody[2] / gMag : sample_new.normal[2];
+              const Nupx = gMag > 1e-9 ? -gAtBody[0] / gMag : sample.normal[0];
+              const Nupy = gMag > 1e-9 ? -gAtBody[1] / gMag : sample.normal[1];
+              const Nupz = gMag > 1e-9 ? -gAtBody[2] / gMag : sample.normal[2];
 
-              // Predicted body via legacy offset, used as the profile's origin
-              // (disc-center prediction). Uses sample.normal not disc_up so
-              // the body sits AT distance R perpendicular to the local surface
-              // — that's the geometrically correct starting point for the
-              // disc-vs-profile intersection check.
-              const predX = sample_new.position[0] + sample_new.normal[0] * radius;
-              const predY = sample_new.position[1] + sample_new.normal[1] * radius;
-              const predZ = sample_new.position[2] + sample_new.normal[2] * radius;
+              // Step 2: NATURAL-INTEGRATION predicted body. Semi-implicit Euler:
+              // body advances by vel·dt from its previous-tick position. The
+              // profile is built around THIS predicted body — not around the
+              // legacy `sample + R · sample.normal`. The legacy approach put
+              // the profile around the UV-integration's sample-derived offset,
+              // which on cell-boundary crossings could be FAR from the body's
+              // actual position; the disc-resolution then yanked the body to
+              // its disc-tangent position, producing visible teleports.
+              //
+              // Natural-integration prediction = where Newton would put the
+              // body if no surface existed. The disc-vs-profile collision
+              // check then resolves any constraint violation. This is the
+              // canonical disc-collider model per user 2026-05-20.
+              const predX = bodyPreX + vel.linear[0] * dt;
+              const predY = bodyPreY + vel.linear[1] * dt;
+              const predZ = bodyPreZ + vel.linear[2] * dt;
 
               // Horizontal direction = velocity projected onto the disc-up-
               // perpendicular plane, normalized. The velocity plane is
@@ -323,9 +304,9 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                   discKind = res.kind;
                 } else {
                   // No contacts — disc is above the surface (airborne).
-                  // surfaceConstraintSystem detects this via UV out-of-bounds
-                  // or the airborne FSM transition next tick. Use predicted
-                  // body so we don't leave t.position garbage.
+                  // Use natural-integration predicted body so the next tick's
+                  // sample / UV derivation can detect "walked off edge" via
+                  // surfaceConstraint's worldToUV check.
                   bodyX = predX;
                   bodyY = predY;
                   bodyZ = predZ;
@@ -336,8 +317,8 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               } else {
                 // No defined horizontal direction (body at rest with no input).
                 // Disc resolution requires a direction to build the velocity
-                // plane; without one, the disc-tangent position degenerates to
-                // sample + R·N. Use that.
+                // plane; without one, just use the natural-integration
+                // prediction.
                 bodyX = predX;
                 bodyY = predY;
                 bodyZ = predZ;
@@ -394,17 +375,16 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               // didn't have the kinetic budget for the displacement — stall:
               // zero velocity, let FSM transitions react next tick.
               //
-              // Applied ONLY when the disc branch fired with a CORNER kind —
-              // that's where the position is discontinuously moved to the
-              // disc-circumcenter, breaking the natural integration's
-              // displacement assumption. For tangent / fallback-parallel /
-              // pop-out, the disc-derived position essentially coincides
-              // with the legacy sample + R·N derivation, the natural
-              // integration's energy bookkeeping is already correct, and
-              // applying the rescale would introduce its own discretization
-              // drift over time (compounds noticeably across long straight-
-              // line scenarios).
-              if (discKind === "corner" && a) {
+              // Applied whenever the disc branch fired (any kind). With
+              // natural-integration prediction (predicted_body = bodyPre +
+              // vel·dt), every kind's body_after is a refinement of that
+              // natural step. Work = a · Δr_body is the work-energy theorem
+              // integral over the body's ACTUAL displacement, with a
+              // constant over the tick. Reduces to the natural integration's
+              // energy on a straight-line tick and corrects for any disc-
+              // induced position offset (tangent contact's piecewise-
+              // segment offset, corner-circumcenter, or pop-out).
+              if (discKind !== null && a) {
                 const kePre =
                   0.5 *
                   (vel.prevLinear[0] * vel.prevLinear[0] +
@@ -438,31 +418,23 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                 }
               }
 
-              // Step 7 (DISABLED — bug audit 2026-05-19): the previous rescale-to-
-              // speedTarget step preserved the wrong invariant. `speedTarget` is
-              // captured AFTER step 1's accumulator integration, which includes any
-              // normal-direction accel that step 6 will then absorb into the
-              // constraint. Rescaling tangent magnitude to recover that "lost" speed
-              // converts absorbed-normal-kinetic into tangent kinetic energy — same
-              // conceptual leak as the aSurfaceN-in-accumulator bug, smaller magnitude.
-              // Test before/after: if removing this step (a) eliminates the residual
-              // visible stutter on climb-tall-wall and (b) doesn't measurably slow the
-              // body on smooth curved surfaces (camera-hill-crest, gym-cylinder), the
-              // rescale is the wrong invariant and should be permanently removed or
-              // reworked. See audit note in the conversation log.
-              //
-              // const speedProj = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
-              // if (speedProj > 1e-9) {
-              //   const scale = speedTarget / speedProj;
-              //   vel.linear[0] *= scale;
-              //   vel.linear[1] *= scale;
-              //   vel.linear[2] *= scale;
-              // }
-              void speedTarget;  // suppress unused-var warning while step 7 is disabled
               vels.byEntity.set(id, vel);
 
-              // Store un-clamped UV so surfaceConstraint can detect "walked off edge";
-              // cache the new sample on the attachment.
+              // Step 7: derive att.uv from the body's foot (= disc center − R ·
+              // contact_normal) via the surface's worldToUV. UV is now a
+              // DOWNSTREAM quantity of the disc-resolved body position, not
+              // the integrator's primary state. Closed surfaces wrap, others
+              // are left un-clamped so surfaceConstraintSystem can detect
+              // "walked off edge" via UV out-of-bounds.
+              const footX = bodyX - radius * contactNx;
+              const footY = bodyY - radius * contactNy;
+              const footZ = bodyZ - radius * contactNz;
+              let [u_raw, v_raw] = surface.worldToUV(footX, footY, footZ);
+              if (surface.wrapsU()) u_raw = ((u_raw % 1) + 1) % 1;
+              if (surface.wrapsV()) v_raw = ((v_raw % 1) + 1) % 1;
+              const u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
+              const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
+              const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
               att.uv = [u_raw, v_raw];
               att.sample = sample_new;
               atts.byEntity.set(id, att);
