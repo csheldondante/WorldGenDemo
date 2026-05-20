@@ -2,31 +2,44 @@ import type { ProfileVertex } from "../lib/math/wheelIntersect";
 import type { SurfaceProvider } from "./surfaceProvider";
 
 /**
- * Sample a surface along a horizontal line in the velocity plane, producing
- * a (s, y) profile usable by `findCircleProfileIntersections`.
+ * Sample a surface along a line in the velocity plane, producing a (s, y)
+ * profile usable by `findCircleProfileIntersections`.
  *
- *   centerX, centerZ — world XZ position around which to sample (s = 0 here).
- *   dirX, dirZ       — unit horizontal direction. +s is along this direction.
- *   halfWidth        — sample window covers s ∈ [−halfWidth, +halfWidth].
- *   step             — sample step in world meters along the line.
+ * The velocity plane is defined by two unit vectors at the body:
+ *   - `dir` (the "horizontal" direction): unit vector along which the body
+ *     intends to travel, lying in the local surface tangent plane.
+ *   - `up`  (the "vertical" direction): unit vector perpendicular to the
+ *     local tangent plane — the surface normal at the body's location.
+ *     For radial-gravity scenes (sphere, cylinder, torus) this is the
+ *     local radial direction; for heightmaps it is the bilinear-gradient
+ *     normal at the body's sample.
  *
- * For a HeightmapSurfaceProvider, the profile is piecewise-linear in s
- * within each cell along an axis-aligned line, and piecewise-quadratic on a
- * diagonal line (because bilinear h restricted to a non-axis-aligned line is
- * degree-2). A piecewise-linear approximation built from fine samples is
- * accurate enough for concave-corner detection — real corners live at cell
- * boundaries where the underlying coefficient changes discontinuously, and
- * any step smaller than the cell width resolves them.
+ * The 2D coordinate system of the returned profile:
+ *   - `s` = signed displacement along `dir` from the body.
+ *   - `y` = signed displacement along `up` from the body (= projection of
+ *     `(surfacePoint − body)` onto `up`). Surface samples generally have
+ *     y ≤ 0 near the body (it's "below" the disc center, R away).
  *
- * Vertices are returned in ascending s order, including both endpoints.
- * Out-of-bounds samples are clamped at the surface's UV edge.
+ * Using `sample.normal` as the `up` axis (rather than world-Y) makes the
+ * profile gravity-agnostic: it works on heightmaps with world-Y gravity,
+ * spheres with radial gravity, cylinders with axial gravity, etc. The
+ * disc-vs-profile geometry is purely about the surface, not about which
+ * way "down" is.
+ *
+ * Vertices are returned in ascending s order. Out-of-bounds samples are
+ * clamped at the surface's UV edge.
  */
 export function buildSurfaceProfile(
   surface: SurfaceProvider,
-  centerX: number,
-  centerZ: number,
+  bodyX: number,
+  bodyY: number,
+  bodyZ: number,
   dirX: number,
+  dirY: number,
   dirZ: number,
+  upX: number,
+  upY: number,
+  upZ: number,
   halfWidth: number,
   step: number,
 ): ProfileVertex[] {
@@ -34,13 +47,20 @@ export function buildSurfaceProfile(
   const out: ProfileVertex[] = new Array(N + 1);
   for (let k = 0; k <= N; k++) {
     const s = -halfWidth + (k * (2 * halfWidth)) / N;
-    const x = centerX + s * dirX;
-    const z = centerZ + s * dirZ;
-    const [u, v] = surface.worldToUV(x, 0, z);
+    // Sample line lives in the velocity plane: body + s·dir.
+    const sx = bodyX + s * dirX;
+    const sy = bodyY + s * dirY;
+    const sz = bodyZ + s * dirZ;
+    const [u, v] = surface.worldToUV(sx, sy, sz);
     const cu = Math.max(0, Math.min(1, u));
     const cv = Math.max(0, Math.min(1, v));
     const world = surface.uvToWorld(cu, cv);
-    out[k] = { s, y: world[1] };
+    // Project the surface point's offset from the body onto the up axis.
+    const yProj =
+      (world[0] - bodyX) * upX +
+      (world[1] - bodyY) * upY +
+      (world[2] - bodyZ) * upZ;
+    out[k] = { s, y: yProj };
   }
   return out;
 }

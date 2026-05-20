@@ -22,6 +22,9 @@ import {
 } from "../buffers/surfaceProvider";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { assertDev } from "../runtime/dev";
+import { buildSurfaceProfile } from "../world/surfaceProfile";
+import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
+import { resolveDiscContacts } from "../lib/math/discContact";
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
@@ -162,18 +165,167 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
               const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
 
-              // Step 5: world position = new surface point + radius along new normal.
-              t.position[0] = sample_new.position[0] + sample_new.normal[0] * radius;
-              t.position[1] = sample_new.position[1] + sample_new.normal[1] * radius;
-              t.position[2] = sample_new.position[2] + sample_new.normal[2] * radius;
+              // Capture body's world position BEFORE step 5 rewrites it. Used by
+              // step 6b for the energy-conservation rescale across the disc-
+              // resolution position derivation: KE_post = KE_pre + F · Δr, where
+              // Δr = body_after − body_before and F = accumulator.accel (treated
+              // constant over the tick per user 2026-05-20).
+              const bodyPreX = t.position[0];
+              const bodyPreY = t.position[1];
+              const bodyPreZ = t.position[2];
+
+              // Step 5: derive the disc-body world position.
+              //
+              // The body is modeled as a 2D disc of radius R in its velocity
+              // plane. The velocity plane is spanned by:
+              //   - `dir` = velocity projected onto sample's tangent plane,
+              //     normalized. This is the body's instantaneous direction of
+              //     motion along the surface. Falls back to projected
+              //     `desiredFacingTangent` when velocity is near zero.
+              //   - `up`  = sample.normal at the post-integration UV. Purely
+              //     geometric — no gravity-up assumption. For heightmaps this
+              //     is the bilinear-gradient normal; for spheres / cylinders /
+              //     toruses it's the radial outward direction. Works in any
+              //     gravity field.
+              //
+              // `buildSurfaceProfile` samples the surface along the line
+              // `body + s·dir`, projects each sample's offset onto `up`, and
+              // returns (s, y) vertices. `findCircleProfileIntersections` finds
+              // disc-vs-profile contacts; `resolveDiscContacts` resolves them:
+              //   "tangent"            — single smooth contact, disc tangent
+              //                          to surface.
+              //   "corner"             — two contacts on different segments
+              //                          (concave corner); disc tucks into the
+              //                          circumcenter. This is the case the
+              //                          legacy `sample + R·N` mis-handled at
+              //                          heightmap cell boundaries.
+              //   "fallback-parallel"  — two collinear segments, no real
+              //                          corner; treated as single-tangent on
+              //                          the forward contact.
+              //   "pop-out"            — disc partially embedded in one
+              //                          segment; pop out perpendicular.
+              //
+              // Convex corners are NOT handled here — the controller's
+              // centripetal-detach rule already triggers airborne FSM
+              // transitions for those, and surfaceConstraint re-lands when the
+              // body re-contacts the next surface.
+              const Nupx = sample_new.normal[0];
+              const Nupy = sample_new.normal[1];
+              const Nupz = sample_new.normal[2];
+              // Predicted body via legacy offset, used as the profile's origin
+              // (disc-center prediction). Disc-resolution refines this.
+              const predX = sample_new.position[0] + Nupx * radius;
+              const predY = sample_new.position[1] + Nupy * radius;
+              const predZ = sample_new.position[2] + Nupz * radius;
+
+              // Horizontal direction = velocity projected onto sample's tangent
+              // plane, normalized. Tangent-plane projection makes this work for
+              // radial-gravity surfaces (sphere/cylinder/torus) too — velocity
+              // is already tangent there, projection is a no-op; on a tilted
+              // heightmap slope, projection drops the velocity-into-surface
+              // component before normalizing.
+              let dirX = vel.linear[0];
+              let dirY = vel.linear[1];
+              let dirZ = vel.linear[2];
+              let vDotN = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
+              dirX -= vDotN * Nupx;
+              dirY -= vDotN * Nupy;
+              dirZ -= vDotN * Nupz;
+              let dirMag = Math.hypot(dirX, dirY, dirZ);
+              if (dirMag < 1e-4) {
+                // Near-rest fallback: use desiredFacingTangent (input intent),
+                // also projected onto sample's tangent plane.
+                dirX = ctrl.desiredFacingTangent[0];
+                dirY = ctrl.desiredFacingTangent[1];
+                dirZ = ctrl.desiredFacingTangent[2];
+                vDotN = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
+                dirX -= vDotN * Nupx;
+                dirY -= vDotN * Nupy;
+                dirZ -= vDotN * Nupz;
+                dirMag = Math.hypot(dirX, dirY, dirZ);
+              }
+
+              let bodyX: number;
+              let bodyY: number;
+              let bodyZ: number;
+              let contactNx: number;
+              let contactNy: number;
+              let contactNz: number;
+              let discKind: "tangent" | "corner" | "fallback-parallel" | "pop-out" | null = null;
+              if (dirMag > 1e-4) {
+                dirX /= dirMag;
+                dirY /= dirMag;
+                dirZ /= dirMag;
+                // Profile half-window: 1.5·R covers the disc's contact span.
+                // Step 0.25 m is smaller than typical heightmap cell width
+                // (1 m) so cell-boundary corners are always resolved; for
+                // parametric surfaces it's fine-grained enough that the
+                // piecewise-linear approximation tracks the smooth profile.
+                const halfWidth = radius * 1.5;
+                const stepLen = 0.25;
+                const profileVerts = buildSurfaceProfile(
+                  surface,
+                  predX, predY, predZ,
+                  dirX, dirY, dirZ,
+                  Nupx, Nupy, Nupz,
+                  halfWidth, stepLen,
+                );
+                // Profile origin = predicted body position. Disc center
+                // candidate sits at profile (0, 0). The surface samples
+                // generally have y ≈ −R near s=0 (body is R "above" surface
+                // along the up axis); the disc circle of radius R touches the
+                // profile at that point.
+                const intersections = findCircleProfileIntersections(
+                  0, 0, radius, profileVerts,
+                );
+                const res = resolveDiscContacts(intersections, profileVerts, radius);
+                if (res !== null) {
+                  // Map (s, y) → world: world = body + s·dir + y·up.
+                  bodyX = predX + res.centerS * dirX + res.centerY * Nupx;
+                  bodyY = predY + res.centerS * dirY + res.centerY * Nupy;
+                  bodyZ = predZ + res.centerS * dirZ + res.centerY * Nupz;
+                  // Contact normal in 3D = normalS·dir + normalY·up.
+                  contactNx = res.normalS * dirX + res.normalY * Nupx;
+                  contactNy = res.normalS * dirY + res.normalY * Nupy;
+                  contactNz = res.normalS * dirZ + res.normalY * Nupz;
+                  discKind = res.kind;
+                } else {
+                  // No contacts — disc is above the surface (airborne).
+                  // surfaceConstraintSystem detects this via UV out-of-bounds
+                  // or the airborne FSM transition next tick. Use predicted
+                  // body so we don't leave t.position garbage.
+                  bodyX = predX;
+                  bodyY = predY;
+                  bodyZ = predZ;
+                  contactNx = Nupx;
+                  contactNy = Nupy;
+                  contactNz = Nupz;
+                }
+              } else {
+                // No defined horizontal direction (body at rest with no input).
+                // Disc resolution requires a direction to build the velocity
+                // plane; without one, the disc-tangent position degenerates to
+                // sample + R·N. Use that.
+                bodyX = predX;
+                bodyY = predY;
+                bodyZ = predZ;
+                contactNx = Nupx;
+                contactNy = Nupy;
+                contactNz = Nupz;
+              }
+              t.position[0] = bodyX;
+              t.position[1] = bodyY;
+              t.position[2] = bodyZ;
               transforms.byEntity.set(id, t);
 
-              // Step 6: project world velocity onto the new tangent plane (drop the
-              // component along the new normal — the surface absorbs it as a constraint
-              // reaction). This is independent of whether tangents are orthogonal.
-              const Nnx = sample_new.normal[0];
-              const Nny = sample_new.normal[1];
-              const Nnz = sample_new.normal[2];
+              // Step 6: project world velocity onto the contact normal (drop
+              // the component along it — the surface absorbs it as a constraint
+              // reaction). Contact normal is the disc-resolution normal: for
+              // single-contact it's the surface segment's outward normal; for
+              // corners it's the bisector of the two segment normals.
+              const Nnx = contactNx;
+              const Nny = contactNy;
+              const Nnz = contactNz;
               const vNnew =
                 vel.linear[0] * Nnx +
                 vel.linear[1] * Nny +
@@ -181,6 +333,78 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               vel.linear[0] -= vNnew * Nnx;
               vel.linear[1] -= vNnew * Nny;
               vel.linear[2] -= vNnew * Nnz;
+
+              // Step 6b: energy conservation across the disc-resolution body-
+              // position derivation.
+              //
+              // The disc branch may place the body at a different world
+              // position than a "naive" `sample + R·sample.normal` legacy
+              // would. The difference (Δr_disc) represents an instantaneous
+              // position correction that wasn't backed by the natural
+              // integration's velocity-times-dt motion. Without compensation,
+              // total mechanical energy drifts each tick.
+              //
+              // Force F is constant over the tick (per user 2026-05-20: any
+              // constant external force adds PE the same way; this includes
+              // gravity, gravity volumes, and any future constant volume
+              // fields baked into the accumulator). Work-energy theorem:
+              //   ΔKE = F · Δr_body
+              //
+              // So:  KE_post = KE_pre + accumulator.accel · (body_after - body_before)
+              //
+              // where KE_pre = 0.5·|vel.prevLinear|² (start-of-tick KE) and
+              // ΔbodyPos = body_after − body_before (full Δr this tick, NOT
+              // just the disc-induced correction — the natural Δr is implicit
+              // in the disc-resolution's continuity with vel-integration).
+              //
+              // Rescale post-step-6 velocity (= tangent-projected) to produce
+              // the target KE, preserving direction. If KE_post ≤ 0 the body
+              // didn't have the kinetic budget for the displacement — stall:
+              // zero velocity, let FSM transitions react next tick.
+              //
+              // Applied ONLY when the disc branch fired with a CORNER kind —
+              // that's where the position is discontinuously moved to the
+              // disc-circumcenter, breaking the natural integration's
+              // displacement assumption. For tangent / fallback-parallel /
+              // pop-out, the disc-derived position essentially coincides
+              // with the legacy sample + R·N derivation, the natural
+              // integration's energy bookkeeping is already correct, and
+              // applying the rescale would introduce its own discretization
+              // drift over time (compounds noticeably across long straight-
+              // line scenarios).
+              if (discKind === "corner" && a) {
+                const kePre =
+                  0.5 *
+                  (vel.prevLinear[0] * vel.prevLinear[0] +
+                   vel.prevLinear[1] * vel.prevLinear[1] +
+                   vel.prevLinear[2] * vel.prevLinear[2]);
+                const work =
+                  a.accel[0] * (bodyX - bodyPreX) +
+                  a.accel[1] * (bodyY - bodyPreY) +
+                  a.accel[2] * (bodyZ - bodyPreZ);
+                const kePost = kePre + work;
+                if (kePost <= 0) {
+                  // Stall — body's start-of-tick KE wasn't enough to make this
+                  // disc-induced displacement. Zero velocity; FSM (slip /
+                  // detach triggers) reacts next tick.
+                  vel.linear[0] = 0;
+                  vel.linear[1] = 0;
+                  vel.linear[2] = 0;
+                } else {
+                  const vMag = Math.hypot(
+                    vel.linear[0], vel.linear[1], vel.linear[2],
+                  );
+                  if (vMag > 1e-9) {
+                    const targetMag = Math.sqrt(2 * kePost);
+                    const scale = targetMag / vMag;
+                    vel.linear[0] *= scale;
+                    vel.linear[1] *= scale;
+                    vel.linear[2] *= scale;
+                  }
+                  // If vMag ≈ 0, leave velocity at zero — direction undefined
+                  // and no kinetic budget to redirect.
+                }
+              }
 
               // Step 7 (DISABLED — bug audit 2026-05-19): the previous rescale-to-
               // speedTarget step preserved the wrong invariant. `speedTarget` is
