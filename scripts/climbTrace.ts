@@ -12,6 +12,11 @@ import { getScenario } from "../scenarios/index";
 
 const scenarioName = process.argv[2] ?? "climb-steep-wall";
 const test = getScenario(scenarioName);
+// Enable debug buffer on the fly if scenario doesn't have it.
+if (!test.enableDebugBuffers) {
+  test.enableDebugBuffers = ["characterControllerDebug"];
+  test.output.snapshot = [...test.output.snapshot, "characterControllerDebug"];
+}
 
 // Run the scenario fresh (no baseline comparison — we just want the captured
 // history). enableDebugBuffers + output.snapshot already set up by the

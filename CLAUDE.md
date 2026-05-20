@@ -119,6 +119,20 @@ This codebase has buffer-snapshot scenario baselines (`scenarios/__baselines__/*
 
 **The scenario suite is wired into vitest at `tests/scenarios/baselines.test.ts`.** Every `npm test` run loads every baseline, runs every scenario via `runBufferTest`, and asserts zero flags. A baseline diff fails the test — there is no longer any way to silently ignore it. Treat it the same as a failing unit test.
 
+### ⛔ BLOCKING PRE-FLIGHT GATE — DO NOT SKIP
+
+Before **every** request for the user to look at anything, before **every** `git commit`, before **every** `git push`, you **MUST** complete this checklist. The user must not be the one who catches that you forgot. If you skip this, you have failed.
+
+1. **MUST run `npx vitest run`** (the full suite, not a subset) at the end of every batch of edits. No exceptions.
+2. **MUST inspect every scenario-baseline flag** that appeared. For each flag, look at the actual vs baseline values and write yourself a one-line classification: **improvement / lateral / regression**, with the mechanism.
+3. **MUST treat any large-magnitude diff as a candidate regression until proven otherwise.** Body-position deltas above ~1 m, FSM-state flips that swap surface/airborne states, end positions that are physically impossible (e.g. outside the surface bounds) are regressions until you can explain otherwise — not "the trajectory shifted slightly." Catch them yourself; do not surface to the user to triage.
+4. **MUST report findings to the user upfront** when surfacing work — list the per-scenario classifications and call out any regressions, BEFORE asking the user to look at anything in playback. The user reviews your classification, not raw flag counts.
+5. **MUST NOT `git commit` or `git push`** if any flag is unclassified or any regression is unaddressed. If the work needs to land mid-investigation, say so explicitly to the user and get their sign-off — do not just commit and hope.
+
+If any of the above feels like it would slow you down, run it anyway. The cost of running `npx vitest run` (≈3 s) is trivially less than the cost of the user discovering a regression you should have caught and re-establishing trust.
+
+User-articulated 2026-05-20 after I (Claude) repeatedly surfaced incomplete results, asked the user to validate piecemeal, and let regressions like "halfpipe body falls through cylinder" reach visual review when the end-state position vs baseline in vitest output made it obvious from the raw numbers. Catch your own mistakes.
+
 ### Before every batch of edits
 
 1. **Identify which baselines / scenarios will be touched.** If you can't list them, you don't understand the change's scope.
