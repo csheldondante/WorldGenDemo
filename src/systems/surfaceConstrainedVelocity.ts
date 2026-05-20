@@ -229,28 +229,50 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                   dirX /= dirMag;
                   dirY /= dirMag;
                   dirZ /= dirMag;
+                  // Profile origin = natural-integration prediction of where the
+                  // body would be at end of tick under semi-implicit Euler
+                  // (bodyPre + vel·dt). Per user 2026-05-20 — using the UV-
+                  // derived `sample + R · sample.normal` as the profile origin
+                  // could place it far from the body's actual position when UV-
+                  // integration crossed a cell boundary (sample.tangent
+                  // magnitudes flipped between cells, predicted body teleported
+                  // forward). Natural-integration prediction is continuous; the
+                  // disc-vs-profile collision check then resolves any constraint
+                  // violation in continuity with the body's prior motion.
+                  //
+                  // For non-corner ticks the legacy `sample + R · sample.normal`
+                  // body position is kept (= the bodyX/Y/Z defaults set above).
+                  // Only the corner override uses the natural-prediction-relative
+                  // position. Surgical scope: this commit changes ONLY where the
+                  // profile is built and where corner-override positions are
+                  // computed FROM, not what happens on non-corner ticks.
+                  const predX_nat = bodyPreX + vel.linear[0] * dt;
+                  const predY_nat = bodyPreY + vel.linear[1] * dt;
+                  const predZ_nat = bodyPreZ + vel.linear[2] * dt;
                   // Profile half-window 1.5·R covers the disc; step 0.25 m is
                   // smaller than the typical 1 m heightmap cell so cell-boundary
                   // corners are resolved.
                   const profileVerts = buildSurfaceProfile(
                     surface,
-                    bodyX, bodyY, bodyZ,
+                    predX_nat, predY_nat, predZ_nat,
                     dirX, dirY, dirZ,
                     Nupx, Nupy, Nupz,
                     radius * 1.5, 0.25,
                   );
-                  // Disc center candidate at profile (0, 0) = predicted body.
-                  // Surface samples are at y ≈ −R near s=0 (body is R "above"
-                  // surface along sample.normal).
+                  // Disc center candidate at profile (0, 0) = natural-prediction
+                  // body. Surface samples are at y ≈ −R near s=0 if body is
+                  // exactly R "above" surface along sample.normal; the actual
+                  // value depends on how far natural prediction drifted from the
+                  // surface.
                   const intersections = findCircleProfileIntersections(
                     0, 0, radius, profileVerts,
                   );
                   const res = resolveDiscContacts(intersections, profileVerts, radius);
                   if (res !== null && res.kind === "corner") {
-                    // Map (s, y) → world: world = bodyPred + s·dir + y·up.
-                    bodyX = bodyX + res.centerS * dirX + res.centerY * Nupx;
-                    bodyY = bodyY + res.centerS * dirY + res.centerY * Nupy;
-                    bodyZ = bodyZ + res.centerS * dirZ + res.centerY * Nupz;
+                    // Map (s, y) → world: world = naturalPredicted + s·dir + y·up.
+                    bodyX = predX_nat + res.centerS * dirX + res.centerY * Nupx;
+                    bodyY = predY_nat + res.centerS * dirY + res.centerY * Nupy;
+                    bodyZ = predZ_nat + res.centerS * dirZ + res.centerY * Nupz;
                     contactNx = res.normalS * dirX + res.normalY * Nupx;
                     contactNy = res.normalS * dirY + res.normalY * Nupy;
                     contactNz = res.normalS * dirZ + res.normalY * Nupz;
