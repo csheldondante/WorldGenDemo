@@ -189,6 +189,44 @@ function resolveTwo(
     return resolveTangent(a.s > b.s ? a : b, profile, R);
   }
 
+  // Convex-vs-concave discrimination. A disc rolling on a piecewise-linear
+  // profile can have multiple contacts ONLY on CONCAVE curves whose local
+  // radius of curvature is sharper than the disc radius R. Convex curves
+  // (curve bending away from the disc) geometrically support only a single
+  // contact; if findCircleProfileIntersections returned 2 chord points
+  // around a convex apex, that is a profile-sampling artifact (the disc
+  // has briefly penetrated the apex). The correct resolution is to treat
+  // it as a single tangent on the higher contact side, NOT to apply
+  // concave-circumcenter math. Departure FROM a convex surface (e.g.
+  // body launching off a hill peak at high tangent speed) is handled
+  // separately by characterController's centripetal-detach rule, not by
+  // this disc-collider.
+  //
+  // Sign convention: profile coords have `s` increasing left→right, disc
+  // up = +y. Segments are constructed in ascending-s order so segment
+  // direction has dx > 0. Cross product `segA.dir × segB.dir = segA.dx ·
+  // segB.dy − segA.dy · segB.dx`:
+  //   > 0 → counter-clockwise turn from A to B → CONCAVE (profile.y has
+  //         a local minimum at the vertex; body sits in the cup).
+  //   < 0 → clockwise turn from A to B → CONVEX (profile.y has a local
+  //         maximum at the vertex; body sits on the apex).
+  //   = 0 → collinear (degenerate; the near-parallel-normal check below
+  //         will catch it).
+  //
+  // See [[worldgen-demo-disc-collider-convex-vs-concave-2026-05-21]].
+  const segCross = segA.dx * segB.dy - segA.dy * segB.dx;
+  if (segCross < 0) {
+    // CONVEX configuration. Resolve as single tangent on the contact
+    // with the higher profile.y (= the apex side). The resolveTangent
+    // call places the disc R perpendicular to that segment at the
+    // contact, which is the geometrically correct disc-on-convex
+    // position. (Collinear segments — segCross = 0 — are handled by the
+    // near-parallel-normal check below, preserving the prior fallback-
+    // parallel behavior for them.)
+    const apex = a.y >= b.y ? a : b;
+    return resolveTangent(apex, profile, R);
+  }
+
   // Near-parallel rejection. When the two segments' outward normals are
   // nearly aligned (slope change < ~5°), the offset-line intersection is
   // numerically ill-conditioned: the determinant scales as sin(slope-

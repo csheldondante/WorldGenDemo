@@ -103,6 +103,39 @@ describe("resolveDiscContacts", () => {
     expect(res.centerY).toBeCloseTo(0.5, 6);
   });
 
+  it("two contacts on a CONVEX apex (hill peak from body's perspective) → single tangent, NOT corner", () => {
+    // Convex peak profile: surface rises to (0, 0) then falls. Body sits ABOVE
+    // the peak. In disc-collider semantics a disc on a convex curve has only
+    // ONE contact (geometrically can't touch two points on a curve bending
+    // AWAY from the disc). If `findCircleProfileIntersections` returns 2
+    // contacts here it's because the disc has briefly penetrated the apex
+    // vertex — sampling artifact. `resolveDiscContacts` must treat this as
+    // single-tangent (apex side), not as a concave corner. Convex departure
+    // is handled separately by the controller's centripetal-detach rule.
+    // See [[worldgen-demo-disc-collider-convex-vs-concave-2026-05-21]].
+    const profile: ProfileVertex[] = [
+      { s: -2, y: -1 },  // left foothill
+      { s: 0, y: 0 },    // PEAK (convex apex)
+      { s: 2, y: -1 },   // right foothill
+    ];
+    const R = 0.5;
+    // Two chord intersections symmetric around the apex — what would happen
+    // if the disc had penetrated the peak. seg 0 dx=2/√5, dy=1/√5; seg 1
+    // dx=2/√5, dy=-1/√5. segCross = (2/√5)·(-1/√5) - (1/√5)·(2/√5) = -4/5 < 0 → convex.
+    const a: ProfileIntersection = { s: -0.4, y: -0.2, segmentIndex: 0, t: 0.8 };
+    const b: ProfileIntersection = { s: 0.4, y: -0.2, segmentIndex: 1, t: 0.2 };
+    const res = resolveDiscContacts([a, b], profile, R)!;
+    // Must be tangent (single contact), NOT corner.
+    expect(res.kind).toBe("tangent");
+    // Center is at the higher contact + R · segment-normal. Both contacts
+    // have equal y (-0.2) so the tie goes to a (first). Segment 0 direction
+    // (2, 1)/√5, outward normal (rotated CCW, flipped to ny>0): (-1, 2)/√5.
+    // Center = (-0.4, -0.2) + 0.5 · (-1/√5, 2/√5).
+    const invSqrt5 = 1 / Math.sqrt(5);
+    expect(res.centerS).toBeCloseTo(-0.4 + 0.5 * -invSqrt5, 6);
+    expect(res.centerY).toBeCloseTo(-0.2 + 0.5 * 2 * invSqrt5, 6);
+  });
+
   it("3+ distinct contacts → reduces to the two extremes (smallest + largest s)", () => {
     const profile: ProfileVertex[] = [
       { s: -2, y: 0 },
