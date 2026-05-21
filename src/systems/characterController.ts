@@ -355,31 +355,37 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                     );
                   } else if (
                     ctrl.state === "surfaceSlide" &&
-                    tangentSpeed < profile.forwardAccel.vMax
+                    tangentSpeed < profile.forwardAccel.vMax * 1.05
                   ) {
-                    // Passive slide recovery: speed has dropped below vMax (the
-                    // limb-cycle limit) regardless of input. Friction or surface
-                    // drag has naturally slowed the body to within run capacity,
-                    // so FSM returns to surfaceRun.
+                    // Passive slide recovery — hysteresis above vMax.
                     //
-                    // Hysteresis is preserved by the asymmetric thresholds — entry
-                    // at 1.1·vMax (over-speed trigger above), exit at 1.0·vMax —
-                    // so the body must drop ~10% below the entry threshold to
-                    // recover, preventing rapid oscillation around vMax.
+                    // Entry threshold (overspeed trigger above): vF > 1.10·vMax.
+                    // Exit threshold (this branch):              vF < 1.05·vMax.
                     //
-                    // Previously this recovery required `intentNet > 0.5 &&
-                    // vAlongIntent > 0` (user actively pressing forward in the
-                    // direction of motion), which left an uncontrolled body
-                    // stuck sliding forever even after physics had normalized
-                    // its speed — user reported 2026-05-21: "the sphere still
-                    // slips going down the hill and continues to slip along the
-                    // plane." Per [[worldgen-demo-slip-criteria-2026-05-18]], the
-                    // physical condition for slide is speed > vMax; once
-                    // resolved, body should walk regardless of input.
+                    // BOTH thresholds sit above vMax, with 5% margin between
+                    // them — user-directed 2026-05-21 after diagnostic on
+                    // camera-hill-crest-extended showed the body decelerates
+                    // along the SHIFTED equilibrium (vDes = (40+aExF)/5 on
+                    // downhill), so it never drops cleanly below vMax until
+                    // the slope is essentially flat. With exit at vMax (1.0·)
+                    // the body would sit at exactly 8.00 m/s in slide forever;
+                    // with exit at 1.05·vMax it returns to surfaceRun while
+                    // still on the descent, before the long flat-ground tail.
+                    //
+                    // The shifted-vDes equilibrium behavior (forwardAccel curve
+                    // shifted by aExF, body cruising at the natural terminal
+                    // speed for the current slope) is preserved — this change
+                    // only moves where the FSM transitions in/out of slide.
+                    //
+                    // Per [[worldgen-demo-slip-criteria-2026-05-18]] +
+                    // [[worldgen-demo-6dof-curves-are-the-grip-mechanism]] —
+                    // the natural condition for slide is "speed exceeds the
+                    // limb-cycle cap." Once the speed is within ~5% of vMax
+                    // the limbs can keep up; body should be in surfaceRun.
                     setState(
                       ctrl,
                       "surfaceRun",
-                      `recover: tangentSpeed ${tangentSpeed.toFixed(2)} < ${profile.forwardAccel.vMax.toFixed(2)}`,
+                      `recover: tangentSpeed ${tangentSpeed.toFixed(2)} < ${(profile.forwardAccel.vMax * 1.05).toFixed(2)}`,
                       now,
                     );
                   } else if (ctrl.state === "surfaceRun" || ctrl.state === "surfaceSlide") {

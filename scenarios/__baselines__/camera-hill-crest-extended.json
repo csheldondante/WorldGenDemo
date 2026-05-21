@@ -98,6 +98,13 @@
             },
             {
               "from": "surfaceSlide",
+              "locomotion": "surfaceConstrained",
+              "reason": "recover: tangentSpeed 8.39 < 8.40",
+              "t": 6300,
+              "to": "surfaceRun"
+            },
+            {
+              "from": "surfaceRun",
               "locomotion": "volumeConstrained",
               "reason": "walked off edge",
               "t": 8683.333333333334,
