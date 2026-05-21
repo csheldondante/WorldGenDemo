@@ -16,6 +16,7 @@ import { test as cliffRunoff } from "./cliff-runoff";
 import { test as circleRunning } from "./circle-running";
 import { test as halfpipeAxisTraverse } from "./halfpipe-axis-traverse";
 import { test as cameraHillCrest } from "./camera-hill-crest";
+import { test as cameraHillCrestExtended } from "./camera-hill-crest-extended";
 import { test as cameraStareDown } from "./camera-stare-down";
 import { test as cylinderGalaxy } from "./cylinder-galaxy";
 import { test as sphereGalaxy } from "./sphere-galaxy";
@@ -32,6 +33,7 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [circleRunning.name]: circleRunning,
   [halfpipeAxisTraverse.name]: halfpipeAxisTraverse,
   [cameraHillCrest.name]: cameraHillCrest,
+  [cameraHillCrestExtended.name]: cameraHillCrestExtended,
   [cameraStareDown.name]: cameraStareDown,
   [cylinderGalaxy.name]: cylinderGalaxy,
   [sphereGalaxy.name]: sphereGalaxy,

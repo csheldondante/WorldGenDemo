@@ -113,6 +113,23 @@ Cross-cutting rules (apply across non-nested folders) live in `.claude/rules/`:
 
 ---
 
+## ⛔ MUST READ: testing framework discipline — `docs/unit_tests.md`
+
+Before writing, modifying, or debugging ANY test or per-tick
+diagnostic, you **MUST** read `docs/unit_tests.md` in full. It lists
+the ONE framework you may use (`src/app/bufferTest.ts` + scenarios +
+the `<System>DebugBuffer` pattern) and the FORBIDDEN patterns I
+(Claude) have repeatedly tried to reinvent under time pressure:
+hand-rolled per-tick trace scripts, `console.log` in production
+systems, module-level debug globals, ranged-baseline envelopes.
+
+If you find yourself thinking "I'll just write a quick diagnostic
+script that runs the systems in a `for` loop and reads buffers" —
+STOP. That's the forbidden pattern. Use a `BufferTest` scenario
+instead. The framework already covers what you want.
+
+@import docs/unit_tests.md
+
 ## MANDATORY: change discipline — baselines, diffs, justification
 
 This codebase has buffer-snapshot scenario baselines (`scenarios/__baselines__/*.json`) and ranged-baseline trajectory tests (`tests/systems/characterController.trajectory.test.ts`) for exactly one reason: **every change in computed quantity must be visible, explainable, and justified before you call a fix done.** The framework lets you flag changes pre-commit. Skipping it produces silent regressions and tech debt that compound.
