@@ -353,6 +353,35 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                       `over-speed: tangentSpeed ${tangentSpeed.toFixed(2)} > ${profile.forwardAccel.vMax.toFixed(2)}`,
                       now,
                     );
+                  } else if (
+                    ctrl.state === "surfaceSlide" &&
+                    tangentSpeed < profile.forwardAccel.vMax
+                  ) {
+                    // Passive slide recovery: speed has dropped below vMax (the
+                    // limb-cycle limit) regardless of input. Friction or surface
+                    // drag has naturally slowed the body to within run capacity,
+                    // so FSM returns to surfaceRun.
+                    //
+                    // Hysteresis is preserved by the asymmetric thresholds — entry
+                    // at 1.1·vMax (over-speed trigger above), exit at 1.0·vMax —
+                    // so the body must drop ~10% below the entry threshold to
+                    // recover, preventing rapid oscillation around vMax.
+                    //
+                    // Previously this recovery required `intentNet > 0.5 &&
+                    // vAlongIntent > 0` (user actively pressing forward in the
+                    // direction of motion), which left an uncontrolled body
+                    // stuck sliding forever even after physics had normalized
+                    // its speed — user reported 2026-05-21: "the sphere still
+                    // slips going down the hill and continues to slip along the
+                    // plane." Per [[worldgen-demo-slip-criteria-2026-05-18]], the
+                    // physical condition for slide is speed > vMax; once
+                    // resolved, body should walk regardless of input.
+                    setState(
+                      ctrl,
+                      "surfaceRun",
+                      `recover: tangentSpeed ${tangentSpeed.toFixed(2)} < ${profile.forwardAccel.vMax.toFixed(2)}`,
+                      now,
+                    );
                   } else if (ctrl.state === "surfaceRun" || ctrl.state === "surfaceSlide") {
                     // Backslide trigger: player is pressing in some direction AND
                     // velocity is in the opposing direction AND the max producible
@@ -391,21 +420,6 @@ export function createCharacterControllerSystem(): SystemDescriptor {
                           ctrl,
                           "surfaceSlide",
                           `backslide: intentNet ${intentNet.toFixed(2)} ≤ 0, vAlongIntent ${vAlongIntent.toFixed(2)}`,
-                          now,
-                        );
-                      } else if (
-                        intentNet > 0.5 &&
-                        vAlongIntent > 0 &&
-                        ctrl.state === "surfaceSlide" &&
-                        tangentSpeed < profile.forwardAccel.vMax
-                      ) {
-                        // Slide recovery: feet are back to producing positive net
-                        // accel in the intent direction AND velocity is going
-                        // with intent AND tangent speed is within run capacity.
-                        setState(
-                          ctrl,
-                          "surfaceRun",
-                          `recover: intentNet ${intentNet.toFixed(2)} > 0, vAlongIntent ${vAlongIntent.toFixed(2)}`,
                           now,
                         );
                       }
