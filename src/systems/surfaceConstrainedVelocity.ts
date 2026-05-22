@@ -28,6 +28,7 @@ import { assertDev } from "../runtime/dev";
 // import { buildSurfaceProfile } from "../world/surfaceProfile";
 // import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
 // import { resolveDiscContacts } from "../lib/math/discContact";
+// import { findTangentFootUV } from "../world/surfaceFootSolver";  // saved for future use (surface-to-surface transitions, variant A re-enable)
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
@@ -167,6 +168,18 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               let u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
               let v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
               let sample_new = surface.sampleAtUV(u_clamped, v_clamped);
+
+              // Step 4c: VARIANT A (closest-point Newton refinement of UV)
+              // — explored 2026-05-21, NOT INTEGRATED. Per user 2026-05-21
+              // the disc-corner override removal (commit b432216) was
+              // sufficient to fix the user-reported "snaps onto slope then
+              // wall" complaint. Variant A addressed a separate under-shoot
+              // (velocity·tangent advance lags natural 3D motion in high-
+              // curvature regions) that is not the surfaced problem. The
+              // solver helper at src/world/surfaceFootSolver.ts is kept
+              // standalone for the surface-to-surface transitions use case
+              // (find the tangent foot UV on a new surface when the body
+              // transfers contact).
 
               // Step 4b: disc-vs-profile multi-contact UV jump — DISABLED
               // 2026-05-21. The piecewise-linear profile's far-contact UV
