@@ -22,10 +22,12 @@ import {
 } from "../buffers/surfaceProvider";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { assertDev } from "../runtime/dev";
-import { HeightmapSurfaceProvider } from "../world/surfaceProvider";
-import { buildSurfaceProfile } from "../world/surfaceProfile";
-import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
-import { resolveDiscContacts } from "../lib/math/discContact";
+// Disc-multi-contact helpers retained for follow-up batches but unused while
+// step 4b's UV-jump path is disabled (see comment in execute() below).
+// import { HeightmapSurfaceProvider } from "../world/surfaceProvider";
+// import { buildSurfaceProfile } from "../world/surfaceProfile";
+// import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
+// import { resolveDiscContacts } from "../lib/math/discContact";
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
@@ -162,136 +164,69 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               if (surface.wrapsV()) v_raw = ((v_raw % 1) + 1) % 1;
 
               // Step 4: sample new UV (clamped only on non-wrapping axes for the actual sample call).
-              const u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
-              const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
-              const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
+              let u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
+              let v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
+              let sample_new = surface.sampleAtUV(u_clamped, v_clamped);
 
-              // Capture body's position BEFORE step 5 rewrites it. Used by Step
-              // 6b's energy-conservation rescale (work = a · Δr_body across the
-              // tick) when the disc-corner branch overrides position.
-              const bodyPreX = t.position[0];
-              const bodyPreY = t.position[1];
-              const bodyPreZ = t.position[2];
+              // Step 4b: disc-vs-profile multi-contact UV jump — DISABLED
+              // 2026-05-21. The piecewise-linear profile's far-contact UV
+              // does not in practice satisfy the user's tangency invariant
+              // (body xyz invariant across the jump) on our smooth bilinear
+              // surface — the 0.25 m profile sampling produces multi-contact
+              // detections whose "far UV" places the body at sample(far) +
+              // R·N(far) ≠ pre-jump body xyz, which IS a teleport.
+              //
+              // The visible "snap onto the wall" is the projection-induced
+              // velocity DIE across the rapid normal-frame rotation in the
+              // high-curvature slope→wall region (each tick step 6 drops the
+              // spurious vN that comes from the rotating frame, removing
+              // tangent speed). Addressed below by switching step 6 to a
+              // velocity-magnitude-preserving rotate (configured via
+              // profile.cornerTransferEfficiency) UNCONDITIONALLY — the
+              // efficiency factor itself is the per-character "agility" knob.
+              //
+              // Multi-contact detection imports (buildSurfaceProfile,
+              // findCircleProfileIntersections, resolveDiscContacts,
+              // HeightmapSurfaceProvider) are left in place in case a
+              // follow-up batch re-enables true-tangency disc resolution.
 
-              // Step 5: world position = new surface point + radius along new normal.
-              // Default = legacy sphere offset. Step 5b below MAY override this when
-              // the disc-vs-profile collision detects a real concave heightmap corner.
-              let bodyX = sample_new.position[0] + sample_new.normal[0] * radius;
-              let bodyY = sample_new.position[1] + sample_new.normal[1] * radius;
-              let bodyZ = sample_new.position[2] + sample_new.normal[2] * radius;
-              // Contact normal used by step 6's velocity projection. Defaults to
-              // sample.normal; Step 5b may override with the disc-bisector normal
-              // for the concave-corner case.
-              let contactNx = sample_new.normal[0];
-              let contactNy = sample_new.normal[1];
-              let contactNz = sample_new.normal[2];
-              // Set by Step 5b when the disc-corner branch fires; consumed by Step
-              // 6b to gate the energy-conservation rescale.
-              let cornerFired = false;
-
-              // Step 5b: disc-vs-profile concave-corner check (heightmap only).
-              //
-              // Model the body as a disc of radius R in the velocity plane spanned
-              // by (vel_horizontal, sample.normal). On a heightmap, cell-boundary
-              // kinks can produce a real concave corner — the legacy `sample + R·N`
-              // teleports the body across the kink because sample.normal flips
-              // between cells. The disc-resolution finds 2 contacts on different
-              // segments and computes the disc-tucked center (circumcenter of the
-              // two offset lines).
-              //
-              // Surgical scope per the 2026-05-20 plan:
-              //   - Heightmap surfaces only (parametric surfaces are smooth, the
-              //     analytical `sample + R·sample.normal` is exact there).
-              //   - Override position ONLY for res.kind === "corner" — a REAL
-              //     slope-change above the near-parallel rejection threshold (~5°).
-              //     Smooth surface kinds (tangent / fallback-parallel / pop-out)
-              //     keep the legacy derivation; the piecewise-linear segment
-              //     normal would otherwise drift ~mm/tick from the analytical
-              //     bilinear-gradient normal and accumulate.
-              //
-              // Convex corners are not handled here — the controller's centripetal-
-              // detach rule already triggers airborne FSM transitions for those.
-              if (surface instanceof HeightmapSurfaceProvider) {
-                const Nupx = sample_new.normal[0];
-                const Nupy = sample_new.normal[1];
-                const Nupz = sample_new.normal[2];
-                // Velocity-plane horizontal direction = velocity projected onto
-                // sample's tangent plane, normalized.
-                let dirX = vel.linear[0];
-                let dirY = vel.linear[1];
-                let dirZ = vel.linear[2];
-                const vDotN = dirX * Nupx + dirY * Nupy + dirZ * Nupz;
-                dirX -= vDotN * Nupx;
-                dirY -= vDotN * Nupy;
-                dirZ -= vDotN * Nupz;
-                const dirMag = Math.hypot(dirX, dirY, dirZ);
-                if (dirMag > 1e-4) {
-                  dirX /= dirMag;
-                  dirY /= dirMag;
-                  dirZ /= dirMag;
-                  // Profile origin = natural-integration prediction of where the
-                  // body would be at end of tick under semi-implicit Euler
-                  // (bodyPre + vel·dt). Per user 2026-05-20 — using the UV-
-                  // derived `sample + R · sample.normal` as the profile origin
-                  // could place it far from the body's actual position when UV-
-                  // integration crossed a cell boundary (sample.tangent
-                  // magnitudes flipped between cells, predicted body teleported
-                  // forward). Natural-integration prediction is continuous; the
-                  // disc-vs-profile collision check then resolves any constraint
-                  // violation in continuity with the body's prior motion.
-                  //
-                  // For non-corner ticks the legacy `sample + R · sample.normal`
-                  // body position is kept (= the bodyX/Y/Z defaults set above).
-                  // Only the corner override uses the natural-prediction-relative
-                  // position. Surgical scope: this commit changes ONLY where the
-                  // profile is built and where corner-override positions are
-                  // computed FROM, not what happens on non-corner ticks.
-                  const predX_nat = bodyPreX + vel.linear[0] * dt;
-                  const predY_nat = bodyPreY + vel.linear[1] * dt;
-                  const predZ_nat = bodyPreZ + vel.linear[2] * dt;
-                  // Profile half-window 1.5·R covers the disc; step 0.25 m is
-                  // smaller than the typical 1 m heightmap cell so cell-boundary
-                  // corners are resolved.
-                  const profileVerts = buildSurfaceProfile(
-                    surface,
-                    predX_nat, predY_nat, predZ_nat,
-                    dirX, dirY, dirZ,
-                    Nupx, Nupy, Nupz,
-                    radius * 1.5, 0.25,
-                  );
-                  // Disc center candidate at profile (0, 0) = natural-prediction
-                  // body. Surface samples are at y ≈ −R near s=0 if body is
-                  // exactly R "above" surface along sample.normal; the actual
-                  // value depends on how far natural prediction drifted from the
-                  // surface.
-                  const intersections = findCircleProfileIntersections(
-                    0, 0, radius, profileVerts,
-                  );
-                  const res = resolveDiscContacts(intersections, profileVerts, radius);
-                  if (res !== null && res.kind === "corner") {
-                    // Map (s, y) → world: world = naturalPredicted + s·dir + y·up.
-                    bodyX = predX_nat + res.centerS * dirX + res.centerY * Nupx;
-                    bodyY = predY_nat + res.centerS * dirY + res.centerY * Nupy;
-                    bodyZ = predZ_nat + res.centerS * dirZ + res.centerY * Nupz;
-                    contactNx = res.normalS * dirX + res.normalY * Nupx;
-                    contactNy = res.normalS * dirY + res.normalY * Nupy;
-                    contactNz = res.normalS * dirZ + res.normalY * Nupz;
-                    cornerFired = true;
-                  }
-                }
-              }
+              // Step 5: world position = sample_new + radius along sample_new.normal.
+              // sample_new may be the original UV-integration sample OR the
+              // jumped-to far-contact sample (step 4b). By the multi-contact
+              // tangency invariant, this is the disc center either way — no
+              // override branch, no energy rescale, no teleport.
+              const bodyX = sample_new.position[0] + sample_new.normal[0] * radius;
+              const bodyY = sample_new.position[1] + sample_new.normal[1] * radius;
+              const bodyZ = sample_new.position[2] + sample_new.normal[2] * radius;
               t.position[0] = bodyX;
               t.position[1] = bodyY;
               t.position[2] = bodyZ;
               transforms.byEntity.set(id, t);
 
-              // Step 6: project world velocity onto the contact normal (drop the
-              // component along it — the surface absorbs it as a constraint reaction).
-              // contactN comes from step 5: sample.normal by default, or the disc-
-              // resolution bisector normal for corner-kind overrides.
-              const Nnx = contactNx;
-              const Nny = contactNy;
-              const Nnz = contactNz;
+              // Step 6: project world velocity onto sample_new.normal (drop
+              // the component along it — surface absorbs it as a constraint
+              // reaction).
+              //
+              // A previous experiment 2026-05-21 made this a magnitude-
+              // preserving rotation (scaled by profile.cornerTransferEfficiency)
+              // to satisfy the user's "forward velocity translates into up at
+              // the wall" intent, applied UNCONDITIONALLY. That implementation
+              // injected energy on every tick of a smooth climb: gravity adds
+              // a downward vel component in step 1, which the magnitude-
+              // preserving rotation then re-cast as additional tangent speed,
+              // letting the body gain potential energy without paying out
+              // kinetic energy. Reverted to drop-normal.
+              //
+              // The "velocity dies at the wall" problem remains — speed
+              // decays per-tick as the tangent frame rotates through the
+              // high-curvature slope→wall region. The right fix needs
+              // corner-event detection (rotate magnitude ONLY at the corner
+              // moment, not every tick). The cornerTransferEfficiency profile
+              // field is left in place for that follow-up; it is currently
+              // unused by this code.
+              const Nnx = sample_new.normal[0];
+              const Nny = sample_new.normal[1];
+              const Nnz = sample_new.normal[2];
               const vNnew =
                 vel.linear[0] * Nnx +
                 vel.linear[1] * Nny +
@@ -299,68 +234,14 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               vel.linear[0] -= vNnew * Nnx;
               vel.linear[1] -= vNnew * Nny;
               vel.linear[2] -= vNnew * Nnz;
+              void profile.cornerTransferEfficiency;  // suppress unused-field warning
 
-              // Step 6b: energy conservation across the disc-corner UV jump.
-              //
-              // When Step 5b's corner branch fires, the body's position is moved
-              // discontinuously from the legacy `sample + R·sample.normal` to the
-              // disc-circumcenter. That position change isn't backed by gravity's
-              // work over dt — the body teleported. Without compensation, total
-              // mechanical energy (KE + work_by_external_forces · position)
-              // drifts each time a corner fires.
-              //
-              // Work-energy theorem with the accumulator's total force F treated
-              // as constant over the tick (per user 2026-05-20):
-              //   KE_post = KE_pre + F · Δr_body
-              // where:
-              //   KE_pre  = 0.5 · |vel.prevLinear|² (start-of-tick KE)
-              //   F       = accumulator.accel for this tick (gravity + thrust +
-              //             friction + any constant volume fields — all of them
-              //             contribute to PE work)
-              //   Δr_body = body_after - body_before (this tick's full body
-              //             displacement, including the corner override)
-              //
-              // Rescale the post-step-6 velocity (= tangent-projected) to produce
-              // the target KE, preserving direction. If KE_post ≤ 0 the body
-              // didn't have the kinetic budget for the corner-induced height gain
-              // — stall: zero velocity, FSM reacts next tick.
-              //
-              // Applied ONLY when cornerFired === true. For non-corner ticks the
-              // natural integration's energy bookkeeping (step 1 + step 6) is
-              // already correct — applying the rescale unconditionally would
-              // introduce discretization drift over time on long straight-line
-              // motion. Verified by trying it during the first attempt at this
-              // disc-collider work (saw ~0.345 m position drift on flat-plane-
-              // forward over 180 ticks); gating to corner ticks only kept flat
-              // scenarios at baseline.
-              if (cornerFired && a) {
-                const kePre =
-                  0.5 *
-                  (vel.prevLinear[0] * vel.prevLinear[0] +
-                   vel.prevLinear[1] * vel.prevLinear[1] +
-                   vel.prevLinear[2] * vel.prevLinear[2]);
-                const work =
-                  a.accel[0] * (bodyX - bodyPreX) +
-                  a.accel[1] * (bodyY - bodyPreY) +
-                  a.accel[2] * (bodyZ - bodyPreZ);
-                const kePost = kePre + work;
-                if (kePost <= 0) {
-                  vel.linear[0] = 0;
-                  vel.linear[1] = 0;
-                  vel.linear[2] = 0;
-                } else {
-                  const vMag = Math.hypot(
-                    vel.linear[0], vel.linear[1], vel.linear[2],
-                  );
-                  if (vMag > 1e-9) {
-                    const targetMag = Math.sqrt(2 * kePost);
-                    const scale = targetMag / vMag;
-                    vel.linear[0] *= scale;
-                    vel.linear[1] *= scale;
-                    vel.linear[2] *= scale;
-                  }
-                }
-              }
+              // Step 6b: energy-conservation rescale — REMOVED 2026-05-21.
+              // The rescale existed to compensate for the (now-removed)
+              // circumcenter xyz override. With body xyz invariant across the
+              // multi-contact UV jump (by the tangency invariant), there is
+              // no teleport to compensate for and KE is preserved by step 1
+              // (accumulator integration) + step 6 (tangent projection).
 
               // Step 7 (DISABLED — bug audit 2026-05-19): the previous rescale-to-
               // speedTarget step preserved the wrong invariant. `speedTarget` is
