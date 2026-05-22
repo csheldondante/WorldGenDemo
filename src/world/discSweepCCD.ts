@@ -213,6 +213,10 @@ export interface IterativeSweepResult {
   velY: number;
   /** Number of segment-contact transitions taken (0 = smooth roll). */
   transitions: number;
+  /** Index of the segment the disc is tangent to at the end of the
+   *  iteration. Smooth-roll: same as `initialContactSegmentIndex`. After
+   *  one or more transitions: the last segment the disc rolled onto. */
+  finalSegmentIndex: number;
   /** True if maxIterations was hit without consuming all dt. Caller should
    *  treat this as a bug. */
   hitIterationCap: boolean;
@@ -241,13 +245,13 @@ export function iterateDiscSweep(
     const sweepVy = vy * remaining;
     const sweepLen = Math.hypot(sweepVs, sweepVy);
     if (sweepLen < TAU_EPS) {
-      return { centerS: cs, centerY: cy, velS: vs, velY: vy, transitions, hitIterationCap: false };
+      return { centerS: cs, centerY: cy, velS: vs, velY: vy, transitions, finalSegmentIndex: skipSegmentIndex, hitIterationCap: false };
     }
     const hit = sweepDiscAgainstProfile(cs, cy, sweepVs, sweepVy, R, profile, skipSegmentIndex);
     if (hit === null) {
       cs += sweepVs;
       cy += sweepVy;
-      return { centerS: cs, centerY: cy, velS: vs, velY: vy, transitions, hitIterationCap: false };
+      return { centerS: cs, centerY: cy, velS: vs, velY: vy, transitions, finalSegmentIndex: skipSegmentIndex, hitIterationCap: false };
     }
     cs = hit.centerS;
     cy = hit.centerY;
@@ -261,7 +265,7 @@ export function iterateDiscSweep(
     transitions++;
     skipSegmentIndex = hit.segmentIndex;
   }
-  return { centerS: cs, centerY: cy, velS: vs, velY: vy, transitions, hitIterationCap: true };
+  return { centerS: cs, centerY: cy, velS: vs, velY: vy, transitions, finalSegmentIndex: skipSegmentIndex, hitIterationCap: true };
 }
 
 /**

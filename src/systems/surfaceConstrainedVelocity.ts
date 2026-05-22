@@ -154,12 +154,8 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               t.position[2] = sample_new.position[2] + sample_new.normal[2] * radius;
               transforms.byEntity.set(id, t);
 
-              // Step 5: project world velocity onto sample_new.normal (drop the
-              // component along it — surface absorbs it as a constraint
-              // reaction). The drop-normal projection is the smooth-roll case;
-              // multi-contact corner transitions where velocity-magnitude
-              // should be preserved (profile.cornerTransferEfficiency) require
-              // disc-vs-segment CCD and are not yet implemented.
+              // Step 5: drop the velocity component along sample_new.normal
+              // (surface absorbs it as a constraint reaction).
               const vNnew =
                 vel.linear[0] * sample_new.normal[0] +
                 vel.linear[1] * sample_new.normal[1] +
