@@ -132,14 +132,6 @@ export interface CharacterControllerProfile {
   landingSnapMeters: number;
   /** Player sphere radius, also used for surface offset. */
   bodyRadius: number;
-  /**
-   * Velocity-transfer efficiency at a disc-corner UV jump (multi-contact
-   * curvature transition). The body's pre-jump speed magnitude is preserved
-   * in the new tangent direction times this factor. 1.0 = lossless transfer
-   * (agile character — forward motion onto a slope or wall converts fully
-   * into up-along-the-new-surface motion). <1.0 = inelastic transfer (less
-   * agile — some energy lost at the corner). Default 1.0. */
-  cornerTransferEfficiency: number;
 
   // --- Orientation / turning -------------------------------------------------
   // Mirrors the linear-motion phases (desired velocity → required accel →
@@ -297,7 +289,6 @@ export const DEFAULT_PLAYER_PROFILE: CharacterControllerProfile = {
   slopeStandMaxRad: 0.7, // ~40 degrees
   landingSnapMeters: 0.4,
   bodyRadius: 0.5,
-  cornerTransferEfficiency: 1.0, // lossless — forward motion converts fully to up-the-wall at corners.
   desiredTurnRate: 6,         // rad/s — ~344°/s; can do a 180° in ~0.55s once at speed.
   turnAccelMax: 40,           // rad/s² — reaches max turn rate in 0.15s.
   turnPGain: 8,               // rad/s per rad offset; saturates to desiredTurnRate at ~0.75 rad (43°).
