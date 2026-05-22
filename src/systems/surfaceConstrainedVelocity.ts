@@ -22,47 +22,29 @@ import {
 } from "../buffers/surfaceProvider";
 import { CHARACTER_CONTROLLER_SYSTEM_ID } from "./characterController";
 import { assertDev } from "../runtime/dev";
-// Disc-multi-contact helpers retained for follow-up batches but unused while
-// step 4b's UV-jump path is disabled (see comment in execute() below).
-// import { HeightmapSurfaceProvider } from "../world/surfaceProvider";
-// import { buildSurfaceProfile } from "../world/surfaceProfile";
-// import { findCircleProfileIntersections } from "../lib/math/wheelIntersect";
-// import { resolveDiscContacts } from "../lib/math/discContact";
-// import { findTangentFootUV } from "../world/surfaceFootSolver";  // saved for future use (surface-to-surface transitions, variant A re-enable)
 
 export const SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID = "surfaceConstrainedVelocitySystem";
 
 /**
  * UV-space integration for surface-attached characters.
  *
- * Replaces the prior "XYZ semi-implicit Euler then snap back to surface" pattern with a
- * single UV-space integration step that keeps the body geometrically on the surface at
- * all times. The world position is DERIVED from the new UV each tick (sample + radius·N);
- * world velocity is RECONSTRUCTED from UV velocity using the new tangent frame.
+ * The body is constrained to the surface — its world position is always derived from
+ * `sample(uv) + radius · sample(uv).normal` each tick. Velocity is in world XYZ but
+ * advanced in UV space via the tangent-frame projection, which keeps the body's normal
+ * velocity component implicitly zero.
  *
- * Per-tick math (per the surface-frame-physics-solver wiki article):
- *   1. Project current world velocity onto sample tangents → UV-parameter velocity
- *      (divide by tangent magnitudes |∂P/∂u|, |∂P/∂v|).
- *   2. Project accumulator accel onto the same tangents → UV-parameter acceleration.
- *   3. Semi-implicit Euler in UV: uvel += auv·dt; uv += uvel·dt.
- *   4. Sample the surface at the new UV: get new world position and new tangent frame.
- *   5. World position = newSample.position + radius·newSample.normal (body offset along
- *      the new surface normal — works for any surface orientation).
- *   6. World velocity reconstructed from UV velocity × new tangent magnitudes × new
- *      tangents. The body's vN is implicitly zero — the constraint is exact.
- *
- * The normal component of the accumulator (gravity-into-surface, etc.) is dropped during
- * the tangent projection in step 2 — that's the constraint at work. No surface-reaction
- * force needed: the body is rigidly on the surface, and the controller's leave rule
- * decides separately when to detach.
- *
- * If the integrated UV crosses [0, 1] (character walks off the edge), this system flags
- * the attachment with `outOfBounds = true` by leaving the UV un-clamped and writing the
- * sample at the clamped UV. `SurfaceConstraintSystem` detects this and transitions to
- * airborne.
- *
- * Compared to B.2: same buffer access except we add SurfaceProviderBuffer (read for
- * sampleAtUV) and SurfaceAttachmentBuffer (readwrite for the UV update).
+ * Per-tick math:
+ *   1. Integrate world velocity: vel += accumulator.accel · dt.
+ *   2. Advance UV via velocity projected onto sample.tangent / |tangent| · dt.
+ *      Closed surfaces wrap; open surfaces are clamped (out-of-bounds detected by
+ *      `surfaceConstraintSystem` via the un-clamped UV).
+ *   3. Sample the surface at the new UV → new world position + tangent frame.
+ *   4. World position = sample_new.position + radius · sample_new.normal.
+ *   5. Drop velocity's normal component along sample_new.normal (smooth-roll
+ *      constraint reaction). Multi-contact corner velocity transfer
+ *      (`profile.cornerTransferEfficiency`, magnitude-preserving rotation onto the
+ *      new contact's tangent) is a separate path — disc-vs-segment CCD against the
+ *      piecewise-linear profile in the velocity plane — not yet implemented.
  */
 export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
   return {
@@ -140,10 +122,7 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
                 vel.linear[2] += a.accel[2] * dt;
               }
 
-              // Step 2: capture post-acceleration speed (energy anchor).
-              const speedTarget = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
-
-              // Step 3: advance UV from the world velocity projected onto current
+              // Step 2: advance UV from world velocity projected onto current
               // sample's tangent UNIT vectors, divided by tangent magnitudes.
               const safeTU = sample.tangentUNorm > 0 ? sample.tangentUNorm : 1;
               const safeTV = sample.tangentVNorm > 0 ? sample.tangentVNorm : 1;
@@ -164,119 +143,30 @@ export function createSurfaceConstrainedVelocitySystem(): SystemDescriptor {
               if (surface.wrapsU()) u_raw = ((u_raw % 1) + 1) % 1;
               if (surface.wrapsV()) v_raw = ((v_raw % 1) + 1) % 1;
 
-              // Step 4: sample new UV (clamped only on non-wrapping axes for the actual sample call).
-              let u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
-              let v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
-              let sample_new = surface.sampleAtUV(u_clamped, v_clamped);
+              // Step 3: sample new UV (clamped only on non-wrapping axes).
+              const u_clamped = surface.wrapsU() ? u_raw : Math.max(0, Math.min(1, u_raw));
+              const v_clamped = surface.wrapsV() ? v_raw : Math.max(0, Math.min(1, v_raw));
+              const sample_new = surface.sampleAtUV(u_clamped, v_clamped);
 
-              // Step 4c: VARIANT A (closest-point Newton refinement of UV)
-              // — explored 2026-05-21, NOT INTEGRATED. Per user 2026-05-21
-              // the disc-corner override removal (commit b432216) was
-              // sufficient to fix the user-reported "snaps onto slope then
-              // wall" complaint. Variant A addressed a separate under-shoot
-              // (velocity·tangent advance lags natural 3D motion in high-
-              // curvature regions) that is not the surfaced problem. The
-              // solver helper at src/world/surfaceFootSolver.ts is kept
-              // standalone for the surface-to-surface transitions use case
-              // (find the tangent foot UV on a new surface when the body
-              // transfers contact).
-
-              // Step 4b: disc-vs-profile multi-contact UV jump — DISABLED
-              // 2026-05-21. The piecewise-linear profile's far-contact UV
-              // does not in practice satisfy the user's tangency invariant
-              // (body xyz invariant across the jump) on our smooth bilinear
-              // surface — the 0.25 m profile sampling produces multi-contact
-              // detections whose "far UV" places the body at sample(far) +
-              // R·N(far) ≠ pre-jump body xyz, which IS a teleport.
-              //
-              // The visible "snap onto the wall" is the projection-induced
-              // velocity DIE across the rapid normal-frame rotation in the
-              // high-curvature slope→wall region (each tick step 6 drops the
-              // spurious vN that comes from the rotating frame, removing
-              // tangent speed). Addressed below by switching step 6 to a
-              // velocity-magnitude-preserving rotate (configured via
-              // profile.cornerTransferEfficiency) UNCONDITIONALLY — the
-              // efficiency factor itself is the per-character "agility" knob.
-              //
-              // Multi-contact detection imports (buildSurfaceProfile,
-              // findCircleProfileIntersections, resolveDiscContacts,
-              // HeightmapSurfaceProvider) are left in place in case a
-              // follow-up batch re-enables true-tangency disc resolution.
-
-              // Step 5: world position = sample_new + radius along sample_new.normal.
-              // sample_new may be the original UV-integration sample OR the
-              // jumped-to far-contact sample (step 4b). By the multi-contact
-              // tangency invariant, this is the disc center either way — no
-              // override branch, no energy rescale, no teleport.
-              const bodyX = sample_new.position[0] + sample_new.normal[0] * radius;
-              const bodyY = sample_new.position[1] + sample_new.normal[1] * radius;
-              const bodyZ = sample_new.position[2] + sample_new.normal[2] * radius;
-              t.position[0] = bodyX;
-              t.position[1] = bodyY;
-              t.position[2] = bodyZ;
+              // Step 4: world position = sample_new + R · sample_new.normal.
+              t.position[0] = sample_new.position[0] + sample_new.normal[0] * radius;
+              t.position[1] = sample_new.position[1] + sample_new.normal[1] * radius;
+              t.position[2] = sample_new.position[2] + sample_new.normal[2] * radius;
               transforms.byEntity.set(id, t);
 
-              // Step 6: project world velocity onto sample_new.normal (drop
-              // the component along it — surface absorbs it as a constraint
-              // reaction).
-              //
-              // A previous experiment 2026-05-21 made this a magnitude-
-              // preserving rotation (scaled by profile.cornerTransferEfficiency)
-              // to satisfy the user's "forward velocity translates into up at
-              // the wall" intent, applied UNCONDITIONALLY. That implementation
-              // injected energy on every tick of a smooth climb: gravity adds
-              // a downward vel component in step 1, which the magnitude-
-              // preserving rotation then re-cast as additional tangent speed,
-              // letting the body gain potential energy without paying out
-              // kinetic energy. Reverted to drop-normal.
-              //
-              // The "velocity dies at the wall" problem remains — speed
-              // decays per-tick as the tangent frame rotates through the
-              // high-curvature slope→wall region. The right fix needs
-              // corner-event detection (rotate magnitude ONLY at the corner
-              // moment, not every tick). The cornerTransferEfficiency profile
-              // field is left in place for that follow-up; it is currently
-              // unused by this code.
-              const Nnx = sample_new.normal[0];
-              const Nny = sample_new.normal[1];
-              const Nnz = sample_new.normal[2];
+              // Step 5: project world velocity onto sample_new.normal (drop the
+              // component along it — surface absorbs it as a constraint
+              // reaction). The drop-normal projection is the smooth-roll case;
+              // multi-contact corner transitions where velocity-magnitude
+              // should be preserved (profile.cornerTransferEfficiency) require
+              // disc-vs-segment CCD and are not yet implemented.
               const vNnew =
-                vel.linear[0] * Nnx +
-                vel.linear[1] * Nny +
-                vel.linear[2] * Nnz;
-              vel.linear[0] -= vNnew * Nnx;
-              vel.linear[1] -= vNnew * Nny;
-              vel.linear[2] -= vNnew * Nnz;
-              void profile.cornerTransferEfficiency;  // suppress unused-field warning
-
-              // Step 6b: energy-conservation rescale — REMOVED 2026-05-21.
-              // The rescale existed to compensate for the (now-removed)
-              // circumcenter xyz override. With body xyz invariant across the
-              // multi-contact UV jump (by the tangency invariant), there is
-              // no teleport to compensate for and KE is preserved by step 1
-              // (accumulator integration) + step 6 (tangent projection).
-
-              // Step 7 (DISABLED — bug audit 2026-05-19): the previous rescale-to-
-              // speedTarget step preserved the wrong invariant. `speedTarget` is
-              // captured AFTER step 1's accumulator integration, which includes any
-              // normal-direction accel that step 6 will then absorb into the
-              // constraint. Rescaling tangent magnitude to recover that "lost" speed
-              // converts absorbed-normal-kinetic into tangent kinetic energy — same
-              // conceptual leak as the aSurfaceN-in-accumulator bug, smaller magnitude.
-              // Test before/after: if removing this step (a) eliminates the residual
-              // visible stutter on climb-tall-wall and (b) doesn't measurably slow the
-              // body on smooth curved surfaces (camera-hill-crest, gym-cylinder), the
-              // rescale is the wrong invariant and should be permanently removed or
-              // reworked. See audit note in the conversation log.
-              //
-              // const speedProj = Math.hypot(vel.linear[0], vel.linear[1], vel.linear[2]);
-              // if (speedProj > 1e-9) {
-              //   const scale = speedTarget / speedProj;
-              //   vel.linear[0] *= scale;
-              //   vel.linear[1] *= scale;
-              //   vel.linear[2] *= scale;
-              // }
-              void speedTarget;  // suppress unused-var warning while step 7 is disabled
+                vel.linear[0] * sample_new.normal[0] +
+                vel.linear[1] * sample_new.normal[1] +
+                vel.linear[2] * sample_new.normal[2];
+              vel.linear[0] -= vNnew * sample_new.normal[0];
+              vel.linear[1] -= vNnew * sample_new.normal[1];
+              vel.linear[2] -= vNnew * sample_new.normal[2];
               vels.byEntity.set(id, vel);
 
               // Store un-clamped UV so surfaceConstraint can detect "walked off edge";
