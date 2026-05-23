@@ -32,6 +32,7 @@ import { createSkeletonBuffer } from "./skeleton";
 import { createFootLockBuffer } from "./footLock";
 import { createColliderBuffer } from "./collider";
 import { createCollisionEventsBuffer } from "./collisionEvents";
+import { createControllerParamsBuffer } from "../runtime/controllerParams";
 
 export function registerCoreBuffers(reg: Registry): void {
   // Runtime
@@ -65,6 +66,12 @@ export function registerCoreBuffers(reg: Registry): void {
   reg.registerBuffer(createFootLockBuffer());
   reg.registerBuffer(createColliderBuffer());
   reg.registerBuffer(createCollisionEventsBuffer());
+  // Phase 5b — controllerParams is read by tangentInputMapperSystem
+  // (= a core character system), so it MUST be a core buffer; otherwise
+  // every test that registers character systems would need to also
+  // register it. Default state is `{ bindingId: "", bySlot: {} }` =
+  // multipliers fall back to 1.0 (pre-5b behavior).
+  reg.registerBuffer(createControllerParamsBuffer());
 }
 
 export * from "./input";

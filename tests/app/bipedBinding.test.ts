@@ -3,6 +3,7 @@ import { createRegistry } from "../../src/runtime/registry";
 import { registerCoreBuffers } from "../../src/buffers";
 import { registerCoreSystems } from "../../src/systems";
 import { buildAndRegisterCoreGraphs, RUNNING_GRAPH_ID } from "../../src/app/graphs";
+import { registerInfrastructureSystems } from "../../src/runtime/infrastructureSystems";
 import {
   registerBipedDefaultBinding,
   bipedDefaultSystemIds,
@@ -40,6 +41,7 @@ describe("Biped default binding", () => {
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
+    registerInfrastructureSystems(reg);
     buildAndRegisterCoreGraphs(reg);
     const result = registerBipedDefaultBinding(reg);
     return { reg, ...result };
@@ -101,10 +103,12 @@ describe("Biped default binding", () => {
     // binding may need to grow (= a new character system) or that a
     // new runtime/render system was added (= update the expected set).
     expect(notInBiped.sort()).toEqual([
+      "bindingSwapSystem",
       "debugGizmoSystem",
       "hudSystem",
       "inputRecordingSystem",
       "minimapSystem",
+      "overlayVisibilitySystem",
       "renderSystem",
       "stateMachineSystem",
     ]);

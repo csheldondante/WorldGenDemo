@@ -5,7 +5,6 @@ import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/ren
 import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
 import type { RuntimeEvent } from "../runtime/stateMachine";
 import type { ControllerBinding } from "../runtime/moduleSlots";
-import { applyControllerBinding } from "../runtime/controllerParams";
 import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { BUILDER_BUFFER_ID, type BuilderBufferData } from "../buffers/builder";
@@ -13,12 +12,11 @@ import {
   attachInputListeners,
   createAccumulator,
   createInputSystem,
-  type InputAccumulator,
 } from "../systems/input";
 import { attachBuilderListeners } from "../systems/builderInput";
-import { resetInputRecording, type InputRecordingState } from "../systems/testing/inputRecording";
+import { type InputRecordingState } from "../systems/testing/inputRecording";
+import { createInputSourceSelectorSystem } from "../systems/inputSourceSelector";
 import type { Registry } from "../runtime/registry";
-import type { SystemDescriptor } from "../runtime/system";
 import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
 import { bootstrapApp } from "./bootstrap";
@@ -29,7 +27,8 @@ export interface WorldOptions {
   hudEl: HTMLElement;
   hintEl: HTMLElement;
   panelEl: HTMLElement;
-  /** Optional builder panel — wired up if present so tab clicks can switch modes. */
+  /** Optional builder panel — wired up if present so the mode dropdown can
+   *  swap to it. Mapped to the "Builder" mode id in the panels registry. */
   builderPanelEl?: HTMLElement;
 }
 
@@ -50,8 +49,10 @@ export function startWorld(opts: WorldOptions): WorldHandle {
   //    mode is active. Hidden by default; mode-cycling UI toggles visibility.
   const libraryViewerPanel = document.createElement("div");
   libraryViewerPanel.id = "library-viewer-panel";
+  // Attached to body (not opts.panelEl) so it overlays correctly
+  // regardless of which DOM panel (.world or .builder) is active.
   libraryViewerPanel.style.cssText = [
-    "position:absolute",
+    "position:fixed",
     "top:48px",
     "left:8px",
     "right:8px",
@@ -66,7 +67,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     "z-index:60",
     "display:none",
   ].join(";");
-  opts.panelEl.appendChild(libraryViewerPanel);
+  document.body.appendChild(libraryViewerPanel);
 
   // 2. Configurable runtime bootstrap (same factory the scenario harness uses
   //    in --play mode). Wires registry + core buffers/systems/graphs + Three.js
@@ -116,18 +117,25 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     });
   }
 
-  // 4. Top-bar with scenario selector — visible in normal play so the user
-  // can jump straight to a scenario without manually typing the URL param.
-  attachTopMenu(opts.panelEl, { mode: "normal" });
+  // (The old normal-mode attachTopMenu scenario picker is replaced by
+  // the unified mode dropdown — scenarios appear in the "test levels"
+  // optgroup of the mode dropdown. Removed 2026-05-23.)
 
-  // 4b. Mode-cycling widget (= scene picker + library-viewer toggle).
-  //     Dispatches LoadRequested for scene modes; flips activeMode for
-  //     LibraryViewer. See docs/modes-and-modules.md for the architecture.
-  attachModeSwitcher(opts.panelEl, {
+  // 4b. Mode-cycling widget. Lives at the top of the page (document.body,
+  //     position: fixed) so it's visible regardless of which DOM panel is
+  //     active. Replaces the old top-tabs row in index.html — Builder /
+  //     DebugGym / scenes / LibraryViewer are all just modes in the
+  //     dropdown now. See docs/modes-and-modules.md.
+  attachModeSwitcher({
     registry: reg,
     emit: app.emit,
     libraryViewerPanel,
     characterBindings: app.characterBindings,
+    panels: {
+      Running: opts.panelEl,
+      DebugGym: opts.panelEl,
+      ...(opts.builderPanelEl ? { Builder: opts.builderPanelEl } : {}),
+    },
   });
 
   // 5. Start the runtime loop.
@@ -228,7 +236,34 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   test.input.fn(app.registry);
   const reg = app.registry;
   const recordingState = app.coreSystems.inputRecordingState;
+  if (!test.inputSystem) {
+    throw new Error(`scenario "${scenarioName}" has no inputSystem — browser play requires one`);
+  }
   const scenarioInputSystem = test.inputSystem;
+  const liveInputSystem = createInputSystem(liveAccumulator);
+
+  // Register the input-source selector — it observes activeMode and
+  // applies the matching input descriptor + recording flag. The
+  // play/record/stop buttons (= attachTopMenu) now only emit
+  // ModeSwitchRequested; the selector is the single place that
+  // performs the imperative swap. Per user 2026-05-23: "use the
+  // systems we build and patterns we build to make clean, extendable,
+  // readable code with thorough tests".
+  reg.registerSystem(createInputSourceSelectorSystem(reg, {
+    modes: {
+      ScenarioPlayback: { input: scenarioInputSystem },
+      ScenarioFreePlay: { input: liveInputSystem },
+      ScenarioRecording: { input: liveInputSystem, recording: true },
+    },
+    recordingState,
+    onRecordingComplete: (state) => {
+      const blob = JSON.stringify(state.recording, null, 2);
+      // eslint-disable-next-line no-console
+      console.log(`[record] scenario=${test.name} frames=${state.cursor}/${state.frameCap} events=${state.recording.events.length}`);
+      // eslint-disable-next-line no-console
+      console.log(blob);
+    },
+  }));
 
   // Render-only backdrop (surface wireframe, axis gizmo). Doesn't touch test
   // physics; just gives the human something to look at during playback.
@@ -254,8 +289,6 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
     mode: "scenario",
     scenarioName: test.name,
     registry: reg,
-    liveAccumulator,
-    scenarioInputSystem,
     recordingState,
   });
 
@@ -319,13 +352,17 @@ interface ModeSwitcherOptions {
   emit: (event: RuntimeEvent) => void;
   libraryViewerPanel: HTMLElement;
   characterBindings: ControllerBinding[];
+  /** mode id → DOM panel to .activate when that mode is selected. Modes
+   *  not in this map don't trigger a panel swap (= overlay-style, or
+   *  scene-loads-into-Running which is the default Running panel). */
+  panels: Record<string, HTMLElement>;
 }
 
-function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): void {
+function attachModeSwitcher(opts: ModeSwitcherOptions): void {
   const bar = document.createElement("div");
   bar.style.cssText = [
-    "position:absolute",
-    "top:48px",
+    "position:fixed",
+    "top:8px",
     "right:8px",
     "background:rgba(10,12,16,0.85)",
     "color:#dadce0",
@@ -333,38 +370,120 @@ function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): vo
     "border:1px solid #333",
     "border-radius:6px",
     "font: 12px/1.4 system-ui, sans-serif",
-    "z-index:55",
+    "z-index:200",
     "display:flex",
     "gap:8px",
     "align-items:center",
     "pointer-events:auto",
   ].join(";");
 
-  const sceneLabel = document.createElement("span");
-  sceneLabel.textContent = "scene:";
-  sceneLabel.style.color = "#888";
-  bar.appendChild(sceneLabel);
+  // Mode dropdown — unifies what used to be the top-tabs (World / Scene
+  // Builder), the scene picker, and the debug-gym affordance. The
+  // dropdown's options are sourced from the registry's mode list,
+  // grouped by tag (core/editor first, scene last). Selecting a mode
+  // routes the right event based on the mode's kind.
+  const modeLabel = document.createElement("span");
+  modeLabel.textContent = "mode:";
+  modeLabel.style.color = "#888";
+  bar.appendChild(modeLabel);
 
-  const sceneSelect = document.createElement("select");
-  sceneSelect.style.cssText = "background:#1a2030;color:#dadce0;border:1px solid #444;padding:2px 6px;font:inherit;border-radius:3px;cursor:pointer";
-  const sceneModes = opts.registry.listModes({ tags: ["scene"] }).sort((a, b) => a.label.localeCompare(b.label));
-  for (const m of sceneModes) {
+  const modeSelect = document.createElement("select");
+  modeSelect.style.cssText = "background:#1a2030;color:#dadce0;border:1px solid #444;padding:2px 6px;font:inherit;border-radius:3px;cursor:pointer;max-width:240px";
+
+  // Build the options list. Skip transient core states (Loading,
+  // Rebuilding) — they're SM-driven and not user-selectable.
+  const TRANSIENT = new Set(["Loading", "Rebuilding"]);
+  const allModes = opts.registry.listModes().filter((m) => !TRANSIENT.has(m.id));
+  const tagOrder = (tags: readonly string[] | undefined): number => {
+    if (!tags) return 3;
+    if (tags.includes("core") || tags.includes("editor")) return 0;
+    if (tags.includes("debug")) return 1;
+    if (tags.includes("scene")) return 2;
+    return 3;
+  };
+  allModes.sort((a, b) => tagOrder(a.tags) - tagOrder(b.tags) || a.label.localeCompare(b.label));
+
+  // Group with optgroup labels so the dropdown visually separates kinds.
+  let currentGroup: HTMLOptGroupElement | null = null;
+  let currentGroupKey = -1;
+  for (const m of allModes) {
+    const key = tagOrder(m.tags);
+    if (key !== currentGroupKey) {
+      currentGroupKey = key;
+      const label = key === 0 ? "modes" : key === 1 ? "debug" : key === 2 ? "scenes" : "other";
+      currentGroup = document.createElement("optgroup");
+      currentGroup.label = label;
+      modeSelect.appendChild(currentGroup);
+    }
     const opt = document.createElement("option");
     opt.value = m.id;
     opt.textContent = m.label;
-    sceneSelect.appendChild(opt);
+    currentGroup!.appendChild(opt);
   }
-  // Default to whatever the URL ?map= said (or canyon-desert fallback).
+
+  // Test levels (= scenarios) appear as a fourth group. They require
+  // runtime re-init (different inputSystem, different seed state) so
+  // selection performs a URL navigation rather than emitting an event.
+  // The play/record sub-modes for each scenario live in the scenario
+  // panel's top-menu (= attachTopMenu when mode="scenario").
+  const scenarioGroup = document.createElement("optgroup");
+  scenarioGroup.label = "test levels";
+  modeSelect.appendChild(scenarioGroup);
+  for (const name of Object.keys(SCENARIOS).sort()) {
+    const opt = document.createElement("option");
+    opt.value = `scenario:${name}`;
+    opt.textContent = name;
+    scenarioGroup.appendChild(opt);
+  }
+  // Default: the scene from ?map= (= a scene-tagged mode), since boot
+  // immediately LoadRequests it.
   const initialScene = new URL(location.href).searchParams.get("map") ?? "canyon-desert";
-  sceneSelect.value = initialScene;
-  sceneSelect.addEventListener("change", () => {
-    opts.emit({ type: "LoadRequested", payload: { sceneName: sceneSelect.value } });
-    // Reflect in URL so a refresh keeps the choice.
-    const u = new URL(location.href);
-    u.searchParams.set("map", sceneSelect.value);
-    history.replaceState({}, "", u.toString());
+  modeSelect.value = initialScene;
+
+  modeSelect.addEventListener("change", () => {
+    const modeId = modeSelect.value;
+    // Scenario items use a `scenario:` prefix; selecting one navigates
+    // to ?scenario=<name>, triggering startScenarioWorld on reload.
+    // (Scenarios need a different inputSystem + seed state — not a
+    // simple buffer swap.)
+    if (modeId.startsWith("scenario:")) {
+      const u = new URL(location.href);
+      u.searchParams.set("scenario", modeId.slice("scenario:".length));
+      u.searchParams.delete("map");
+      location.href = u.toString();
+      return;
+    }
+    const mode = opts.registry.getMode(modeId);
+    if (!mode) return;
+    const isScene = mode.tags?.includes("scene");
+    const isBuilder = modeId === "Builder";
+    const isRunning = modeId === "Running";
+
+    // Flip DOM panels (= which top-level pane is visible). Modes not in
+    // the panels map don't trigger a swap.
+    const targetPanel: HTMLElement | undefined = isBuilder
+      ? opts.panels["Builder"]
+      : opts.panels["Running"];
+    if (targetPanel) {
+      for (const p of Object.values(opts.panels)) p.classList.toggle("active", p === targetPanel);
+    }
+
+    // Route the event by mode kind.
+    if (isScene) {
+      opts.emit({ type: "LoadRequested", payload: { sceneName: modeId } });
+      const u = new URL(location.href);
+      u.searchParams.set("map", modeId);
+      history.replaceState({}, "", u.toString());
+    } else if (isBuilder) {
+      opts.emit({ type: "ModeRequested", payload: { mode: "builder" } });
+    } else if (isRunning) {
+      opts.emit({ type: "ModeRequested", payload: { mode: "world" } });
+    } else {
+      // DebugGym, LibraryViewer, future custom modes.
+      opts.emit({ type: "ModeSwitchRequested", payload: { modeId } });
+    }
   });
-  bar.appendChild(sceneSelect);
+  bar.appendChild(modeSelect);
 
   const sep = document.createElement("span");
   sep.textContent = "│";
@@ -388,8 +507,10 @@ function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): vo
     bindingSelect.appendChild(opt);
   }
   bindingSelect.addEventListener("change", () => {
-    const chosen = opts.characterBindings.find((b) => b.id === bindingSelect.value);
-    if (chosen) applyControllerBinding(opts.registry, chosen);
+    // Emit a BindingRequested event — BindingSwapSystem (registered in
+    // bootstrap) drains it and applies the matching binding via
+    // applyControllerBinding. No direct buffer mutation here.
+    opts.emit({ type: "BindingRequested", payload: { bindingId: bindingSelect.value } });
   });
   bar.appendChild(bindingSelect);
 
@@ -398,52 +519,48 @@ function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): vo
   sep2.style.color = "#444";
   bar.appendChild(sep2);
 
-  // Library Viewer toggle. Directly writes activeMode (bypassing the SM)
-  // so the inspector can overlay any active gameplay mode. Click again
-  // (or press F1) to return to whatever mode the SM thinks is active.
+  // Library Viewer toggle. Emits ModeSwitchRequested events; the SM
+  // handles the swap (setting activeMode), OverlayVisibilitySystem
+  // reads activeMode and toggles panel display. No direct buffer
+  // mutation. Tech-debt payoff 2026-05-23.
   const libBtn = document.createElement("button");
   libBtn.textContent = "📚 inspect (F1)";
   libBtn.style.cssText = "background:#2c4a78;color:#fff;border:1px solid #444;padding:2px 8px;font:inherit;border-radius:3px;cursor:pointer";
-  let libraryActive = false;
-  function setLibraryActive(active: boolean) {
-    libraryActive = active;
-    const sm = opts.registry.getBuffer<StateMachineBufferData>("stateMachine");
-    if (libraryActive) {
-      writeBuffer(sm, (d) => { d.activeMode = "LibraryViewer"; });
-      opts.libraryViewerPanel.style.display = "block";
-      libBtn.style.background = "#5a8";
-      libBtn.textContent = "📚 close (F1)";
-    } else {
-      writeBuffer(sm, (d) => { d.activeMode = d.activeGraph; });
-      opts.libraryViewerPanel.style.display = "none";
+  function toggleInspector() {
+    const sm = readBuffer(opts.registry.getBuffer<StateMachineBufferData>("stateMachine"));
+    const inInspector = sm.activeMode === "LibraryViewer";
+    if (inInspector) {
+      // Exit — return to whatever graph the FSM state maps to.
+      opts.emit({ type: "ModeSwitchRequested", payload: { modeId: sm.activeGraph } });
       libBtn.style.background = "#2c4a78";
       libBtn.textContent = "📚 inspect (F1)";
+    } else {
+      opts.emit({ type: "ModeSwitchRequested", payload: { modeId: "LibraryViewer" } });
+      libBtn.style.background = "#5a8";
+      libBtn.textContent = "📚 close (F1)";
     }
   }
-  libBtn.addEventListener("click", () => setLibraryActive(!libraryActive));
-  // F1 hotkey — toggles the inspector overlay. Captured at window level so
-  // it works even when the canvas has pointer lock.
+  libBtn.addEventListener("click", toggleInspector);
   window.addEventListener("keydown", (e) => {
     if (e.key === "F1") {
       e.preventDefault();
-      setLibraryActive(!libraryActive);
+      toggleInspector();
     }
   });
   bar.appendChild(libBtn);
 
-  panelEl.appendChild(bar);
+  document.body.appendChild(bar);
 }
 
 interface TopMenuOptions {
   mode: "normal" | "scenario";
   scenarioName?: string;
-  /** Registry — used to swap the active inputSystem when the user clicks play/record. */
+  /** Registry — used to register scenario sub-modes + read activeMode
+   *  for keydown handling. The actual input-system swap is done by
+   *  InputSourceSelectorSystem, not here. */
   registry?: Registry;
-  /** Live DOM accumulator (always collecting). The real inputSystem reads from this. */
-  liveAccumulator?: InputAccumulator;
-  /** The scenario's original inputSystem; we swap back to it when the user "stops" without recording. */
-  scenarioInputSystem?: SystemDescriptor;
-  /** State for the always-registered InputRecordingSystem. We toggle .active and reset to start. */
+  /** Recording state — needed only for status-line text (frame counter
+   *  rendered in the rAF tick). The selector mutates it. */
   recordingState?: InputRecordingState;
 }
 
@@ -506,10 +623,7 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     bar.appendChild(playNormal);
   }
 
-  if (
-    opts.mode === "scenario" &&
-    opts.registry && opts.liveAccumulator && opts.recordingState && opts.scenarioInputSystem
-  ) {
+  if (opts.mode === "scenario" && opts.registry && opts.recordingState) {
     const sep = document.createElement("span");
     sep.textContent = "│";
     sep.style.color = "#444";
@@ -535,30 +649,56 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     bar.appendChild(stopBtn);
 
     const reg = opts.registry;
-    const liveAcc = opts.liveAccumulator;
     const recording = opts.recordingState;
-    const scenarioInput = opts.scenarioInputSystem;
-    // The live inputSystem is constructed once and reused across swaps.
-    const liveInput = createInputSystem(liveAcc);
-    let currentMode: "playback" | "live" = "playback";
+
+    // Register the three scenario sub-modes. Their `systems` lists
+    // include the InputSourceSelectorSystem (registered in
+    // startScenarioWorld) so it runs in every sub-mode and reacts to
+    // activeMode changes by swapping the input descriptor + flipping
+    // the recording flag. The buttons themselves do nothing but emit
+    // the event + update UI feedback — no imperative replaceSystem
+    // or recording.active mutation here. Per user 2026-05-23: "use
+    // the systems we build and patterns we build".
+    const baseSystems = reg.getMode("Running")!.systems;
+    const scenarioSystems = baseSystems.includes("inputSourceSelectorSystem")
+      ? baseSystems
+      : [...baseSystems, "inputSourceSelectorSystem"];
+    reg.registerMode({
+      id: "ScenarioPlayback",
+      label: `▶ ${opts.scenarioName} (playback)`,
+      tags: ["scenario-state"],
+      systems: scenarioSystems,
+    });
+    reg.registerMode({
+      id: "ScenarioFreePlay",
+      label: `● ${opts.scenarioName} (free play)`,
+      tags: ["scenario-state"],
+      systems: scenarioSystems,
+    });
+    reg.registerMode({
+      id: "ScenarioRecording",
+      label: `⏺ ${opts.scenarioName} (recording)`,
+      tags: ["scenario-state"],
+      systems: scenarioSystems,
+    });
+    // Initial activeMode: playback. The selector will observe the
+    // first tick's activeMode and apply ScenarioPlayback's spec.
+    writeBuffer(
+      reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID),
+      (d) => { d.activeMode = "ScenarioPlayback"; },
+    );
 
     function setStatus(text: string, color: string): void {
       status.textContent = text;
       status.style.color = color;
     }
-    function swapToLive(): void {
-      if (currentMode === "live") return;
-      reg.replaceSystem(liveInput);
-      currentMode = "live";
-    }
-    function swapToPlayback(): void {
-      if (currentMode === "playback") return;
-      reg.replaceSystem(scenarioInput);
-      currentMode = "playback";
+    function emitMode(modeId: string): void {
+      const events = reg.getBuffer<RuntimeEvent[]>("events");
+      writeBuffer(events, (d) => { d.push({ type: "ModeSwitchRequested", payload: { modeId } }); });
     }
 
     function startFreePlay(): void {
-      swapToLive();
+      emitMode("ScenarioFreePlay");
       setStatus("● live input", "#fa3");
       playBtn.style.display = "none";
       recBtn.style.display = "none";
@@ -566,9 +706,7 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
       stopBtn.textContent = "⏹ back to playback";
     }
     function startRecording(): void {
-      swapToLive();
-      resetInputRecording(recording);
-      recording.active = true;
+      emitMode("ScenarioRecording");
       setStatus(`⏺ recording 0/${recording.frameCap}`, "#f44");
       playBtn.style.display = "none";
       recBtn.style.display = "none";
@@ -577,14 +715,10 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     }
     function stop(): void {
       const wasRecording = recording.active;
-      recording.active = false;
-      swapToPlayback();
+      emitMode("ScenarioPlayback");
       if (wasRecording) {
-        const blob = JSON.stringify(recording.recording, null, 2);
-        // eslint-disable-next-line no-console
-        console.log(`[record] scenario=${opts.scenarioName} frames=${recording.cursor}/${recording.frameCap} events=${recording.recording.events.length}`);
-        // eslint-disable-next-line no-console
-        console.log(blob);
+        // The selector's onRecordingComplete callback already
+        // dumped the recording to the console; just update status.
         setStatus(`saved ${recording.cursor}f → console`, "#9d9");
       } else {
         setStatus("▶ playback", "#9b9");
@@ -598,7 +732,9 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     recBtn.addEventListener("click", startRecording);
     stopBtn.addEventListener("click", stop);
     window.addEventListener("keydown", (e) => {
-      if (e.code === "Escape" && (currentMode === "live" || recording.active)) {
+      const sm = readBuffer(reg.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
+      const inLiveMode = sm.activeMode === "ScenarioFreePlay" || sm.activeMode === "ScenarioRecording";
+      if (e.code === "Escape" && inLiveMode) {
         e.preventDefault();
         stop();
       }

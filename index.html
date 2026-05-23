@@ -111,10 +111,10 @@
   </head>
   <body>
     <div id="app">
-      <div class="tabs">
-        <button class="tab active" data-tab="world">World</button>
-        <button class="tab" data-tab="builder">Scene Builder</button>
-      </div>
+      <!-- Top tabs replaced by the runtime-driven mode-switcher
+           dropdown (rendered at document.body via attachModeSwitcher).
+           Builder, scenes, DebugGym, LibraryViewer all live in that
+           dropdown. See src/app/world.ts:attachModeSwitcher. -->
 
       <div class="panel world active" id="panel-world">
         <div id="hint" class="hidden">click to fly · WASD = move · Space/Ctrl = up/down · Shift = boost · esc to release</div>

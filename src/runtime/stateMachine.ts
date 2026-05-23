@@ -35,6 +35,16 @@ export type RuntimeEvent =
   | { type: "RebuildRequested"; payload: RebuildPayload }
   | { type: "WorldReady" }
   | { type: "ModeRequested"; payload: { mode: RuntimeMode } }
+  /** Generic mode-switch request — overrides `activeMode` directly
+   *  without touching the SM's `state`. Used by the inspector
+   *  overlay and any transient mode swap that doesn't fit the
+   *  original FSM. Tech-debt payoff 2026-05-23 (= replaces direct
+   *  `activeMode` mutation from DOM event handlers). */
+  | { type: "ModeSwitchRequested"; payload: { modeId: string } }
+  /** Generic binding-swap request — `BindingSwapSystem` drains
+   *  these and calls `applyControllerBinding`. Replaces direct
+   *  imperative calls from the binding-picker UI. */
+  | { type: "BindingRequested"; payload: { bindingId: string } }
   /** Emitted by the SM on every mode transition. Setup systems read
    *  this to perform one-time mode-activation work. See
    *  `docs/modes-and-modules.md` for the event-driven mode-lifecycle
@@ -156,7 +166,28 @@ export function createStateMachineSystem(): SystemDescriptor {
 
       const incoming = readBuffer(events);
       const drained = incoming.slice(); // FIFO snapshot
-      writeBuffer(events, () => []);
+      // Preserve events the SM doesn't consume so downstream systems
+      // (BindingSwapSystem etc.) can read them this same tick. The SM
+      // owns LoadRequested / RebuildRequested / WorldReady /
+      // ModeRequested / ModeSwitchRequested. Lifecycle events
+      // (ModeEntered / ModeExited) are emitted by the SM at the end of
+      // execute — they don't need to be carried over.
+      const SM_CONSUMED = new Set<RuntimeEvent["type"]>([
+        "LoadRequested",
+        "RebuildRequested",
+        "WorldReady",
+        "ModeRequested",
+        "ModeSwitchRequested",
+        // Lifecycle events are emitted by the SM at end-of-execute and
+        // intended for THIS tick's downstream consumers. The SM
+        // drains them on the next tick so they don't accumulate in
+        // the event buffer indefinitely (= each lifecycle event lives
+        // for at most one tick of unobserved bookkeeping).
+        "ModeEntered",
+        "ModeExited",
+      ]);
+      const passthrough = drained.filter((ev) => !SM_CONSUMED.has(ev.type));
+      writeBuffer(events, () => passthrough);
 
       writeBuffer(sm, (d) => {
         d.pendingEvents = drained;
@@ -164,7 +195,24 @@ export function createStateMachineSystem(): SystemDescriptor {
       let newPendingRebuild: RebuildPayload | null = readBuffer(sm).pendingRebuild;
       let newPendingLoad: { sceneName: string } | null = readBuffer(sm).pendingLoad;
       let bumpGeneration = false;
+      // Handle ModeSwitchRequested events independently of the FSM —
+      // they override `activeMode` without touching `state`. Tracked
+      // in lastModeSwitchTarget so the post-FSM block can apply it.
+      let lastModeSwitchTarget: string | null = null;
       for (const ev of drained) {
+        if (ev.type === "ModeSwitchRequested") {
+          lastModeSwitchTarget = ev.payload.modeId;
+          continue;
+        }
+        // Lifecycle events are for external consumers; the SM emits
+        // them but does not process them as transitions. Skip the
+        // FSM dispatch to avoid noisy onUnhandled warnings.
+        if (ev.type === "ModeEntered" || ev.type === "ModeExited") continue;
+        // BindingRequested is consumed by BindingSwapSystem — not an
+        // SM transition. Skip dispatch (BindingSwapSystem reads from
+        // a fresh read of the event buffer; the SM drained then
+        // re-appended below for downstream consumers).
+        if (ev.type === "BindingRequested") continue;
         const prev = fsm.state;
         const r = fsm.dispatch(ev); // onUnhandled inside the FSM logs unmatched/self
         if (!r.transitioned) continue;
@@ -187,8 +235,25 @@ export function createStateMachineSystem(): SystemDescriptor {
       }
       const newState = fsm.state;
       const prevState = readBuffer(sm).state;
-      const prevMode = STATE_TO_GRAPH[prevState];
-      const nextMode = STATE_TO_GRAPH[newState];
+      const prevActiveMode = readBuffer(sm).activeMode;
+      const stateChanged = newState !== prevState;
+      // Compute the next activeMode:
+      //   - If a ModeSwitchRequested event arrived this tick, its
+      //     payload wins (= UI / scripted override).
+      //   - Else if the FSM state changed, sync activeMode to the
+      //     new state's graph.
+      //   - Else if the current activeMode is one of the 4 core
+      //     graph ids, auto-sync it to STATE_TO_GRAPH[newState]
+      //     (= original pre-payoff behavior — heals drift from
+      //     direct seedPlayerOnSurface mutations etc.).
+      //   - Else leave activeMode as it was (= preserves
+      //     non-core overrides like "LibraryViewer", scene modes
+      //     across ticks).
+      const CORE_GRAPH_IDS = new Set(Object.values(STATE_TO_GRAPH));
+      let nextMode = prevActiveMode;
+      if (lastModeSwitchTarget !== null) nextMode = lastModeSwitchTarget;
+      else if (stateChanged) nextMode = STATE_TO_GRAPH[newState];
+      else if (CORE_GRAPH_IDS.has(prevActiveMode)) nextMode = STATE_TO_GRAPH[newState];
       writeBuffer(sm, (d) => {
         d.state = newState;
         d.activeGraph = STATE_TO_GRAPH[newState];
@@ -197,15 +262,16 @@ export function createStateMachineSystem(): SystemDescriptor {
         d.pendingLoad = newPendingLoad;
         if (bumpGeneration) d.rebuildGeneration += 1;
       });
-      // Emit mode-lifecycle events on real FSM transitions only (= newState
-      // differs from prevState). Setup / teardown systems hook into the
-      // mode lifecycle via these events (per modes-and-modules design —
-      // no dedicated callbacks). NB: we gate on FSM state change, NOT on
-      // `prevMode !== nextMode`, so stale `activeMode` fields from test
-      // setup don't spuriously fire lifecycle events.
-      if (newState !== prevState && prevMode !== nextMode) {
+      // Emit mode-lifecycle events whenever the active MODE changes,
+      // whether driven by FSM state change or by ModeSwitchRequested.
+      // Setup/teardown systems consume these via the event buffer —
+      // see docs/modes-and-modules.md. The SM itself skips dispatch
+      // on these event types (see the `continue` in the event loop
+      // above) so re-reading them on the next tick is a no-op without
+      // unmatched-event warnings.
+      if (nextMode !== prevActiveMode) {
         writeBuffer(events, (d) => {
-          d.push({ type: "ModeExited", payload: { modeId: prevMode } });
+          d.push({ type: "ModeExited", payload: { modeId: prevActiveMode } });
           d.push({ type: "ModeEntered", payload: { modeId: nextMode } });
         });
       }

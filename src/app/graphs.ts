@@ -42,6 +42,8 @@ export const BUILDER_GRAPH_ID = "Builder";
 const RUNNING_NON_CHARACTER_PRE_SYSTEMS = [
   STATE_MACHINE_SYSTEM_ID,
   INPUT_RECORDING_SYSTEM_ID,  // wraps input; precedes mapping (= part of normalization layer)
+  "bindingSwapSystem",        // drains BindingRequested events → applies binding
+  "overlayVisibilitySystem",  // toggles LibraryViewer panel based on activeMode
 ];
 const RUNNING_NON_CHARACTER_POST_SYSTEMS = [
   DEBUG_GIZMO_SYSTEM_ID,

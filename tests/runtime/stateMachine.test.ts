@@ -104,6 +104,60 @@ describe("StateMachineSystem", () => {
     expect(readBuffer(sm).state).toBe("Running");
   });
 
+  /**
+   * Tech-debt payoff 2026-05-23: ModeSwitchRequested event lets any
+   * system (= UI handler, scenario, automation) override `activeMode`
+   * without changing the SM's `state`. Used by the inspector overlay
+   * and other transient mode switches that don't fit the original
+   * FSM. Per request, the SM stops force-writing `activeMode` every
+   * tick — only writes when state actually changes (so override
+   * persists across ticks).
+   */
+  it("ModeSwitchRequested sets activeMode without changing state", () => {
+    const { reg, sm, events } = setup();
+    writeBuffer(events, (d) => {
+      d.push({ type: "ModeSwitchRequested", payload: { modeId: "LibraryViewer" } });
+    });
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    const s = readBuffer(sm);
+    expect(s.activeMode).toBe("LibraryViewer");
+    expect(s.state).toBe("Running");  // state untouched
+  });
+
+  it("activeMode override persists across ticks (= SM doesn't clobber it)", () => {
+    const { reg, sm, events } = setup();
+    writeBuffer(events, (d) => {
+      d.push({ type: "ModeSwitchRequested", payload: { modeId: "LibraryViewer" } });
+    });
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    // Subsequent ticks with no events — activeMode should stay.
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    expect(readBuffer(sm).activeMode).toBe("LibraryViewer");
+  });
+
+  it("ModeSwitchRequested emits ModeEntered/ModeExited for the swap", () => {
+    const { reg, events } = setup();
+    writeBuffer(events, (d) => {
+      d.push({ type: "ModeSwitchRequested", payload: { modeId: "LibraryViewer" } });
+    });
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    const queued = readBuffer(events);
+    const entered = queued.find((e) => e.type === "ModeEntered");
+    const exited = queued.find((e) => e.type === "ModeExited");
+    expect(entered).toBeDefined();
+    expect(exited).toBeDefined();
+    if (entered && entered.type === "ModeEntered") {
+      expect(entered.payload.modeId).toBe("LibraryViewer");
+    }
+    if (exited && exited.type === "ModeExited") {
+      expect(exited.payload.modeId).toBe("Running");
+    }
+  });
+
   it("transitions Rebuilding -> Running on WorldReady", () => {
     const { reg, sm, events } = setup();
     writeBuffer(sm, (d) => { d.state = "Rebuilding"; d.activeGraph = "Rebuilding"; });
@@ -130,6 +184,21 @@ describe("StateMachineSystem", () => {
     expect(queued.length).toBe(2);
     expect(queued.map((e) => e.type)).toEqual(["ModeExited", "ModeEntered"]);
     expect(readBuffer(sm).state).toBe("Rebuilding");
+  });
+
+  // Separate test covering the BindingRequested passthrough fix.
+  // BindingSwapSystem reads BindingRequested from the events buffer
+  // AFTER the SM runs, so the SM must preserve events it doesn't
+  // consume rather than clearing the whole buffer.
+  it("preserves passthrough events (e.g. BindingRequested) for downstream systems", () => {
+    const { reg, events } = setup();
+    writeBuffer(events, (d) => {
+      d.push({ type: "BindingRequested", payload: { bindingId: "biped:agile" } });
+    });
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    const queued = readBuffer(events);
+    expect(queued.find((e) => e.type === "BindingRequested")).toBeDefined();
   });
 
   it("ignores unhandled events without failing", () => {

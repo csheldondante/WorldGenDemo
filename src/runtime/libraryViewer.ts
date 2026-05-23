@@ -126,9 +126,12 @@ export function createLibraryViewerSystem(reg: Registry): SystemDescriptor {
 }
 
 /** Minimal element interface the render system writes to. Production
- *  passes an HTMLElement; tests pass a stub `{ innerHTML: string }`. */
+ *  passes an HTMLElement; tests pass a stub `{ innerHTML: string }`.
+ *  `style` is optional so the same target can also feed
+ *  OverlayVisibilitySystem (= toggles display) without dual stubs. */
 export interface LibraryViewerRenderTarget {
   innerHTML: string;
+  style?: { display: string };
 }
 
 /**
@@ -267,7 +270,18 @@ export function registerLibraryViewerMode(reg: Registry): void {
     id: LIBRARY_VIEWER_MODE_ID,
     label: "Library Viewer",
     tags: ["debug"],
-    systems: [LIBRARY_VIEWER_SYSTEM_ID, LIBRARY_VIEWER_RENDER_SYSTEM_ID],
+    systems: [
+      // SM ticks so ModeSwitchRequested events (= "exit inspector
+      // overlay back to gameplay") are processed.
+      "stateMachineSystem",
+      // Overlay visibility tracker also ticks so toggling out flips
+      // the panel back to hidden.
+      "overlayVisibilitySystem",
+      // Binding swap + library viewer data + render.
+      "bindingSwapSystem",
+      LIBRARY_VIEWER_SYSTEM_ID,
+      LIBRARY_VIEWER_RENDER_SYSTEM_ID,
+    ],
     ownedBuffers: [LIBRARY_VIEWER_BUFFER_ID],
   });
 }

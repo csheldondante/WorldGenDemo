@@ -4,6 +4,7 @@ import { getOrBuildGraphForMode } from "../../src/runtime/mode";
 import { registerCoreBuffers } from "../../src/buffers";
 import { registerCoreSystems } from "../../src/systems";
 import { buildAndRegisterCoreGraphs } from "../../src/app/graphs";
+import { registerInfrastructureSystems } from "../../src/runtime/infrastructureSystems";
 
 /**
  * Regression test for the silent-validation-error bug: previously hudSystem
@@ -18,6 +19,7 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
+    registerInfrastructureSystems(reg);
     expect(() => buildAndRegisterCoreGraphs(reg)).not.toThrow();
   });
 
@@ -25,6 +27,7 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
+    registerInfrastructureSystems(reg);
     const { loading, running, rebuilding, builder } = buildAndRegisterCoreGraphs(reg);
     for (const g of [loading, running, rebuilding, builder]) {
       expect(g.order.length).toBe(g.nodes.length);
@@ -47,6 +50,7 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
+    registerInfrastructureSystems(reg);
     const { loading, running, rebuilding, builder } = buildAndRegisterCoreGraphs(reg);
 
     for (const g of [loading, running, rebuilding, builder]) {
@@ -75,6 +79,7 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
+    registerInfrastructureSystems(reg);
     const { loading, running, rebuilding, builder } = buildAndRegisterCoreGraphs(reg);
     for (const g of [loading, running, rebuilding, builder]) {
       const derived = getOrBuildGraphForMode(reg, g.id);

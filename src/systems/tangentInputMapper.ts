@@ -31,6 +31,12 @@ import { FORCE_FIELD_SYSTEM_ID } from "./forceField";
 import { xInterceptShifted } from "../lib/math/accelCurve";
 import { projectCameraIntentBasis } from "../lib/math/cameraTangent";
 import type { Vec3 } from "../lib/math/quat";
+import {
+  CONTROLLER_PARAMS_BUFFER_ID,
+  readSlotParams,
+  type ControllerParamsBufferData,
+} from "../runtime/controllerParams";
+import { SLOT_CHARACTER_INTENT } from "../runtime/slotIds";
 
 export const TANGENT_INPUT_MAPPER_SYSTEM_ID = "tangentInputMapperSystem";
 
@@ -64,6 +70,11 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
       { id: SURFACE_ATTACHMENT_BUFFER_ID, access: "read" },
       { id: FORCE_ACCUMULATOR_BUFFER_ID, access: "read" },
       { id: CHARACTER_TANGENT_INPUT_BUFFER_ID, access: "readwrite" },
+      // Phase 5b — read speedMultiplier from the active ControllerBinding's
+      // CHARACTER_INTENT slot params to scale the per-direction desired
+      // velocity. Multiplies the curve's x-intercept (= sustainable speed)
+      // by `speedMultiplier`. Default 1.0 = identical to pre-5b behavior.
+      { id: CONTROLLER_PARAMS_BUFFER_ID, access: "read" },
     ],
     // Ordering:
     //  - after CHARACTER_INPUT_SYSTEM_ID so move axes are populated.
@@ -77,6 +88,10 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
       CHARACTER_INPUT_SYSTEM_ID,
       CHARACTER_ORIENTATION_SYSTEM_ID,
       FORCE_FIELD_SYSTEM_ID,
+      // Phase 5b — read controllerParams after BindingSwapSystem has
+      // applied any BindingRequested event this tick, so binding swaps
+      // take effect on the same tick they're emitted.
+      "bindingSwapSystem",
     ],
     execute: ({ buffer }) => {
       const ci = readBuffer(buffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID));
@@ -85,6 +100,17 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
       const sa = readBuffer(buffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID));
       const fa = readBuffer(buffer<ForceAccumulatorBufferData>(FORCE_ACCUMULATOR_BUFFER_ID));
       const tiBuf = buffer<CharacterTangentInputBufferData>(CHARACTER_TANGENT_INPUT_BUFFER_ID);
+      // Phase 5b — read CHARACTER_INTENT slot params; default = 1.0 (no
+      // change vs pre-5b). Agile bindings push >1 → faster, heavy <1 →
+      // slower. Scales each per-direction xIntercept (= the curve's
+      // sustainable speed under current external accel), so the
+      // controller's `aReq = (vDes − v)/dt − aEx` targets the scaled
+      // value. Top-speed change is bounded by the curve's accel ceiling
+      // — full-feel-change of curve.vMax would need the controller to
+      // also consume params; deferred to Phase 5c.
+      const params = readBuffer(buffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
+      const intent = readSlotParams(params, SLOT_CHARACTER_INTENT);
+      const speedMul = typeof intent.speedMultiplier === "number" ? intent.speedMultiplier : 1.0;
 
       writeBuffer(tiBuf, (d) => {
         for (const [id, ctrl] of cc.byEntity) {
@@ -139,12 +165,12 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
           // is negated).
           const vDesF =
             input.moveY >= 0
-              ? input.moveY * xInterceptShifted(curves.forwardAccel, aExF)
-              : input.moveY * xInterceptShifted(curves.backwardAccel, -aExF);
+              ? input.moveY * xInterceptShifted(curves.forwardAccel, aExF) * speedMul
+              : input.moveY * xInterceptShifted(curves.backwardAccel, -aExF) * speedMul;
           const vDesR =
             input.moveX >= 0
-              ? input.moveX * xInterceptShifted(curves.lateralAccel, aExR)
-              : input.moveX * xInterceptShifted(curves.lateralAccel, -aExR);
+              ? input.moveX * xInterceptShifted(curves.lateralAccel, aExR) * speedMul
+              : input.moveX * xInterceptShifted(curves.lateralAccel, -aExR) * speedMul;
 
           d.byEntity.set(id, {
             forwardTangent: [FtX, FtY, FtZ],

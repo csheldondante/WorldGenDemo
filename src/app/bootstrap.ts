@@ -22,20 +22,15 @@ import type { SystemDescriptor } from "../runtime/system";
 import { buildAndRegisterCoreGraphs, RUNNING_GRAPH_ID } from "./graphs";
 import { registerSceneModes } from "../runtime/sceneModes";
 import {
-  createLibraryViewerBuffer,
-  createLibraryViewerSystem,
-  createLibraryViewerRenderSystem,
   registerLibraryViewerMode,
   type LibraryViewerRenderTarget,
 } from "../runtime/libraryViewer";
 import { SCENE_CATALOG } from "./sceneCatalog";
 import { registerBipedDefaultBinding } from "./bipedBinding";
-import {
-  createControllerParamsBuffer,
-  applyControllerBinding,
-} from "../runtime/controllerParams";
+import { applyControllerBinding } from "../runtime/controllerParams";
 import { materializeBindings, BIPED_STANDARD } from "./characterBindings";
 import type { ControllerBinding } from "../runtime/moduleSlots";
+import { registerInfrastructureSystems } from "../runtime/infrastructureSystems";
 
 /** Three.js + DOM handles for a rendered runtime. Pass to `bootstrapApp.rendering`. */
 export interface RenderingHandles {
@@ -88,16 +83,21 @@ const DEFAULT_SCENE = "canyon-desert";
 export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   const reg = createRegistry();
   registerCoreBuffers(reg);
-  // Library Viewer mode wiring — register its buffer + data system +
-  // render system BEFORE buildAndRegisterCoreGraphs validates the graph
-  // set, so that the LibraryViewer mode (which references these
-  // systems) doesn't trip the unregistered-system check during scene
-  // mode registration below.
-  reg.registerBuffer(createLibraryViewerBuffer());
-  reg.registerBuffer(createControllerParamsBuffer());
-  reg.registerSystem(createLibraryViewerSystem(reg));
-  reg.registerSystem(createLibraryViewerRenderSystem(options.libraryViewerTarget ?? null));
   const coreSystems = registerCoreSystems(reg, { inputSystem: options.inputSystem });
+  // Phase 4d/5 — register the biped:default module set + materialize
+  // the character bindings catalog (standard/agile/heavy). Done BEFORE
+  // infrastructure registration so BindingSwapSystem gets the real
+  // catalog, and BEFORE graph build so Running's reference resolves.
+  const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
+  void bipedDefault; // module registry side-effect is what we want
+  const characterBindings = materializeBindings(bipedDefault);
+  // Infrastructure systems (library viewer + binding swap + overlay
+  // visibility + their buffers). Tests + bootstrap use the same helper;
+  // see src/runtime/infrastructureSystems.ts.
+  registerInfrastructureSystems(reg, {
+    libraryViewerTarget: options.libraryViewerTarget ?? null,
+    bindingCatalog: characterBindings,
+  });
   buildAndRegisterCoreGraphs(reg); // validates: throws if any contract is violated
   // Register every catalog scene as a Mode sharing the Running graph's
   // system list. Switching to a scene mode = same gameplay, different
@@ -107,13 +107,8 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   // very different from the gameplay modes). Switching to it stops
   // gameplay and shows the registry overlay.
   registerLibraryViewerMode(reg);
-  // Phase 4d/5 — register the biped:default module set + materialize
-  // the character bindings catalog (standard/agile/heavy). The default
-  // standard binding is applied immediately so ControllerParamsBuffer
-  // has sensible values from tick 0.
-  const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
-  void bipedDefault; // module registry side-effect is what we want
-  const characterBindings = materializeBindings(bipedDefault);
+  // Apply the default standard binding immediately so
+  // ControllerParamsBuffer has sensible values from tick 0.
   applyControllerBinding(reg, characterBindings.find((b) => b.id === BIPED_STANDARD.id)!);
   // Register a "DebugGym" mode: same systems as Running, tagged "debug".
   // Cycling UI uses it as a sandbox for binding experimentation.
