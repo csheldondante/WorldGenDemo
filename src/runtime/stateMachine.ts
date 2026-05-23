@@ -34,7 +34,15 @@ export type RuntimeEvent =
   | { type: "LoadRequested"; payload: { sceneName: string } }
   | { type: "RebuildRequested"; payload: RebuildPayload }
   | { type: "WorldReady" }
-  | { type: "ModeRequested"; payload: { mode: RuntimeMode } };
+  | { type: "ModeRequested"; payload: { mode: RuntimeMode } }
+  /** Emitted by the SM on every mode transition. Setup systems read
+   *  this to perform one-time mode-activation work. See
+   *  `docs/modes-and-modules.md` for the event-driven mode-lifecycle
+   *  pattern. */
+  | { type: "ModeEntered"; payload: { modeId: string } }
+  /** Emitted alongside ModeEntered. Teardown systems read this to
+   *  clean up owned buffers / cancel pending work. */
+  | { type: "ModeExited"; payload: { modeId: string } };
 
 export interface StateMachineBufferData {
   state: RuntimeState;
@@ -178,14 +186,29 @@ export function createStateMachineSystem(): SystemDescriptor {
         }
       }
       const newState = fsm.state;
+      const prevState = readBuffer(sm).state;
+      const prevMode = STATE_TO_GRAPH[prevState];
+      const nextMode = STATE_TO_GRAPH[newState];
       writeBuffer(sm, (d) => {
         d.state = newState;
         d.activeGraph = STATE_TO_GRAPH[newState];
-        d.activeMode = STATE_TO_GRAPH[newState];
+        d.activeMode = nextMode;
         d.pendingRebuild = newPendingRebuild;
         d.pendingLoad = newPendingLoad;
         if (bumpGeneration) d.rebuildGeneration += 1;
       });
+      // Emit mode-lifecycle events on real FSM transitions only (= newState
+      // differs from prevState). Setup / teardown systems hook into the
+      // mode lifecycle via these events (per modes-and-modules design —
+      // no dedicated callbacks). NB: we gate on FSM state change, NOT on
+      // `prevMode !== nextMode`, so stale `activeMode` fields from test
+      // setup don't spuriously fire lifecycle events.
+      if (newState !== prevState && prevMode !== nextMode) {
+        writeBuffer(events, (d) => {
+          d.push({ type: "ModeExited", payload: { modeId: prevMode } });
+          d.push({ type: "ModeEntered", payload: { modeId: nextMode } });
+        });
+      }
     },
   };
 }

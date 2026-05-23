@@ -65,6 +65,45 @@ describe("StateMachineSystem", () => {
     expect(s.activeMode).toBe("Rebuilding");
   });
 
+  /**
+   * Phase 1d: mode transitions emit ModeExited(prev) and ModeEntered(next)
+   * onto the events buffer. This is how setup/teardown systems hook into
+   * the mode lifecycle without dedicated lifecycle callbacks (= per user
+   * 2026-05-23: "events as a buffer any system writes to and so it's
+   * pretty easy to have the system FSM enable or disable on demand to do
+   * event driven transformations").
+   */
+  it("emits ModeExited(prev) and ModeEntered(next) on transition (Phase 1d)", () => {
+    const { reg, events } = setup();
+    writeBuffer(events, (d) => { d.push({ type: "RebuildRequested", payload: synthRebuild() }); });
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    // Events queued for NEXT tick (= push back onto the events buffer
+    // after the SM drains incoming).
+    const queued = readBuffer(events);
+    const exited = queued.find((e) => e.type === "ModeExited");
+    const entered = queued.find((e) => e.type === "ModeEntered");
+    expect(exited).toBeDefined();
+    expect(entered).toBeDefined();
+    if (exited && exited.type === "ModeExited") {
+      expect(exited.payload.modeId).toBe("Running");
+    }
+    if (entered && entered.type === "ModeEntered") {
+      expect(entered.payload.modeId).toBe("Rebuilding");
+    }
+  });
+
+  it("does NOT emit ModeEntered/ModeExited when state doesn't change (Phase 1d)", () => {
+    const { reg, sm, events } = setup();
+    // No incoming events → no transition → no mode-lifecycle events emitted.
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    const queued = readBuffer(events);
+    expect(queued.find((e) => e.type === "ModeEntered")).toBeUndefined();
+    expect(queued.find((e) => e.type === "ModeExited")).toBeUndefined();
+    expect(readBuffer(sm).state).toBe("Running");
+  });
+
   it("transitions Rebuilding -> Running on WorldReady", () => {
     const { reg, sm, events } = setup();
     writeBuffer(sm, (d) => { d.state = "Rebuilding"; d.activeGraph = "Rebuilding"; });
@@ -75,14 +114,21 @@ describe("StateMachineSystem", () => {
     expect(readBuffer(sm).activeGraph).toBe("Running");
   });
 
-  it("drains the event buffer after processing", () => {
+  it("drains incoming events (mode-lifecycle events emitted on transition remain queued)", () => {
     const { reg, sm, events } = setup();
     writeBuffer(events, (d) => {
       d.push({ type: "RebuildRequested", payload: synthRebuild() });
     });
     const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
     executeGraph(g, reg, { dt: 0, now: 0 });
-    expect(readBuffer(events).length).toBe(0);
+    // Original incoming RebuildRequested is drained.
+    const queued = readBuffer(events);
+    expect(queued.find((e) => e.type === "RebuildRequested")).toBeUndefined();
+    // Phase 1d: on transition, SM enqueues ModeExited + ModeEntered for
+    // next-tick consumers. The events buffer is no longer guaranteed
+    // empty after an SM tick that transitioned.
+    expect(queued.length).toBe(2);
+    expect(queued.map((e) => e.type)).toEqual(["ModeExited", "ModeEntered"]);
     expect(readBuffer(sm).state).toBe("Rebuilding");
   });
 
