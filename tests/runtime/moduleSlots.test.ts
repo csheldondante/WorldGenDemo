@@ -81,8 +81,8 @@ describe("resolveBinding", () => {
     const binding: ControllerBinding = {
       id: "biped",
       bindings: {
-        characterIntent: "biped:intent",
-        physics: "biped:phys",
+        characterIntent: ["biped:intent"],
+        physics: ["biped:phys"],
       },
     };
     const systems = resolveBinding(reg, binding);
@@ -93,11 +93,11 @@ describe("resolveBinding", () => {
     const reg = setup();
     const biped: ControllerBinding = {
       id: "biped",
-      bindings: { characterIntent: "biped:intent", physics: "shared:phys" },
+      bindings: { characterIntent: ["biped:intent"], physics: ["shared:phys"] },
     };
     const vehicle: ControllerBinding = {
       id: "vehicle",
-      bindings: { characterIntent: "vehicle:intent", physics: "shared:phys" },
+      bindings: { characterIntent: ["vehicle:intent"], physics: ["shared:phys"] },
     };
     const bipedSystems = resolveBinding(reg, biped);
     const vehicleSystems = resolveBinding(reg, vehicle);
@@ -114,7 +114,7 @@ describe("resolveBinding", () => {
     const reg = setup();
     const binding: ControllerBinding = {
       id: "broken",
-      bindings: { characterIntent: "ghost-module" },
+      bindings: { characterIntent: ["ghost-module"] },
     };
     expect(() => resolveBinding(reg, binding)).toThrow(/ghost-module/);
   });
@@ -124,7 +124,7 @@ describe("resolveBinding", () => {
     const binding: ControllerBinding = {
       id: "mismatched",
       // physics module bound under characterIntent slot
-      bindings: { characterIntent: "biped:phys" },
+      bindings: { characterIntent: ["biped:phys"] },
     };
     expect(() => resolveBinding(reg, binding)).toThrow(/slot/i);
   });
@@ -133,7 +133,7 @@ describe("resolveBinding", () => {
     const reg = setup();
     const binding: ControllerBinding = {
       id: "biped",
-      bindings: { characterIntent: "biped:intent", physics: "biped:phys" },
+      bindings: { characterIntent: ["biped:intent"], physics: ["biped:phys"] },
       paramOverrides: { characterIntent: { vMax: 7.5 } },
     };
     // Test contract: paramOverrides are accessible on the binding but

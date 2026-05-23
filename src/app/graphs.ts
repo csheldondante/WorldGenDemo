@@ -3,7 +3,6 @@ import type { Registry } from "../runtime/registry";
 
 import { STATE_MACHINE_SYSTEM_ID } from "../runtime/stateMachine";
 import { INPUT_SYSTEM_ID } from "../systems/input";
-import { INPUT_MAPPER_SYSTEM_ID } from "../systems/inputMapper";
 import { LOAD_SCENE_SYSTEM_ID } from "../systems/loadScene";
 import { RENDER_SYSTEM_ID } from "../systems/render";
 import { MINIMAP_SYSTEM_ID } from "../systems/minimap";
@@ -19,31 +18,37 @@ import { PARAMETRIC_SURFACE_SYSTEM_ID } from "../systems/pipeline/parametricSurf
 import { PLAYER_SPAWN_SYSTEM_ID } from "../systems/pipeline/playerSpawn";
 import { BUILDER_INPUT_SYSTEM_ID } from "../systems/builderInput";
 import { BUILDER_SYSTEM_ID } from "../systems/builder";
-// V1 character per-frame systems
-import { CHARACTER_INPUT_SYSTEM_ID } from "../systems/characterInput";
-import { TANGENT_INPUT_MAPPER_SYSTEM_ID } from "../systems/tangentInputMapper";
-import { CHARACTER_ORIENTATION_SYSTEM_ID } from "../systems/characterOrientation";
-import { FORCE_FIELD_SYSTEM_ID } from "../systems/forceField";
-import { CHARACTER_CONTROLLER_SYSTEM_ID } from "../systems/characterController";
-import { SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/surfaceConstrainedVelocity";
-import { VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID } from "../systems/volumetricConstrainedVelocity";
-import { SURFACE_CONSTRAINT_SYSTEM_ID } from "../systems/surfaceConstraint";
-import { CAMERA_PIVOT_SYSTEM_ID } from "../systems/cameraPivot";
-import { CAMERA_ORBIT_SYSTEM_ID } from "../systems/cameraOrbit";
 import { DEBUG_GIZMO_SYSTEM_ID } from "../systems/debugGizmo";
 import { INPUT_RECORDING_SYSTEM_ID } from "../systems/testing/inputRecording";
-import { CHARACTER_RENDER_SYNC_SYSTEM_ID } from "../systems/characterRenderSync";
-import { BODY_LEAN_SYSTEM_ID } from "../systems/bodyLean";
-import { CHAIN_DYNAMICS_SYSTEM_ID } from "../systems/chainDynamics";
-import { FOOT_PLANNER_SYSTEM_ID } from "../systems/footPlanner";
-import { FOOT_IK_SYSTEM_ID } from "../systems/footIk";
-import { SKELETON_WORLD_SYSTEM_ID } from "../systems/skeletonWorld";
-import { SKELETON_DEBUG_RENDER_SYSTEM_ID } from "../systems/skeletonDebugRender";
+import { bipedDefaultSystemIds } from "./bipedBinding";
 
 export const LOADING_GRAPH_ID = "Loading";
 export const RUNNING_GRAPH_ID = "Running";
 export const REBUILDING_GRAPH_ID = "Rebuilding";
 export const BUILDER_GRAPH_ID = "Builder";
+
+/**
+ * Non-character systems in the Running graph — runtime infrastructure
+ * (state machine, input pipeline + recording) and output (debug
+ * gizmo, render, minimap, hud). The biped binding contributes the
+ * CHARACTER systems via `bipedDefaultSystemIds()`; the full Running
+ * graph is the union.
+ *
+ * Phase 4d (2026-05-23): the Running graph is now derived from the
+ * biped binding for its character-system slice, rather than hand-
+ * curated. Future archetype bindings (= vehicle, drone) can swap the
+ * character slice without touching the runtime/render systems here.
+ */
+const RUNNING_NON_CHARACTER_PRE_SYSTEMS = [
+  STATE_MACHINE_SYSTEM_ID,
+  INPUT_RECORDING_SYSTEM_ID,  // wraps input; precedes mapping (= part of normalization layer)
+];
+const RUNNING_NON_CHARACTER_POST_SYSTEMS = [
+  DEBUG_GIZMO_SYSTEM_ID,
+  RENDER_SYSTEM_ID,
+  MINIMAP_SYSTEM_ID,
+  HUD_SYSTEM_ID,
+];
 
 /**
  * Build and register the runtime graphs. Validated (cycle + hazards) at
@@ -71,34 +76,19 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
   });
 
   // Running graph: full per-frame character pipeline.
+  //
+  // Phase 4d: character-systems slice is derived from the biped
+  // default binding (= `bipedDefaultSystemIds`), with runtime/render
+  // systems wrapped around it. Order within nodes doesn't matter —
+  // buildExecutionGraph topo-sorts by declared dependencies. Future
+  // archetypes swap the character slice by substituting a different
+  // ControllerBinding's resolved system list.
   const running = buildExecutionGraph({
     id: RUNNING_GRAPH_ID,
     nodes: [
-      STATE_MACHINE_SYSTEM_ID,
-      INPUT_SYSTEM_ID,
-      INPUT_RECORDING_SYSTEM_ID,
-      INPUT_MAPPER_SYSTEM_ID,
-      CHARACTER_INPUT_SYSTEM_ID,
-      TANGENT_INPUT_MAPPER_SYSTEM_ID,
-      CHARACTER_ORIENTATION_SYSTEM_ID,
-      FORCE_FIELD_SYSTEM_ID,
-      CHARACTER_CONTROLLER_SYSTEM_ID,
-      SURFACE_CONSTRAINED_VELOCITY_SYSTEM_ID,
-      VOLUMETRIC_CONSTRAINED_VELOCITY_SYSTEM_ID,
-      SURFACE_CONSTRAINT_SYSTEM_ID,
-      CAMERA_PIVOT_SYSTEM_ID,
-      CAMERA_ORBIT_SYSTEM_ID,
-      CHARACTER_RENDER_SYNC_SYSTEM_ID,
-      BODY_LEAN_SYSTEM_ID,
-      CHAIN_DYNAMICS_SYSTEM_ID,
-      FOOT_PLANNER_SYSTEM_ID,
-      FOOT_IK_SYSTEM_ID,
-      SKELETON_WORLD_SYSTEM_ID,
-      SKELETON_DEBUG_RENDER_SYSTEM_ID,
-      DEBUG_GIZMO_SYSTEM_ID,
-      RENDER_SYSTEM_ID,
-      MINIMAP_SYSTEM_ID,
-      HUD_SYSTEM_ID,
+      ...RUNNING_NON_CHARACTER_PRE_SYSTEMS,
+      ...bipedDefaultSystemIds(),
+      ...RUNNING_NON_CHARACTER_POST_SYSTEMS,
     ],
     registry: reg,
   });

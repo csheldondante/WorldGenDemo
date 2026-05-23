@@ -50,17 +50,24 @@ export interface Module {
 }
 
 /**
- * A controller archetype's binding from slot → module. Different
+ * A controller archetype's binding from slot → module list. Different
  * bindings (biped, vehicle, drone) instantiate different gameplay
  * feel from the same slot interface set.
  *
- * `paramOverrides` carries per-slot parameter values that override the
- * module's defaults; the active character system reads these to
- * configure module behavior at runtime.
+ * A slot can have MULTIPLE modules — e.g., the `animation` slot for a
+ * biped runs body-lean + chain-dynamics + foot-planner + foot-ik +
+ * skeleton-world together; each is a separate Module registered under
+ * SLOT_ANIMATION. The list order within a slot is preserved (= passed
+ * to `buildExecutionGraph` which topo-sorts respecting runsAfter).
+ *
+ * `paramOverrides` carries per-slot parameter values that override
+ * module defaults; the active character system reads these to
+ * configure module behavior at runtime. Per-slot, not per-module —
+ * modules in the same slot share the slot's param object.
  */
 export interface ControllerBinding {
   id: string;
-  bindings: Record<SlotId, ModuleId>;
+  bindings: Record<SlotId, ModuleId[]>;
   paramOverrides?: Record<SlotId, Record<string, unknown>>;
 }
 
@@ -101,9 +108,9 @@ export function createModuleRegistry(): ModuleRegistry {
 /**
  * Resolve a binding into the flat list of `SystemDescriptor`s the
  * gameplay graph should run. Slot order is determined by the
- * binding's `bindings` object insertion order — the future
- * canonical-slot-order list (Phase 4b) will sort these into the
- * declared tick flow.
+ * binding's `bindings` object insertion order; within a slot,
+ * `bindings[slot]` array order is preserved. `buildExecutionGraph`
+ * then topo-sorts respecting each module's declared `runsAfter`.
  *
  * Throws if:
  *   - a binding references an unregistered module id;
@@ -113,19 +120,21 @@ export function createModuleRegistry(): ModuleRegistry {
  */
 export function resolveBinding(reg: ModuleRegistry, binding: ControllerBinding): SystemDescriptor[] {
   const out: SystemDescriptor[] = [];
-  for (const [slotId, moduleId] of Object.entries(binding.bindings)) {
-    const mod = reg.get(moduleId);
-    if (!mod) {
-      throw new Error(
-        `resolveBinding: binding '${binding.id}' references unregistered module '${moduleId}' for slot '${slotId}'.`,
-      );
+  for (const [slotId, moduleIds] of Object.entries(binding.bindings)) {
+    for (const moduleId of moduleIds) {
+      const mod = reg.get(moduleId);
+      if (!mod) {
+        throw new Error(
+          `resolveBinding: binding '${binding.id}' references unregistered module '${moduleId}' for slot '${slotId}'.`,
+        );
+      }
+      if (mod.slotId !== slotId) {
+        throw new Error(
+          `resolveBinding: binding '${binding.id}' slot '${slotId}' points to module '${moduleId}' which is registered under slot '${mod.slotId}' (slot mismatch).`,
+        );
+      }
+      out.push(mod.system);
     }
-    if (mod.slotId !== slotId) {
-      throw new Error(
-        `resolveBinding: binding '${binding.id}' slot '${slotId}' points to module '${moduleId}' which is registered under slot '${mod.slotId}' (slot mismatch).`,
-      );
-    }
-    out.push(mod.system);
   }
   return out;
 }

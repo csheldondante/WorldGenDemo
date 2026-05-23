@@ -88,7 +88,7 @@ describe("ControllerParams", () => {
     const reg = setup();
     const binding: ControllerBinding = {
       id: "biped-default",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
       paramOverrides: {
         [SLOT_CHARACTER_INTENT]: { speed: 8, grip: 1.0 },
       },
@@ -104,12 +104,12 @@ describe("ControllerParams", () => {
     const reg = setup();
     const standard: ControllerBinding = {
       id: "biped-standard",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
       paramOverrides: { [SLOT_CHARACTER_INTENT]: { speed: 8, grip: 1.0 } },
     };
     const agile: ControllerBinding = {
       id: "biped-agile",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
       paramOverrides: { [SLOT_CHARACTER_INTENT]: { speed: 12, grip: 0.8 } },
     };
 
@@ -129,7 +129,7 @@ describe("ControllerParams", () => {
     const reg = setup();
     const first: ControllerBinding = {
       id: "first",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
       paramOverrides: {
         [SLOT_CHARACTER_INTENT]: { speed: 5, grip: 2.0 },
         [SLOT_PHYSICS]: { dragCoeff: 0.1 },
@@ -138,8 +138,8 @@ describe("ControllerParams", () => {
     applyControllerBinding(reg, first);
     const second: ControllerBinding = {
       id: "second",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
-      paramOverrides: { [SLOT_CHARACTER_INTENT]: { speed: 9 } },  // no grip, no physics
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
+      paramOverrides: { [SLOT_CHARACTER_INTENT]: { speed: 9 } },  // no grip param, no physics slot
     };
     applyControllerBinding(reg, second);
     const params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
@@ -151,7 +151,7 @@ describe("ControllerParams", () => {
     const reg = setup();
     const minimal: ControllerBinding = {
       id: "minimal",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
     };
     applyControllerBinding(reg, minimal);
     const params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
@@ -162,7 +162,7 @@ describe("ControllerParams", () => {
     const reg = setup();
     const binding: ControllerBinding = {
       id: "biped",
-      bindings: { [SLOT_CHARACTER_INTENT]: "test:characterIntent" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["test:characterIntent"] },
     };
     applyControllerBinding(reg, binding);
     const params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
@@ -180,7 +180,7 @@ describe("resolveBinding interplay with params", () => {
     reg.register({ id: "a", slotId: SLOT_CHARACTER_INTENT, system: sysA });
     const binding: ControllerBinding = {
       id: "b",
-      bindings: { [SLOT_CHARACTER_INTENT]: "a" },
+      bindings: { [SLOT_CHARACTER_INTENT]: ["a"] },
       paramOverrides: { [SLOT_CHARACTER_INTENT]: { speed: 99 } },
     };
     const systems = resolveBinding(reg, binding);
