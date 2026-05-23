@@ -47,6 +47,12 @@ export interface Mode {
   /** Buffers that persist across mode switches (= input devices,
    *  active character transform, etc.; informational for now). */
   sharedBuffers?: BufferId[];
+
+  /** Buffers to exclude from `serializeMode` (e.g. `RenderRefsBuffer`
+   *  holding Three.js handles, asset caches, etc.). Listed in the
+   *  resulting `ModeSnapshot.excluded` so the restore step knows what
+   *  needs separate reconstruction. */
+  excludeFromSnapshot?: BufferId[];
 }
 
 export interface ModeListFilter {
