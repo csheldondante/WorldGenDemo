@@ -140,5 +140,36 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
   reg.registerGraph(rebuilding);
   reg.registerGraph(builder);
 
+  // Register the 4 core graphs as Modes per docs/modes-and-modules.md.
+  // The mode `systems` list is what we built each ExecutionGraph from;
+  // the graph itself is a derived value, regenerated from this list at
+  // activation time. We keep registerGraph for backward compat during
+  // the Phase 1→Phase 1b transition (StateMachineSystem still reads
+  // activeGraph; the mode-driven path lands in Phase 1b).
+  reg.registerMode({
+    id: LOADING_GRAPH_ID,
+    label: "Loading",
+    tags: ["core"],
+    systems: loading.nodes,
+  });
+  reg.registerMode({
+    id: RUNNING_GRAPH_ID,
+    label: "Running",
+    tags: ["core"],
+    systems: running.nodes,
+  });
+  reg.registerMode({
+    id: REBUILDING_GRAPH_ID,
+    label: "Rebuilding",
+    tags: ["core"],
+    systems: rebuilding.nodes,
+  });
+  reg.registerMode({
+    id: BUILDER_GRAPH_ID,
+    label: "Builder",
+    tags: ["editor"],
+    systems: builder.nodes,
+  });
+
   return { loading, running, rebuilding, builder };
 }

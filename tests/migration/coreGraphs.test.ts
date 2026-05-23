@@ -34,4 +34,31 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
       }
     }
   });
+
+  /**
+   * Phase 1 of the modes-and-modules refactor: every core graph is also
+   * registered as a Mode whose `systems` field matches the graph's
+   * `nodes`. The graph remains derivable from the mode (= via
+   * buildExecutionGraph), so save/load can persist mode ids and rebuild
+   * the runtime configuration on restore. See `docs/modes-and-modules.md`.
+   */
+  it("registers each core graph as a Mode with matching system list", () => {
+    const reg = createRegistry();
+    registerCoreBuffers(reg);
+    registerCoreSystems(reg);
+    const { loading, running, rebuilding, builder } = buildAndRegisterCoreGraphs(reg);
+
+    for (const g of [loading, running, rebuilding, builder]) {
+      expect(reg.hasMode(g.id)).toBe(true);
+      const mode = reg.getMode(g.id)!;
+      expect(mode.id).toBe(g.id);
+      expect(mode.systems).toEqual(g.nodes);
+    }
+
+    // Modes are listable and tag-filterable.
+    const coreModes = reg.listModes({ tags: ["core"] });
+    expect(coreModes.map((m) => m.id).sort()).toEqual(["Loading", "Rebuilding", "Running"]);
+    const editorModes = reg.listModes({ tags: ["editor"] });
+    expect(editorModes.map((m) => m.id)).toEqual(["Builder"]);
+  });
 });

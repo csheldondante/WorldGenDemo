@@ -426,6 +426,25 @@ This means:
 * Mode definitions are pure data (= no graph instances embedded).
 * Save/load is just `JSON.stringify({modeId, buffersData})`.
 * Adding a new system anywhere doesn't perturb existing modes.
-* The execution graph is always a derived value, never a stored one.
+* The execution graph is always a derived value, never a stored one
+  (= for the runtime). However, the **derived graph CAN be serialized
+  out** for tooling: the library-viewer mode + future drag-and-drop
+  editor + inspector overlay all need to see the topological order +
+  dependency edges of the currently-active graph. That serialization
+  is a one-way export from runtime state, distinct from mode
+  persistence:
+
+  ```ts
+  interface ExecutionGraphSnapshot {
+    nodes: { id: SystemId; reads: BufferId[]; writes: BufferId[] }[];
+    edges: { from: SystemId; to: SystemId; reason: "runsAfter" | "buffer-hazard" }[];
+    topoOrder: SystemId[];
+  }
+  ```
+
+  `exportGraphSnapshot(graph)` produces this for the inspector. The
+  drag-and-drop editor consumes it as the live state to render and
+  writes mutations back as ADD/REMOVE on `mode.systems` (= the
+  underlying source of truth).
 * Transitions are also just system lists — the transition graph
   regenerates from its `systems` field the same way.

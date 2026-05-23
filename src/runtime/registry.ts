@@ -1,6 +1,8 @@
 import type { Buffer, BufferId } from "./buffer";
 import type { SystemDescriptor, SystemId, GraphId } from "./system";
 import type { ExecutionGraph } from "./graph";
+import type { Mode, ModeRegistry, ModeListFilter } from "./mode";
+import { createModeRegistry } from "./mode";
 
 export interface Registry {
   registerBuffer<T>(buf: Buffer<T>): void;
@@ -16,21 +18,33 @@ export interface Registry {
    */
   replaceSystem(sys: SystemDescriptor): void;
   registerGraph(graph: ExecutionGraph): void;
+  /**
+   * Register a Mode (= top-level (system list, buffer scope) tuple).
+   * Modes are the runtime's selectable configurations: scenes,
+   * menus, debug gym, library viewer, etc. The execution graph is
+   * DERIVED from `mode.systems` at activation time. See
+   * `docs/modes-and-modules.md`.
+   */
+  registerMode(mode: Mode): void;
   getBuffer<T>(id: BufferId): Buffer<T>;
   hasBuffer(id: BufferId): boolean;
   getSystem(id: SystemId): SystemDescriptor;
   hasSystem(id: SystemId): boolean;
   getGraph(id: GraphId): ExecutionGraph;
   hasGraph(id: GraphId): boolean;
+  getMode(id: string): Mode | undefined;
+  hasMode(id: string): boolean;
   listBuffers(): Buffer<unknown>[];
   listSystems(): SystemDescriptor[];
   listGraphs(): ExecutionGraph[];
+  listModes(filter?: ModeListFilter): Mode[];
 }
 
 export function createRegistry(): Registry {
   const buffers = new Map<BufferId, Buffer<unknown>>();
   const systems = new Map<SystemId, SystemDescriptor>();
   const graphs = new Map<GraphId, ExecutionGraph>();
+  const modeRegistry: ModeRegistry = createModeRegistry();
   // Insertion order for stable listing
   const bufferOrder: BufferId[] = [];
   const systemOrder: SystemId[] = [];
@@ -57,6 +71,9 @@ export function createRegistry(): Registry {
       graphs.set(graph.id, graph);
       graphOrder.push(graph.id);
     },
+    registerMode(mode) {
+      modeRegistry.register(mode);
+    },
     getBuffer<T>(id: BufferId): Buffer<T> {
       const b = buffers.get(id);
       if (!b) throw new Error(`buffer not registered: ${id}`);
@@ -75,8 +92,11 @@ export function createRegistry(): Registry {
       return g;
     },
     hasGraph: (id) => graphs.has(id),
+    getMode: (id) => modeRegistry.get(id),
+    hasMode: (id) => modeRegistry.has(id),
     listBuffers: () => bufferOrder.map((id) => buffers.get(id)!),
     listSystems: () => systemOrder.map((id) => systems.get(id)!),
     listGraphs: () => graphOrder.map((id) => graphs.get(id)!),
+    listModes: (filter) => modeRegistry.list(filter),
   };
 }
