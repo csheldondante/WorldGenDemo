@@ -3,6 +3,8 @@ import type { SystemDescriptor, SystemId, GraphId } from "./system";
 import type { ExecutionGraph } from "./graph";
 import type { Mode, ModeRegistry, ModeListFilter } from "./mode";
 import { createModeRegistry } from "./mode";
+import type { Transition, TransitionRegistry, TransitionListFilter } from "./transition";
+import { createTransitionRegistry } from "./transition";
 
 export interface Registry {
   registerBuffer<T>(buf: Buffer<T>): void;
@@ -26,6 +28,9 @@ export interface Registry {
    * `docs/modes-and-modules.md`.
    */
   registerMode(mode: Mode): void;
+  /** Register a Transition (= a (from, to, systems, isComplete) tuple
+   *  bridging two Modes). Phase 3a — see `docs/modes-and-modules.md`. */
+  registerTransition(transition: Transition): void;
   getBuffer<T>(id: BufferId): Buffer<T>;
   hasBuffer(id: BufferId): boolean;
   getSystem(id: SystemId): SystemDescriptor;
@@ -34,10 +39,13 @@ export interface Registry {
   hasGraph(id: GraphId): boolean;
   getMode(id: string): Mode | undefined;
   hasMode(id: string): boolean;
+  getTransition(id: string): Transition | undefined;
+  hasTransition(id: string): boolean;
   listBuffers(): Buffer<unknown>[];
   listSystems(): SystemDescriptor[];
   listGraphs(): ExecutionGraph[];
   listModes(filter?: ModeListFilter): Mode[];
+  listTransitions(filter?: TransitionListFilter): Transition[];
 }
 
 export function createRegistry(): Registry {
@@ -45,6 +53,7 @@ export function createRegistry(): Registry {
   const systems = new Map<SystemId, SystemDescriptor>();
   const graphs = new Map<GraphId, ExecutionGraph>();
   const modeRegistry: ModeRegistry = createModeRegistry();
+  const transitionRegistry: TransitionRegistry = createTransitionRegistry();
   // Insertion order for stable listing
   const bufferOrder: BufferId[] = [];
   const systemOrder: SystemId[] = [];
@@ -74,6 +83,9 @@ export function createRegistry(): Registry {
     registerMode(mode) {
       modeRegistry.register(mode);
     },
+    registerTransition(t) {
+      transitionRegistry.register(t);
+    },
     getBuffer<T>(id: BufferId): Buffer<T> {
       const b = buffers.get(id);
       if (!b) throw new Error(`buffer not registered: ${id}`);
@@ -94,9 +106,12 @@ export function createRegistry(): Registry {
     hasGraph: (id) => graphs.has(id),
     getMode: (id) => modeRegistry.get(id),
     hasMode: (id) => modeRegistry.has(id),
+    getTransition: (id) => transitionRegistry.get(id),
+    hasTransition: (id) => transitionRegistry.has(id),
     listBuffers: () => bufferOrder.map((id) => buffers.get(id)!),
     listSystems: () => systemOrder.map((id) => systems.get(id)!),
     listGraphs: () => graphOrder.map((id) => graphs.get(id)!),
     listModes: (filter) => modeRegistry.list(filter),
+    listTransitions: (filter) => transitionRegistry.list(filter),
   };
 }
