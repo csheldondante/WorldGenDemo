@@ -22,7 +22,7 @@
 
 import type { SystemId } from "./system";
 import type { BufferId } from "./buffer";
-import type { ExecutionGraph } from "./graph";
+import type { ExecutionGraph, GraphEdge } from "./graph";
 import { buildExecutionGraph } from "./graph";
 import type { Registry } from "./registry";
 
@@ -67,6 +67,58 @@ export interface ModeRegistry {
   /** All registered modes, optionally filtered. Caller receives a
    *  fresh array each call (mutations don't affect the registry). */
   list(filter?: ModeListFilter): Mode[];
+}
+
+/**
+ * JSON-serializable snapshot of an execution graph + per-node buffer
+ * access metadata. One-way export for tooling — inspector overlay,
+ * library viewer, future drag-and-drop editor. Mutations go back
+ * through `mode.systems` (= the source of truth), not through this
+ * snapshot.
+ *
+ * `reads` and `writes` per node are derived from each system's
+ * declared buffer access. `readwrite` access produces both a read AND
+ * a write entry so visualizations can show both dependencies.
+ */
+export interface ExecutionGraphSnapshot {
+  /** Topological order of system execution this tick. */
+  topoOrder: SystemId[];
+  /** Every node with buffer dependencies labeled. */
+  nodes: { id: SystemId; reads: BufferId[]; writes: BufferId[] }[];
+  /** Every dependency edge with the validation reason ("runsAfter",
+   *  "buffer-hazard", etc.) preserved from the graph. */
+  edges: { from: SystemId; to: SystemId; reason: string }[];
+}
+
+/**
+ * Project an `ExecutionGraph` into a JSON-serializable
+ * `ExecutionGraphSnapshot` for tooling. The system registry is queried
+ * for each node's buffer-access declarations.
+ */
+export function exportGraphSnapshot(
+  graph: ExecutionGraph,
+  reg: Registry,
+): ExecutionGraphSnapshot {
+  const nodes = graph.nodes.map((sysId) => {
+    const sys = reg.getSystem(sysId);
+    const reads: BufferId[] = [];
+    const writes: BufferId[] = [];
+    for (const ba of sys.buffers) {
+      if (ba.access === "read") reads.push(ba.id);
+      else if (ba.access === "write") writes.push(ba.id);
+      else if (ba.access === "readwrite") {
+        reads.push(ba.id);
+        writes.push(ba.id);
+      }
+    }
+    return { id: sysId, reads, writes };
+  });
+  const edges: ExecutionGraphSnapshot["edges"] = graph.edges.map((e: GraphEdge) => ({
+    from: e.from,
+    to: e.to,
+    reason: e.reason,
+  }));
+  return { topoOrder: graph.order.slice(), nodes, edges };
 }
 
 /**
