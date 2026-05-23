@@ -13,6 +13,7 @@ import { test as steepHillStuck } from "./steep-hill-stuck";
 import { test as climbSteepWall } from "./climb-steep-wall";
 import { test as climbSteepWallExtended } from "./climb-steep-wall-extended";
 import { test as climbTallWall } from "./climb-tall-wall";
+import { test as mesaAngledApproach } from "./mesa-angled-approach";
 import { test as cliffRunoff } from "./cliff-runoff";
 import { test as circleRunning } from "./circle-running";
 import { test as halfpipeAxisTraverse } from "./halfpipe-axis-traverse";
@@ -31,6 +32,7 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [climbSteepWall.name]: climbSteepWall,
   [climbSteepWallExtended.name]: climbSteepWallExtended,
   [climbTallWall.name]: climbTallWall,
+  [mesaAngledApproach.name]: mesaAngledApproach,
   [cliffRunoff.name]: cliffRunoff,
   [circleRunning.name]: circleRunning,
   [halfpipeAxisTraverse.name]: halfpipeAxisTraverse,

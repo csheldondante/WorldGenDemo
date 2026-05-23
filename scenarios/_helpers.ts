@@ -155,6 +155,7 @@ export function seedPlayerOnSurface(
       uv: [opts.uv[0], opts.uv[1]],
       offsetAlongNormal: radius,
       sample,
+      cornerJumpIterationCapHits: 0,
     });
   });
   return playerId;

@@ -152,13 +152,20 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
   }
 
   /**
-   * Bilinear-interpolate the precomputed vertex normals at the given UV, then
-   * renormalize. Per-vertex normals are themselves derived from central-
-   * difference height gradients at construction time, so they're already
-   * smoother than recomputing per-sample from a bilinear-h numeric gradient
-   * (which gave piecewise-constant slope per tile). C0-continuous across
-   * tile borders. NOT smoothstep — that was a workaround which hid corners
-   * the wheel-intersection corner detection needs to see.
+   * Bilinear-interpolate the precomputed vertex normals at the given UV,
+   * then renormalize. Per-vertex normals come from central-difference
+   * height gradients at construction time. C0-continuous across cell
+   * boundaries — gives smooth FSM-signal inputs (slope angle, curvature)
+   * so transitions don't oscillate at cell edges.
+   *
+   * Restored to bilinear 2026-05-23 after the brief triangulated piecewise-
+   * linear experiment caused FSM thrash at the mesa-top climb→surfaceRun
+   * transition (= triangle-boundary normal jumps spiked centripetal-detach
+   * apparent_N to ~55 m/s² and bounced body off the surface every tick).
+   * The disc-CCD math is now slightly approximate on bilinear surfaces
+   * (= corners are interpolation artifacts), but body position uses the
+   * `contactOffset` buffer model (2026-05-23) so position no longer depends
+   * on sample.normal being piecewise-constant.
    */
   private sampleNormalUV(u: number, v: number): [number, number, number] {
     const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
@@ -183,7 +190,7 @@ export class HeightmapSurfaceProvider implements SurfaceProvider {
     return [nx / len, ny / len, nz / len];
   }
 
-  /** Bilinear height sample at UV. */
+  /** Bilinear height sample at UV. C0-continuous across cell boundaries. */
   private sampleHeightUV(u: number, v: number): number {
     const fx = Math.max(0, Math.min(1, u)) * (this.heightmap.width - 1);
     const fz = Math.max(0, Math.min(1, v)) * (this.heightmap.height - 1);

@@ -71,7 +71,7 @@ export const test: BufferTest = {
   // aSurfaceN, aCentripetalN, applied tangent accels, etc. — every internal quantity
   // is comparable against baseline via the same comparator that handles regular
   // buffers. This is the principled way to diagnose lurches or any per-tick anomaly.
-  enableDebugBuffers: ["characterControllerDebug"],
-  output: { snapshot: [...GAMEPLAY_OUTPUT_BUFFERS, "characterControllerDebug"] },
+  enableDebugBuffers: ["characterControllerDebug", "surfaceConstrainedVelocityDebug"],
+  output: { snapshot: [...GAMEPLAY_OUTPUT_BUFFERS, "characterControllerDebug", "surfaceConstrainedVelocityDebug"] },
   backdrop: { surfaceDebugMesh: true, surfaceMeshResolution: 60, axisGizmo: true },
 };

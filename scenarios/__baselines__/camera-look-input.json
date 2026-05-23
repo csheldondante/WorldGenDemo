@@ -122,14 +122,14 @@
       "byEntity": {
         "1": {
           "forwardTangent": [
-            -0.4786186883218648,
+            -0.47861868832186477,
             0,
-            0.8780228648441097
+            0.8780228648441096
           ],
           "rightTangent": [
-            -0.8780228648441097,
+            -0.8780228648441096,
             0,
-            -0.4786186883218648
+            -0.47861868832186477
           ],
           "vDesF": 0,
           "vDesR": 0
@@ -160,6 +160,12 @@
     "surfaceAttachment": {
       "byEntity": {
         "1": {
+          "contactOffset": [
+            0,
+            0.5,
+            0
+          ],
+          "cornerJumpIterationCapHits": 0,
           "offsetAlongNormal": 0.5,
           "sample": {
             "friction": 1,

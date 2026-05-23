@@ -160,6 +160,12 @@
     "surfaceAttachment": {
       "byEntity": {
         "1": {
+          "contactOffset": [
+            0,
+            0.5,
+            0
+          ],
+          "cornerJumpIterationCapHits": 0,
           "offsetAlongNormal": 0.5,
           "sample": {
             "friction": 1,

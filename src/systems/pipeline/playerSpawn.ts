@@ -134,6 +134,7 @@ export function createPlayerSpawnSystem(): SystemDescriptor {
             uv: spawnUV,
             offsetAlongNormal: profile.bodyRadius,
             sample,
+            cornerJumpIterationCapHits: 0,
           });
 
           const bipedRig = readBuffer(ctx.buffer<RigDefinitionBufferData>(RIG_DEFINITION_BUFFER_ID)).byId.get("biped");

@@ -29,7 +29,7 @@ import { CHARACTER_INPUT_SYSTEM_ID } from "./characterInput";
 import { CHARACTER_ORIENTATION_SYSTEM_ID } from "./characterOrientation";
 import { FORCE_FIELD_SYSTEM_ID } from "./forceField";
 import { xInterceptShifted } from "../lib/math/accelCurve";
-import { projectCameraTangentForward } from "../lib/math/cameraTangent";
+import { projectCameraIntentBasis } from "../lib/math/cameraTangent";
 import type { Vec3 } from "../lib/math/quat";
 
 export const TANGENT_INPUT_MAPPER_SYSTEM_ID = "tangentInputMapperSystem";
@@ -108,7 +108,11 @@ export function createTangentInputMapperSystem(): SystemDescriptor {
             input.cameraUp[0], input.cameraUp[1], input.cameraUp[2],
           ];
           const N: Vec3 = [sample.normal[0], sample.normal[1], sample.normal[2]];
-          const basis = projectCameraTangentForward(F, U, N);
+          // Joystick-basis intent: moveY scales camera-up's tangent
+          // projection (with camera-Z fallback when degenerate); moveX
+          // scales camera-right's tangent projection. Each axis projects
+          // independently onto the tangent plane.
+          const basis = projectCameraIntentBasis(F, U, N);
           if (!basis.forward) continue;
           const FtX = basis.forward[0], FtY = basis.forward[1], FtZ = basis.forward[2];
           const RtX = basis.right![0], RtY = basis.right![1], RtZ = basis.right![2];
