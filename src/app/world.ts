@@ -4,6 +4,8 @@ import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
 import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
 import type { RuntimeEvent } from "../runtime/stateMachine";
+import type { ControllerBinding } from "../runtime/moduleSlots";
+import { applyControllerBinding } from "../runtime/controllerParams";
 import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { BUILDER_BUFFER_ID, type BuilderBufferData } from "../buffers/builder";
@@ -125,6 +127,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     registry: reg,
     emit: app.emit,
     libraryViewerPanel,
+    characterBindings: app.characterBindings,
   });
 
   // 5. Start the runtime loop.
@@ -315,6 +318,7 @@ interface ModeSwitcherOptions {
   registry: Registry;
   emit: (event: RuntimeEvent) => void;
   libraryViewerPanel: HTMLElement;
+  characterBindings: ControllerBinding[];
 }
 
 function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): void {
@@ -366,6 +370,33 @@ function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): vo
   sep.textContent = "│";
   sep.style.color = "#444";
   bar.appendChild(sep);
+
+  // Character binding picker — paramOverrides per binding produce
+  // different "feel" (standard / agile / heavy). Phase 5; current
+  // biped systems don't yet consume ControllerParamsBuffer so the
+  // swap is data-only — visible behavior change lands in Phase 5b.
+  const bindingLabel = document.createElement("span");
+  bindingLabel.textContent = "binding:";
+  bindingLabel.style.color = "#888";
+  bar.appendChild(bindingLabel);
+  const bindingSelect = document.createElement("select");
+  bindingSelect.style.cssText = "background:#1a2030;color:#dadce0;border:1px solid #444;padding:2px 6px;font:inherit;border-radius:3px;cursor:pointer";
+  for (const b of opts.characterBindings) {
+    const opt = document.createElement("option");
+    opt.value = b.id;
+    opt.textContent = b.id.replace(/^biped:/, "");
+    bindingSelect.appendChild(opt);
+  }
+  bindingSelect.addEventListener("change", () => {
+    const chosen = opts.characterBindings.find((b) => b.id === bindingSelect.value);
+    if (chosen) applyControllerBinding(opts.registry, chosen);
+  });
+  bar.appendChild(bindingSelect);
+
+  const sep2 = document.createElement("span");
+  sep2.textContent = "│";
+  sep2.style.color = "#444";
+  bar.appendChild(sep2);
 
   // Library Viewer toggle. Directly writes activeMode (bypassing the SM)
   // so the inspector can overlay any active gameplay mode. Click again

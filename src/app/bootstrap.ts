@@ -29,6 +29,13 @@ import {
   type LibraryViewerRenderTarget,
 } from "../runtime/libraryViewer";
 import { SCENE_CATALOG } from "./sceneCatalog";
+import { registerBipedDefaultBinding } from "./bipedBinding";
+import {
+  createControllerParamsBuffer,
+  applyControllerBinding,
+} from "../runtime/controllerParams";
+import { materializeBindings, BIPED_STANDARD } from "./characterBindings";
+import type { ControllerBinding } from "../runtime/moduleSlots";
 
 /** Three.js + DOM handles for a rendered runtime. Pass to `bootstrapApp.rendering`. */
 export interface RenderingHandles {
@@ -63,6 +70,10 @@ export interface AppHandle {
   coreSystems: CoreSystems;
   /** Emit a runtime event. The state machine processes it on the next tick. */
   emit(event: RuntimeEvent): void;
+  /** Character bindings ready to apply via `applyControllerBinding(reg, b)`.
+   *  Materialized at bootstrap from `CHARACTER_BINDINGS` × biped:default's
+   *  slot assignments. Phase 5 — see `docs/modes-and-modules.md`. */
+  characterBindings: ControllerBinding[];
 }
 
 const DEFAULT_SCENE = "canyon-desert";
@@ -83,6 +94,7 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   // systems) doesn't trip the unregistered-system check during scene
   // mode registration below.
   reg.registerBuffer(createLibraryViewerBuffer());
+  reg.registerBuffer(createControllerParamsBuffer());
   reg.registerSystem(createLibraryViewerSystem(reg));
   reg.registerSystem(createLibraryViewerRenderSystem(options.libraryViewerTarget ?? null));
   const coreSystems = registerCoreSystems(reg, { inputSystem: options.inputSystem });
@@ -95,6 +107,22 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   // very different from the gameplay modes). Switching to it stops
   // gameplay and shows the registry overlay.
   registerLibraryViewerMode(reg);
+  // Phase 4d/5 — register the biped:default module set + materialize
+  // the character bindings catalog (standard/agile/heavy). The default
+  // standard binding is applied immediately so ControllerParamsBuffer
+  // has sensible values from tick 0.
+  const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
+  void bipedDefault; // module registry side-effect is what we want
+  const characterBindings = materializeBindings(bipedDefault);
+  applyControllerBinding(reg, characterBindings.find((b) => b.id === BIPED_STANDARD.id)!);
+  // Register a "DebugGym" mode: same systems as Running, tagged "debug".
+  // Cycling UI uses it as a sandbox for binding experimentation.
+  reg.registerMode({
+    id: "DebugGym",
+    label: "Debug Gym",
+    tags: ["debug", "gym"],
+    systems: reg.getMode("Running")!.systems,
+  });
 
   if (options.rendering) {
     const r = options.rendering;
@@ -130,5 +158,6 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
       const events = reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID);
       writeBuffer(events, (d) => { d.push(event); });
     },
+    characterBindings,
   };
 }
