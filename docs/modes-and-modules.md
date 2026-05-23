@@ -53,8 +53,15 @@ interface Mode {
   label: string;
   tags?: string[];
 
-  /** System graph executed each tick while this mode is active. */
-  graph: ExecutionGraph;
+  /** Active system IDs. The execution graph is DERIVED from this list
+   *  + each system's declared runsAfter/read/write dependencies (=
+   *  topo-sort by buildExecutionGraph). We never store or serialize
+   *  the graph — only the system membership. This means:
+   *    - Adding a new system anywhere in the registry doesn't change
+   *      existing modes (= they don't reference it).
+   *    - A mode is fully described by its system set + buffer state.
+   *    - Save/restore = JSON of {systems, buffers}. */
+  systems: SystemId[];
 
   /** Buffer ids this mode requires to exist + populate from. Owned
    *  buffers are scoped to this mode (cleared on exit). Shared buffers
@@ -62,6 +69,11 @@ interface Mode {
    *  the active character). */
   ownedBuffers: BufferId[];
   sharedBuffers: BufferId[];
+
+  /** Optional JSON-shaped seed values applied to owned buffers on
+   *  mode activation. Same JSON dialect as ModeSnapshot.buffers (=
+   *  the buffer-snapshot framework's serializer). */
+  seedBuffers?: Record<BufferId, unknown>;
 
   /** Optional transitions to other modes. Keyed by destination mode id.
    *  Missing entry → use the default jump transition. */
@@ -170,7 +182,9 @@ declarative DAGs of system IDs. So serialization is essentially free:
 ```ts
 interface ModeSnapshot {
   modeId: string;
-  buffers: Record<BufferId, unknown>;  // JSON-of-buffer-data per owned buffer
+  /** JSON-of-buffer-data per owned buffer. The execution graph is NOT
+   *  in the snapshot — it's derived from mode.systems at restore time. */
+  buffers: Record<BufferId, unknown>;
   /** Excludes RenderRefsBuffer (Three.js handles) and other non-serializable.
    *  Excluded buffers are listed for the restore step to reconstruct. */
   excluded: BufferId[];
@@ -178,6 +192,13 @@ interface ModeSnapshot {
   bindings?: Record<EntityId, ControllerBinding>;
 }
 ```
+
+Note: `mode.systems` is not duplicated in the snapshot — it's looked up
+from the mode registry by `modeId`. If the mode definition itself
+changes between save and load (= a system gets added or removed from
+the registered mode), the load step regenerates the graph against the
+*current* mode definition. Compatibility migration logic, if needed,
+runs on the buffers JSON.
 
 `serializeMode(modeId) → ModeSnapshot` and `deserializeMode(snapshot) →
 Mode` are runtime methods. The buffer-snapshot test framework already
@@ -358,19 +379,53 @@ All from the same primitive: `{active buffer set, active system graph}`.
   modes go through the same path. Special behavior (= scene loaders,
   transitions) is expressed as registered modes/transitions.
 
-## Open questions
+## Decisions (was: open questions)
 
-1. **Mode lifecycle hooks** — does `onEnter`/`onExit` need to exist
-   for owned-buffer reset, or is "clear owned buffers on switch"
-   sufficient as a runtime rule?
-2. **Concurrent modes** (= overlays like "pause menu over gameplay")
-   — does this need a stack semantics, or is it always "active mode
-   has full control + transparency comes from rendering the
-   suspended mode's transform"?
-3. **Module parameter UI** — how are parameters declared (= JSON
-   schema, decorator, manual UI)? Affects the clone+tweak overlay's
-   construction.
-4. **Scenario harness** — does it run a mode end-to-end, or does it
-   keep its own minimal-graph harness? Probably both: end-to-end mode
-   runs validate integration; minimal-graph harness still tests
-   individual systems in isolation.
+User 2026-05-23:
+
+1. **No lifecycle hooks needed.** Setup/teardown happens via systems
+   that watch the `events` buffer for `ModeEntered` / `ModeExited`
+   events. Any system can declare itself a setup or teardown step by
+   reading these events and running once. The State Machine emits the
+   events on mode switch.
+
+2. **No concurrent/stack modes.** Overlays (= pause menu over
+   gameplay) are just a different mode whose system list disables the
+   simulation systems and adds the menu systems. Shared buffers
+   persist (= gameplay state survives the overlay); resuming = switch
+   back. Cleaner than a stack abstraction.
+
+3. **Parameters are JSON.** Each module declares its parameter shape
+   as JSON schema; the clone+tweak overlay edits the JSON live. Save
+   = the buffer's current value (= already JSON-shaped per the
+   data-oriented-design rule).
+
+4. **Scenario harness: end-to-end mode runs (no rendering, fixed
+   tick, deterministic).** The scenario harness IS the system test
+   path. Minimal-graph harness is only for testing newly-added
+   isolated systems before they wire into a mode.
+
+## Graph derivation (consequence of #1 simplification)
+
+The runtime already topologically sorts the system graph from declared
+dependencies (`runsAfter` + buffer read/write hazards) via
+`buildExecutionGraph`. So a Mode does NOT serialize a graph; it
+serializes a **system membership list**. The graph is regenerated each
+time a mode activates:
+
+```
+activate(mode):
+  graph = buildExecutionGraph(mode.systems, systemRegistry);
+  scheduler.setActive(graph);
+  StateMachineBuffer.activeMode = mode.id;
+  events.push({ type: "ModeEntered", modeId: mode.id });
+```
+
+This means:
+
+* Mode definitions are pure data (= no graph instances embedded).
+* Save/load is just `JSON.stringify({modeId, buffersData})`.
+* Adding a new system anywhere doesn't perturb existing modes.
+* The execution graph is always a derived value, never a stored one.
+* Transitions are also just system lists — the transition graph
+  regenerates from its `systems` field the same way.
