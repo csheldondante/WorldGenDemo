@@ -48,6 +48,14 @@ export interface Mode {
    *  active character transform, etc.; informational for now). */
   sharedBuffers?: BufferId[];
 
+  /** Optional seed data per buffer id. A mode-activation step (=
+   *  scene loader / setup system) reads these when the mode becomes
+   *  active to populate the buffers. The keys do not need to
+   *  correspond to registered buffers; loaders can interpret seed
+   *  data however they want (= e.g. scene name → fetch URL → load
+   *  pixels into WorldDataBuffer). */
+  seedBuffers?: Record<string, unknown>;
+
   /** Buffers to exclude from `serializeMode` (e.g. `RenderRefsBuffer`
    *  holding Three.js handles, asset caches, etc.). Listed in the
    *  resulting `ModeSnapshot.excluded` so the restore step knows what
