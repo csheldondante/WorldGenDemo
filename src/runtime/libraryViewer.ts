@@ -24,6 +24,7 @@ import {
 
 export const LIBRARY_VIEWER_BUFFER_ID = "libraryViewer";
 export const LIBRARY_VIEWER_SYSTEM_ID = "libraryViewerSystem";
+export const LIBRARY_VIEWER_RENDER_SYSTEM_ID = "libraryViewerRenderSystem";
 export const LIBRARY_VIEWER_MODE_ID = "LibraryViewer";
 
 export interface LibraryViewerBufferData {
@@ -124,16 +125,96 @@ export function createLibraryViewerSystem(reg: Registry): SystemDescriptor {
   };
 }
 
+/** Minimal element interface the render system writes to. Production
+ *  passes an HTMLElement; tests pass a stub `{ innerHTML: string }`. */
+export interface LibraryViewerRenderTarget {
+  innerHTML: string;
+}
+
+/**
+ * Render system factory. Reads the LibraryViewerBuffer (populated by
+ * `libraryViewerSystem`) and writes formatted HTML to the target
+ * element. Pass `null` to no-op (= production may register the system
+ * before the DOM panel exists; the no-op path keeps the mode bootable
+ * in test harnesses without a DOM).
+ *
+ * No styling is included — the host page is expected to scope the
+ * panel via its own CSS. Output structure:
+ *
+ *   <div class="lv">
+ *     <h2>Library Viewer</h2>
+ *     <div>Active Mode: <strong>{id}</strong></div>
+ *     <h3>Buffers ({n})</h3><ul>...</ul>
+ *     <h3>Systems ({n})</h3><ul>...</ul>
+ *     <h3>Modes ({n})</h3><ul>...</ul>
+ *   </div>
+ */
+export function createLibraryViewerRenderSystem(
+  target: LibraryViewerRenderTarget | null,
+): SystemDescriptor {
+  return {
+    id: LIBRARY_VIEWER_RENDER_SYSTEM_ID,
+    description:
+      "Renders LibraryViewerBuffer's registry summary as HTML into a target DOM element. Inspector overlay for the runtime registries. No-ops when no target is provided.",
+    buffers: [{ id: LIBRARY_VIEWER_BUFFER_ID, access: "read" }],
+    runsAfter: [LIBRARY_VIEWER_SYSTEM_ID],
+    execute: ({ buffer }) => {
+      if (!target) return;
+      const data = readBuffer(buffer<LibraryViewerBufferData>(LIBRARY_VIEWER_BUFFER_ID));
+      target.innerHTML = renderLibraryViewer(data);
+    },
+  };
+}
+
+function escape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderLibraryViewer(data: LibraryViewerBufferData): string {
+  const buffersHtml = data.buffers
+    .map((b) => `<li><code>${escape(b.id)}</code> v${b.version} — ${escape(b.description)}</li>`)
+    .join("");
+  const systemsHtml = data.systems
+    .map((s) => {
+      const reads = s.reads.length ? `reads: [${s.reads.map(escape).join(", ")}]` : "";
+      const writes = s.writes.length ? `writes: [${s.writes.map(escape).join(", ")}]` : "";
+      const meta = [reads, writes].filter(Boolean).join("; ");
+      return `<li><code>${escape(s.id)}</code> — ${escape(s.description)}${meta ? ` <small>${meta}</small>` : ""}</li>`;
+    })
+    .join("");
+  const modesHtml = data.modes
+    .map((m) => {
+      const tags = m.tags.length ? ` <small>[${m.tags.map(escape).join(", ")}]</small>` : "";
+      return `<li><code>${escape(m.id)}</code> — ${escape(m.label)}${tags}</li>`;
+    })
+    .join("");
+  return `<div class="lv">
+<h2>Library Viewer</h2>
+<div>Active Mode: <strong>${escape(data.activeMode || "(none)")}</strong></div>
+<h3>Buffers (${data.buffers.length})</h3><ul>${buffersHtml}</ul>
+<h3>Systems (${data.systems.length})</h3><ul>${systemsHtml}</ul>
+<h3>Modes (${data.modes.length})</h3><ul>${modesHtml}</ul>
+</div>`;
+}
+
 /**
  * Register the Library Viewer mode in the registry. Idempotent guard
  * is the registry's `register` throw-on-duplicate.
+ *
+ * The mode's `systems` list includes the renderer; bootstrap is
+ * expected to register `createLibraryViewerRenderSystem(target)` with a
+ * real element (or `null` if no DOM panel is wired). Tests register
+ * with a stub element.
  */
 export function registerLibraryViewerMode(reg: Registry): void {
   reg.registerMode({
     id: LIBRARY_VIEWER_MODE_ID,
     label: "Library Viewer",
     tags: ["debug"],
-    systems: [LIBRARY_VIEWER_SYSTEM_ID],
+    systems: [LIBRARY_VIEWER_SYSTEM_ID, LIBRARY_VIEWER_RENDER_SYSTEM_ID],
     ownedBuffers: [LIBRARY_VIEWER_BUFFER_ID],
   });
 }
