@@ -3,6 +3,7 @@ import { startLoop } from "../runtime/loop";
 import { CAMERA_BUFFER_ID, type CameraBufferData } from "../buffers/camera";
 import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/renderRefs";
 import { STATE_MACHINE_BUFFER_ID, type StateMachineBufferData } from "../buffers/stateMachine";
+import type { RuntimeEvent } from "../runtime/stateMachine";
 import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { BUILDER_BUFFER_ID, type BuilderBufferData } from "../buffers/builder";
@@ -42,9 +43,33 @@ export function startWorld(opts: WorldOptions): WorldHandle {
 
   const { scene, renderer } = createSceneBundle(canvas);
 
-  // 1. Configurable runtime bootstrap (same factory the scenario harness uses
+  // 1. Library Viewer overlay panel — visible when activeMode === "LibraryViewer".
+  //    The mode-renderer writes formatted HTML into this element each tick the
+  //    mode is active. Hidden by default; mode-cycling UI toggles visibility.
+  const libraryViewerPanel = document.createElement("div");
+  libraryViewerPanel.id = "library-viewer-panel";
+  libraryViewerPanel.style.cssText = [
+    "position:absolute",
+    "top:48px",
+    "left:8px",
+    "right:8px",
+    "bottom:8px",
+    "padding:12px 16px",
+    "background:rgba(10,12,16,0.95)",
+    "color:#dadce0",
+    "border:1px solid #333",
+    "border-radius:6px",
+    "font: 12px/1.4 system-ui, sans-serif",
+    "overflow:auto",
+    "z-index:60",
+    "display:none",
+  ].join(";");
+  opts.panelEl.appendChild(libraryViewerPanel);
+
+  // 2. Configurable runtime bootstrap (same factory the scenario harness uses
   //    in --play mode). Wires registry + core buffers/systems/graphs + Three.js
-  //    handles + initial scene load via the LoadRequested event.
+  //    handles + initial scene load via the LoadRequested event. Also registers
+  //    scene modes + LibraryViewer mode for the cycling UI.
   const url = new URL(location.href);
   const sceneName = url.searchParams.get("map") ?? "canyon-desert";
   const app = bootstrapApp({
@@ -57,6 +82,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
       hintEl: opts.hintEl,
     },
     sceneName,
+    libraryViewerTarget: libraryViewerPanel,
   });
   const reg = app.registry;
   const { inputAccumulator, builderAccumulator, builderDom } = app.coreSystems;
@@ -91,6 +117,15 @@ export function startWorld(opts: WorldOptions): WorldHandle {
   // 4. Top-bar with scenario selector — visible in normal play so the user
   // can jump straight to a scenario without manually typing the URL param.
   attachTopMenu(opts.panelEl, { mode: "normal" });
+
+  // 4b. Mode-cycling widget (= scene picker + library-viewer toggle).
+  //     Dispatches LoadRequested for scene modes; flips activeMode for
+  //     LibraryViewer. See docs/modes-and-modules.md for the architecture.
+  attachModeSwitcher(opts.panelEl, {
+    registry: reg,
+    emit: app.emit,
+    libraryViewerPanel,
+  });
 
   // 5. Start the runtime loop.
   startLoop(reg);
@@ -264,6 +299,108 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
  * wired by attachInputListeners), so the user gets mouse-look once they
  * click into the scene.
  */
+/**
+ * Mode-switcher widget. Sibling of the top-menu / scenario picker.
+ *
+ *   * Scene dropdown (left): list of all scenes registered as Modes
+ *     via `registerSceneModes(SCENE_CATALOG)`. Selecting an entry
+ *     dispatches a `LoadRequested` event with the scene name → the
+ *     existing SM machinery transitions Loading → Rebuilding →
+ *     Running. The activeMode follows the SM (= "Running").
+ *   * Library Viewer toggle (right): writes `activeMode` directly to
+ *     "LibraryViewer" to overlay the registry panel. Toggling back
+ *     reverts to "Running" — gameplay simulation resumes.
+ */
+interface ModeSwitcherOptions {
+  registry: Registry;
+  emit: (event: RuntimeEvent) => void;
+  libraryViewerPanel: HTMLElement;
+}
+
+function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): void {
+  const bar = document.createElement("div");
+  bar.style.cssText = [
+    "position:absolute",
+    "top:48px",
+    "right:8px",
+    "background:rgba(10,12,16,0.85)",
+    "color:#dadce0",
+    "padding:6px 10px",
+    "border:1px solid #333",
+    "border-radius:6px",
+    "font: 12px/1.4 system-ui, sans-serif",
+    "z-index:55",
+    "display:flex",
+    "gap:8px",
+    "align-items:center",
+    "pointer-events:auto",
+  ].join(";");
+
+  const sceneLabel = document.createElement("span");
+  sceneLabel.textContent = "scene:";
+  sceneLabel.style.color = "#888";
+  bar.appendChild(sceneLabel);
+
+  const sceneSelect = document.createElement("select");
+  sceneSelect.style.cssText = "background:#1a2030;color:#dadce0;border:1px solid #444;padding:2px 6px;font:inherit;border-radius:3px;cursor:pointer";
+  const sceneModes = opts.registry.listModes({ tags: ["scene"] }).sort((a, b) => a.label.localeCompare(b.label));
+  for (const m of sceneModes) {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label;
+    sceneSelect.appendChild(opt);
+  }
+  // Default to whatever the URL ?map= said (or canyon-desert fallback).
+  const initialScene = new URL(location.href).searchParams.get("map") ?? "canyon-desert";
+  sceneSelect.value = initialScene;
+  sceneSelect.addEventListener("change", () => {
+    opts.emit({ type: "LoadRequested", payload: { sceneName: sceneSelect.value } });
+    // Reflect in URL so a refresh keeps the choice.
+    const u = new URL(location.href);
+    u.searchParams.set("map", sceneSelect.value);
+    history.replaceState({}, "", u.toString());
+  });
+  bar.appendChild(sceneSelect);
+
+  const sep = document.createElement("span");
+  sep.textContent = "│";
+  sep.style.color = "#444";
+  bar.appendChild(sep);
+
+  // Library Viewer toggle. Directly writes activeMode (bypassing the SM)
+  // so the inspector can overlay any active gameplay mode. Click again
+  // to return to whatever mode the SM thinks is active.
+  const libBtn = document.createElement("button");
+  libBtn.textContent = "📚 inspect";
+  libBtn.style.cssText = "background:#2c4a78;color:#fff;border:1px solid #444;padding:2px 8px;font:inherit;border-radius:3px;cursor:pointer";
+  let libraryActive = false;
+  libBtn.addEventListener("click", () => {
+    libraryActive = !libraryActive;
+    const sm = opts.registry.getBuffer<StateMachineBufferData>("stateMachine");
+    if (libraryActive) {
+      writeBuffer(sm, (d) => {
+        d.activeMode = "LibraryViewer";
+      });
+      opts.libraryViewerPanel.style.display = "block";
+      libBtn.style.background = "#5a8";
+      libBtn.textContent = "📚 close";
+    } else {
+      // Restore to whatever graph the SM state maps to (= currently
+      // "Running" once the world has loaded; the SM will overwrite on
+      // its next tick if it disagrees).
+      writeBuffer(sm, (d) => {
+        d.activeMode = d.activeGraph;
+      });
+      opts.libraryViewerPanel.style.display = "none";
+      libBtn.style.background = "#2c4a78";
+      libBtn.textContent = "📚 inspect";
+    }
+  });
+  bar.appendChild(libBtn);
+
+  panelEl.appendChild(bar);
+}
+
 interface TopMenuOptions {
   mode: "normal" | "scenario";
   scenarioName?: string;

@@ -19,7 +19,16 @@ import { RENDER_REFS_BUFFER_ID, type RenderRefsBufferData } from "../buffers/ren
 import { EVENT_BUFFER_ID } from "../buffers/event";
 import { registerCoreSystems, type CoreSystems } from "../systems";
 import type { SystemDescriptor } from "../runtime/system";
-import { buildAndRegisterCoreGraphs } from "./graphs";
+import { buildAndRegisterCoreGraphs, RUNNING_GRAPH_ID } from "./graphs";
+import { registerSceneModes } from "../runtime/sceneModes";
+import {
+  createLibraryViewerBuffer,
+  createLibraryViewerSystem,
+  createLibraryViewerRenderSystem,
+  registerLibraryViewerMode,
+  type LibraryViewerRenderTarget,
+} from "../runtime/libraryViewer";
+import { SCENE_CATALOG } from "./sceneCatalog";
 
 /** Three.js + DOM handles for a rendered runtime. Pass to `bootstrapApp.rendering`. */
 export interface RenderingHandles {
@@ -36,6 +45,10 @@ export interface BootstrapOptions {
   /** Override the input source — pass `createInputPlaybackSystem(...)`,
    *  `createSimulatedInputSystem(...)`, etc. Defaults to real DOM/gamepad input. */
   inputSystem?: SystemDescriptor;
+  /** DOM element the Library Viewer renderer writes HTML into when the
+   *  LibraryViewer mode is active. If undefined, the renderer is
+   *  registered with a null target (= no-op). Optional. */
+  libraryViewerTarget?: LibraryViewerRenderTarget | null;
   /** Three.js + DOM handles. Omit for headless (no rendering). */
   rendering?: RenderingHandles;
   /** Scene to load on bootstrap. Emits a `LoadRequested` event for this name.
@@ -64,8 +77,24 @@ const DEFAULT_SCENE = "canyon-desert";
 export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   const reg = createRegistry();
   registerCoreBuffers(reg);
+  // Library Viewer mode wiring — register its buffer + data system +
+  // render system BEFORE buildAndRegisterCoreGraphs validates the graph
+  // set, so that the LibraryViewer mode (which references these
+  // systems) doesn't trip the unregistered-system check during scene
+  // mode registration below.
+  reg.registerBuffer(createLibraryViewerBuffer());
+  reg.registerSystem(createLibraryViewerSystem(reg));
+  reg.registerSystem(createLibraryViewerRenderSystem(options.libraryViewerTarget ?? null));
   const coreSystems = registerCoreSystems(reg, { inputSystem: options.inputSystem });
   buildAndRegisterCoreGraphs(reg); // validates: throws if any contract is violated
+  // Register every catalog scene as a Mode sharing the Running graph's
+  // system list. Switching to a scene mode = same gameplay, different
+  // scene data; the existing LoadRequested event drives the data load.
+  registerSceneModes(reg, SCENE_CATALOG, reg.getMode(RUNNING_GRAPH_ID)!.systems);
+  // Register the LibraryViewer mode itself (= different system list, =
+  // very different from the gameplay modes). Switching to it stops
+  // gameplay and shows the registry overlay.
+  registerLibraryViewerMode(reg);
 
   if (options.rendering) {
     const r = options.rendering;
