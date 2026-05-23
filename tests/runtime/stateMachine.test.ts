@@ -26,7 +26,7 @@ function setup() {
   const sm = createBuffer<StateMachineBufferData>({
     id: "stateMachine",
     description: "FSM state",
-    initial: { state: "Running", activeGraph: "Running", pendingEvents: [], pendingLoad: null, pendingRebuild: null, rebuildGeneration: 0 },
+    initial: { state: "Running", activeGraph: "Running", activeMode: "Running", pendingEvents: [], pendingLoad: null, pendingRebuild: null, rebuildGeneration: 0 },
   });
   const events = createBuffer<RuntimeEvent[]>({
     id: "events",
@@ -47,6 +47,22 @@ describe("StateMachineSystem", () => {
     executeGraph(g, reg, { dt: 0, now: 0 });
     expect(readBuffer(sm).state).toBe("Rebuilding");
     expect(readBuffer(sm).activeGraph).toBe("Rebuilding");
+  });
+
+  /**
+   * Phase 1b: the SM writes `activeMode` (= the modes-and-modules
+   * canonical field) alongside `activeGraph` (= legacy). Both must
+   * carry the same string during the transition period. The loop reads
+   * `activeMode` and derives the graph from `mode.systems`.
+   */
+  it("writes activeMode == activeGraph after every transition (Phase 1b)", () => {
+    const { reg, sm, events } = setup();
+    writeBuffer(events, (d) => { d.push({ type: "RebuildRequested", payload: synthRebuild() }); });
+    const g = buildExecutionGraph({ id: "g", nodes: ["stateMachineSystem"], registry: reg });
+    executeGraph(g, reg, { dt: 0, now: 0 });
+    const s = readBuffer(sm);
+    expect(s.activeMode).toBe(s.activeGraph);
+    expect(s.activeMode).toBe("Rebuilding");
   });
 
   it("transitions Rebuilding -> Running on WorldReady", () => {

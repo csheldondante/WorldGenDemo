@@ -1,6 +1,7 @@
 import type { Registry } from "./registry";
 import { readBuffer, writeBuffer } from "./buffer";
 import { executeGraph } from "./scheduler";
+import { getOrBuildGraphForMode } from "./mode";
 import {
   STATE_MACHINE_BUFFER_ID,
   type StateMachineBufferData,
@@ -66,8 +67,12 @@ export function startLoop(registry: Registry): LoopHandle {
     while (accumulator >= STEP_DT && stepsThisFrame < MAX_STEPS_PER_FRAME) {
       try {
         const smBuf = registry.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID);
-        const graphId = readBuffer(smBuf).activeGraph;
-        const graph = registry.getGraph(graphId);
+        // Phase 1b: derive the active graph from `activeMode` via the
+        // ModeRegistry instead of looking up a pre-registered graph.
+        // The graph is cached per mode-id so subsequent ticks pay zero
+        // topo-sort cost. See `docs/modes-and-modules.md`.
+        const modeId = readBuffer(smBuf).activeMode;
+        const graph = getOrBuildGraphForMode(registry, modeId);
         // `now` exposed to systems is derived from tickIdx, NOT wall-clock —
         // so systems that timestamp by `ctx.now` see a deterministic, fixed-
         // dt-derived clock. Same convention as runBufferTest.

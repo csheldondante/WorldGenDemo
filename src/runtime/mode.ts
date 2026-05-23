@@ -22,6 +22,9 @@
 
 import type { SystemId } from "./system";
 import type { BufferId } from "./buffer";
+import type { ExecutionGraph } from "./graph";
+import { buildExecutionGraph } from "./graph";
+import type { Registry } from "./registry";
 
 export interface Mode {
   /** Stable unique id used for activeMode lookup. */
@@ -64,6 +67,46 @@ export interface ModeRegistry {
   /** All registered modes, optionally filtered. Caller receives a
    *  fresh array each call (mutations don't affect the registry). */
   list(filter?: ModeListFilter): Mode[];
+}
+
+/**
+ * Cache of mode-id → derived ExecutionGraph, keyed by the registry
+ * instance. Each registry has its own cache; clearing happens when the
+ * registry is garbage-collected.
+ *
+ * The cache invariant: `cache.get(reg).get(modeId)` is the graph built
+ * from `reg.getMode(modeId)!.systems` via buildExecutionGraph. If a
+ * mode's `systems` list changes after first activation (= not currently
+ * supported), the cache will be stale; this is an explicit non-goal for
+ * Phase 1b — modes are treated as immutable post-registration.
+ */
+const graphCacheByRegistry = new WeakMap<Registry, Map<string, ExecutionGraph>>();
+
+/**
+ * Look up (or build + cache) the ExecutionGraph derived from a mode's
+ * `systems` list. The graph is regenerated from declared system
+ * dependencies via `buildExecutionGraph` and validated for hazards on
+ * first activation. Subsequent calls return the cached instance.
+ *
+ * Throws if the mode id is not registered in `reg`.
+ */
+export function getOrBuildGraphForMode(reg: Registry, modeId: string): ExecutionGraph {
+  let perReg = graphCacheByRegistry.get(reg);
+  if (!perReg) {
+    perReg = new Map();
+    graphCacheByRegistry.set(reg, perReg);
+  }
+  const cached = perReg.get(modeId);
+  if (cached) return cached;
+  const mode = reg.getMode(modeId);
+  if (!mode) throw new Error(`getOrBuildGraphForMode: mode '${modeId}' is not registered.`);
+  const graph = buildExecutionGraph({
+    id: modeId,
+    nodes: mode.systems,
+    registry: reg,
+  });
+  perReg.set(modeId, graph);
+  return graph;
 }
 
 export function createModeRegistry(): ModeRegistry {

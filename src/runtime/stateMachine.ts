@@ -40,6 +40,16 @@ export interface StateMachineBufferData {
   state: RuntimeState;
   activeGraph: GraphId;
   /**
+   * Canonical mode id for the modes-and-modules architecture (= the
+   * loop's source of truth for which graph to execute). Phase 1b: this
+   * field mirrors `activeGraph` (= same string for the 4 core modes).
+   * The loop reads `activeMode` and looks up the mode's `systems` via
+   * the registry to derive the graph; `activeGraph` remains during the
+   * transition window for backward compatibility. See
+   * `docs/modes-and-modules.md`.
+   */
+  activeMode: string;
+  /**
    * Events that triggered the current tick's transitions. Read-only for
    * downstream systems within the same tick.
    */
@@ -171,6 +181,7 @@ export function createStateMachineSystem(): SystemDescriptor {
       writeBuffer(sm, (d) => {
         d.state = newState;
         d.activeGraph = STATE_TO_GRAPH[newState];
+        d.activeMode = STATE_TO_GRAPH[newState];
         d.pendingRebuild = newPendingRebuild;
         d.pendingLoad = newPendingLoad;
         if (bumpGeneration) d.rebuildGeneration += 1;

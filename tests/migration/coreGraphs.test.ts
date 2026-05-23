@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createRegistry } from "../../src/runtime/registry";
+import { getOrBuildGraphForMode } from "../../src/runtime/mode";
 import { registerCoreBuffers } from "../../src/buffers";
 import { registerCoreSystems } from "../../src/systems";
 import { buildAndRegisterCoreGraphs } from "../../src/app/graphs";
@@ -60,5 +61,26 @@ describe("Core graphs validate cleanly with all real buffers and systems", () =>
     expect(coreModes.map((m) => m.id).sort()).toEqual(["Loading", "Rebuilding", "Running"]);
     const editorModes = reg.listModes({ tags: ["editor"] });
     expect(editorModes.map((m) => m.id)).toEqual(["Builder"]);
+  });
+
+  /**
+   * Phase 1b: the loop derives the active graph from `mode.systems`
+   * via `getOrBuildGraphForMode` instead of looking up a pre-registered
+   * graph. Behavior must be preserved — for every core mode, the
+   * derived graph must have the same nodes (= system membership) as
+   * the pre-registered graph. Ordering may differ since `buildExecutionGraph`
+   * is the same code path, but nodes must match.
+   */
+  it("mode-derived graph for each core mode equals the pre-registered graph", () => {
+    const reg = createRegistry();
+    registerCoreBuffers(reg);
+    registerCoreSystems(reg);
+    const { loading, running, rebuilding, builder } = buildAndRegisterCoreGraphs(reg);
+    for (const g of [loading, running, rebuilding, builder]) {
+      const derived = getOrBuildGraphForMode(reg, g.id);
+      expect(new Set(derived.nodes)).toEqual(new Set(g.nodes));
+      // Ordering: same hazard rules → same topo ordering (deterministic).
+      expect(derived.order).toEqual(g.order);
+    }
   });
 });

@@ -315,6 +315,7 @@
     },
     "stateMachine": {
       "activeGraph": "Running",
+      "activeMode": "Running",
       "pendingEvents": [],
       "pendingLoad": null,
       "pendingRebuild": null,
