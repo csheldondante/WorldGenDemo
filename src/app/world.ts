@@ -369,31 +369,33 @@ function attachModeSwitcher(panelEl: HTMLElement, opts: ModeSwitcherOptions): vo
 
   // Library Viewer toggle. Directly writes activeMode (bypassing the SM)
   // so the inspector can overlay any active gameplay mode. Click again
-  // to return to whatever mode the SM thinks is active.
+  // (or press F1) to return to whatever mode the SM thinks is active.
   const libBtn = document.createElement("button");
-  libBtn.textContent = "📚 inspect";
+  libBtn.textContent = "📚 inspect (F1)";
   libBtn.style.cssText = "background:#2c4a78;color:#fff;border:1px solid #444;padding:2px 8px;font:inherit;border-radius:3px;cursor:pointer";
   let libraryActive = false;
-  libBtn.addEventListener("click", () => {
-    libraryActive = !libraryActive;
+  function setLibraryActive(active: boolean) {
+    libraryActive = active;
     const sm = opts.registry.getBuffer<StateMachineBufferData>("stateMachine");
     if (libraryActive) {
-      writeBuffer(sm, (d) => {
-        d.activeMode = "LibraryViewer";
-      });
+      writeBuffer(sm, (d) => { d.activeMode = "LibraryViewer"; });
       opts.libraryViewerPanel.style.display = "block";
       libBtn.style.background = "#5a8";
-      libBtn.textContent = "📚 close";
+      libBtn.textContent = "📚 close (F1)";
     } else {
-      // Restore to whatever graph the SM state maps to (= currently
-      // "Running" once the world has loaded; the SM will overwrite on
-      // its next tick if it disagrees).
-      writeBuffer(sm, (d) => {
-        d.activeMode = d.activeGraph;
-      });
+      writeBuffer(sm, (d) => { d.activeMode = d.activeGraph; });
       opts.libraryViewerPanel.style.display = "none";
       libBtn.style.background = "#2c4a78";
-      libBtn.textContent = "📚 inspect";
+      libBtn.textContent = "📚 inspect (F1)";
+    }
+  }
+  libBtn.addEventListener("click", () => setLibraryActive(!libraryActive));
+  // F1 hotkey — toggles the inspector overlay. Captured at window level so
+  // it works even when the canvas has pointer lock.
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "F1") {
+      e.preventDefault();
+      setLibraryActive(!libraryActive);
     }
   });
   bar.appendChild(libBtn);

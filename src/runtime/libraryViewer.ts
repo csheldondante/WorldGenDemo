@@ -173,30 +173,83 @@ function escape(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Scoped CSS for the LibraryViewer panel. Self-contained — emitted
+ * inline so the host page needs no additional stylesheet. All
+ * selectors are prefixed `.lv` so they don't leak into surrounding
+ * DOM.
+ */
+const LIBRARY_VIEWER_CSS = `
+<style>
+.lv { font: 12px/1.5 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; color: #d6d9df; }
+.lv h2 { margin: 0 0 8px 0; font-size: 14px; color: #fff; border-bottom: 1px solid #444; padding-bottom: 4px; }
+.lv h3 { margin: 14px 0 4px; font-size: 12px; color: #8ab; text-transform: uppercase; letter-spacing: 0.04em; }
+.lv .lv-active { font-size: 13px; margin-bottom: 6px; }
+.lv .lv-active strong { color: #9ec; }
+.lv .lv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.lv .lv-full { grid-column: 1 / -1; }
+.lv ul { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; border: 1px solid #2a2e36; border-radius: 4px; background: #0b0e13; }
+.lv li { padding: 3px 8px; border-bottom: 1px solid #1a1d24; }
+.lv li:nth-child(even) { background: #0d1018; }
+.lv li:last-child { border-bottom: 0; }
+.lv code { color: #ecaf3a; font-weight: 600; }
+.lv small { color: #7a8290; font-size: 11px; }
+.lv .lv-tags { color: #6c8a99; }
+.lv .lv-active-row { background: #1a3050 !important; }
+.lv .lv-graph { font-size: 11px; max-height: 320px; overflow: auto; padding: 6px 8px; background: #0b0e13; border: 1px solid #2a2e36; border-radius: 4px; }
+.lv .lv-graph div { padding: 1px 0; }
+.lv .lv-graph .ar { color: #6c8a99; font-size: 10px; padding-left: 12px; }
+</style>`;
+
 function renderLibraryViewer(data: LibraryViewerBufferData): string {
   const buffersHtml = data.buffers
-    .map((b) => `<li><code>${escape(b.id)}</code> v${b.version} — ${escape(b.description)}</li>`)
+    .map((b) => `<li><code>${escape(b.id)}</code> <small>v${b.version}</small> — ${escape(b.description)}</li>`)
     .join("");
   const systemsHtml = data.systems
     .map((s) => {
-      const reads = s.reads.length ? `reads: [${s.reads.map(escape).join(", ")}]` : "";
-      const writes = s.writes.length ? `writes: [${s.writes.map(escape).join(", ")}]` : "";
-      const meta = [reads, writes].filter(Boolean).join("; ");
-      return `<li><code>${escape(s.id)}</code> — ${escape(s.description)}${meta ? ` <small>${meta}</small>` : ""}</li>`;
+      const reads = s.reads.length ? `r: [${s.reads.map(escape).join(", ")}]` : "";
+      const writes = s.writes.length ? `w: [${s.writes.map(escape).join(", ")}]` : "";
+      const meta = [reads, writes].filter(Boolean).join(" · ");
+      return `<li><code>${escape(s.id)}</code> — ${escape(s.description)}${meta ? `<br><small>${meta}</small>` : ""}</li>`;
     })
     .join("");
   const modesHtml = data.modes
     .map((m) => {
-      const tags = m.tags.length ? ` <small>[${m.tags.map(escape).join(", ")}]</small>` : "";
-      return `<li><code>${escape(m.id)}</code> — ${escape(m.label)}${tags}</li>`;
+      const tags = m.tags.length ? ` <span class="lv-tags">[${m.tags.map(escape).join(", ")}]</span>` : "";
+      const isActive = m.id === data.activeMode ? " class=\"lv-active-row\"" : "";
+      return `<li${isActive}><code>${escape(m.id)}</code> — ${escape(m.label)}${tags}</li>`;
     })
     .join("");
-  return `<div class="lv">
+  // Active graph topological order — most useful single view of
+  // what's executing this tick. Each node shows id; runsAfter edges
+  // would clutter but are accessible via the .nodes / .edges fields
+  // on the snapshot if a more elaborate visualization wants them.
+  const graphHtml = data.activeGraphSnapshot
+    ? data.activeGraphSnapshot.topoOrder
+        .map((id, i) => `<div><small>${String(i + 1).padStart(2, "0")}.</small> <code>${escape(id)}</code></div>`)
+        .join("")
+    : "<small>(no active graph)</small>";
+  return `${LIBRARY_VIEWER_CSS}<div class="lv">
 <h2>Library Viewer</h2>
-<div>Active Mode: <strong>${escape(data.activeMode || "(none)")}</strong></div>
-<h3>Buffers (${data.buffers.length})</h3><ul>${buffersHtml}</ul>
-<h3>Systems (${data.systems.length})</h3><ul>${systemsHtml}</ul>
-<h3>Modes (${data.modes.length})</h3><ul>${modesHtml}</ul>
+<div class="lv-active">Active Mode: <strong>${escape(data.activeMode || "(none)")}</strong></div>
+<div class="lv-grid">
+  <div>
+    <h3>Buffers (${data.buffers.length})</h3>
+    <ul>${buffersHtml}</ul>
+  </div>
+  <div>
+    <h3>Modes (${data.modes.length})</h3>
+    <ul>${modesHtml}</ul>
+  </div>
+  <div class="lv-full">
+    <h3>Systems (${data.systems.length})</h3>
+    <ul>${systemsHtml}</ul>
+  </div>
+  <div class="lv-full">
+    <h3>Active graph — tick order (${data.activeGraphSnapshot?.topoOrder.length ?? 0})</h3>
+    <div class="lv-graph">${graphHtml}</div>
+  </div>
+</div>
 </div>`;
 }
 
