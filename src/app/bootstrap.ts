@@ -169,18 +169,21 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   // Register every catalog scene as a Mode sharing the Running graph's
   // system list. Switching to a scene mode = same gameplay, different
   // scene data; the existing LoadRequested event drives the data load.
-  registerSceneModes(reg, SCENE_CATALOG, reg.getMode(RUNNING_GRAPH_ID)!.systems);
-  // Register the LibraryViewer mode itself (= different system list, =
-  // very different from the gameplay modes). Switching to it stops
-  // gameplay and shows the registry overlay.
-  registerLibraryViewerMode(reg);
+  const runningSystems = reg.getMode(RUNNING_GRAPH_ID)!.systems;
+  registerSceneModes(reg, SCENE_CATALOG, runningSystems);
+  // Library Viewer + Profile Editor are OVERLAY modes layered on top
+  // of Running's systems list. Gameplay continues while either is
+  // open — the overlay panel shows the inspector / form, but the
+  // character pipeline keeps simulating. Per user 2026-05-23: "I
+  // want to be able to tweak and play in the gym scene...".
+  registerLibraryViewerMode(reg, runningSystems);
   // Profile editor mode + its render system + selector buffer. Edits
   // write back into CharacterControllerProfileBuffer directly — see
   // src/app/profileEditor.ts. No intermediate snapshot buffer: the
   // render system reads the canonical profile buffer.
   reg.registerBuffer(createProfileEditorBuffer());
   reg.registerSystem(createProfileEditorRenderSystem(options.profileEditorTarget ?? null));
-  registerProfileEditorMode(reg);
+  registerProfileEditorMode(reg, runningSystems);
   // Phase 3b — register app-level transitions. The Rebuilding pipeline
   // is now also expressed as a Transition (Loading → Running via the
   // Rebuilding graph). The runtime loop honors transitions via

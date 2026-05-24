@@ -65,7 +65,9 @@ describe("LibraryViewer mode + system", () => {
     reg.registerSystem(syntheticSystem("sys-a", [], ["a-buf"]));
     reg.registerSystem(syntheticSystem("sys-b", ["a-buf"], ["b-buf"]));
     reg.registerSystem(createLibraryViewerSystem(reg));
-    registerLibraryViewerMode(reg);
+    // Pass an empty underlying systems list — the test cares only
+    // about the viewer-specific systems being included.
+    registerLibraryViewerMode(reg, []);
     return reg;
   }
 

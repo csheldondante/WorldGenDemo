@@ -257,34 +257,24 @@ function renderLibraryViewer(data: LibraryViewerBufferData): string {
 }
 
 /**
- * Register the Library Viewer mode in the registry. Idempotent guard
- * is the registry's `register` throw-on-duplicate.
+ * Register the Library Viewer mode as an OVERLAY on top of the
+ * underlying gameplay mode (= Running by default). Gameplay
+ * continues while the inspector is open. Caller supplies the
+ * underlying systems list (typically Running's) so this mode's
+ * `systems` is the union — no fork in behavior.
  *
- * The mode's `systems` list includes the renderer; bootstrap is
- * expected to register `createLibraryViewerRenderSystem(target)` with a
- * real element (or `null` if no DOM panel is wired). Tests register
- * with a stub element.
+ * The renderer descriptor is registered by bootstrap before this
+ * mode is registered; the renderer's target can be `null` (= test
+ * setup without DOM) and the system no-ops.
  */
-export function registerLibraryViewerMode(reg: Registry): void {
+export function registerLibraryViewerMode(reg: Registry, underlyingSystems: string[]): void {
+  const viewerOnly = [LIBRARY_VIEWER_SYSTEM_ID, LIBRARY_VIEWER_RENDER_SYSTEM_ID];
+  const systems = [...underlyingSystems, ...viewerOnly.filter((id) => !underlyingSystems.includes(id))];
   reg.registerMode({
     id: LIBRARY_VIEWER_MODE_ID,
     label: "Library Viewer",
     tags: ["debug"],
-    systems: [
-      // SM ticks so ModeSwitchRequested events (= "exit inspector
-      // overlay back to gameplay") are processed.
-      "stateMachineSystem",
-      // Overlay visibility tracker also ticks so toggling out flips
-      // the panel back to hidden.
-      "overlayVisibilitySystem",
-      // Top-level panel class toggling so the world panel stays
-      // active (= canvas visible underneath the overlay).
-      "panelVisibilitySystem",
-      // Binding swap + library viewer data + render.
-      "bindingSwapSystem",
-      LIBRARY_VIEWER_SYSTEM_ID,
-      LIBRARY_VIEWER_RENDER_SYSTEM_ID,
-    ],
+    systems,
     ownedBuffers: [LIBRARY_VIEWER_BUFFER_ID],
   });
 }

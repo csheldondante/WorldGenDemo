@@ -12,7 +12,7 @@ import { attachInputListeners } from "../systems/input";
 import { attachBuilderListeners } from "../systems/builderInput";
 import { type InputRecordingState } from "../systems/testing/inputRecording";
 import { createInputSourceSelectorSystem } from "../systems/inputSourceSelector";
-import { applyProfileEdit, cloneActiveProfile, type EditableField } from "./profileEditor";
+import { applyProfileEdit, cloneActiveProfile, serializeActiveProfile, type EditableField } from "./profileEditor";
 import type { Registry } from "../runtime/registry";
 import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
@@ -88,14 +88,32 @@ export function startWorld(opts: WorldOptions): WorldHandle {
   }
   profileEditorPanel.addEventListener("input", onProfileInput);
   profileEditorPanel.addEventListener("change", onProfileInput);
-  // Clone-button click: copies the active profile into the buffer
-  // under a new id + repoints the editor + live characters at it.
+  // Editor action buttons: clone (= copy entry into buffer) and save
+  // (= download JSON). Both read/write CharacterControllerProfileBuffer
+  // directly via the helpers in profileEditor.ts.
   profileEditorPanel.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
     if (t.dataset.peAction === "clone") {
       const newId = cloneActiveProfile(reg);
       // eslint-disable-next-line no-console
       if (newId) console.log(`[profileEditor] cloned active profile → ${newId}`);
+    } else if (t.dataset.peAction === "save") {
+      const dump = serializeActiveProfile(reg);
+      if (!dump) {
+        // eslint-disable-next-line no-console
+        console.warn(`[profileEditor] no active profile to save`);
+        return;
+      }
+      // Clientside download — Blob → object URL → invisible anchor → click.
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${dump.profileId}.profile.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      // eslint-disable-next-line no-console
+      console.log(`[profileEditor] downloaded profile → ${dump.profileId}.profile.json`);
     }
   });
 

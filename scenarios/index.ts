@@ -23,6 +23,7 @@ import { test as cameraStareDown } from "./camera-stare-down";
 import { test as cylinderGalaxy } from "./cylinder-galaxy";
 import { test as sphereGalaxy } from "./sphere-galaxy";
 import { test as torusGalaxy } from "./torus-galaxy";
+import { test as bindingSwapPropagation } from "./binding-swap-propagation";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
@@ -42,6 +43,7 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [cylinderGalaxy.name]: cylinderGalaxy,
   [sphereGalaxy.name]: sphereGalaxy,
   [torusGalaxy.name]: torusGalaxy,
+  [bindingSwapPropagation.name]: bindingSwapPropagation,
 };
 
 export function getScenario(name: string): BufferTest {

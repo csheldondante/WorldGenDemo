@@ -199,13 +199,27 @@ describe("ProfileEditor mode", () => {
     expect(cc.byEntity.get(1)!.profileId).toBe(newId);
   });
 
-  it("registerProfileEditorMode registers the mode with the expected systems list + tag", () => {
+  it("registerProfileEditorMode is overlay-style — includes Running's systems + render", () => {
     const reg = createRegistry();
-    registerProfileEditorMode(reg);
+    const runningSystems = ["stateMachineSystem", "characterControllerSystem", "renderSystem"];
+    registerProfileEditorMode(reg, runningSystems);
     const mode = reg.getMode(PROFILE_EDITOR_MODE_ID);
     expect(mode).toBeDefined();
+    // All underlying systems present (= gameplay continues).
+    for (const id of runningSystems) {
+      expect(mode!.systems).toContain(id);
+    }
+    // Plus the editor render system.
     expect(mode!.systems).toContain(PROFILE_EDITOR_RENDER_SYSTEM_ID);
     expect(mode!.tags).toContain("debug");
     expect(mode!.ownedBuffers).toContain(PROFILE_EDITOR_BUFFER_ID);
+  });
+
+  it("registerProfileEditorMode dedupes systems that are already in the underlying list", () => {
+    const reg = createRegistry();
+    registerProfileEditorMode(reg, [PROFILE_EDITOR_RENDER_SYSTEM_ID, "stateMachineSystem"]);
+    const mode = reg.getMode(PROFILE_EDITOR_MODE_ID)!;
+    const count = mode.systems.filter((id) => id === PROFILE_EDITOR_RENDER_SYSTEM_ID).length;
+    expect(count).toBe(1);
   });
 });

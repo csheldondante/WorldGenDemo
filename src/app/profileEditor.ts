@@ -116,6 +116,7 @@ function renderEditor(activeId: string, p: CharacterControllerProfile | undefine
   }
   return `${EDITOR_CSS}<div class="pe">
 <h2>Profile Editor — <span class="pe-active">${activeId}</span>
+  <button data-pe-action="save" style="float:right;background:#2a4;color:#fff;border:1px solid #444;padding:2px 10px;font:inherit;border-radius:3px;cursor:pointer;margin-left:6px">⬇ save</button>
   <button data-pe-action="clone" style="float:right;background:#2c4a78;color:#fff;border:1px solid #444;padding:2px 10px;font:inherit;border-radius:3px;cursor:pointer">＋ clone</button>
 </h2>
 <small>Edits write back to CharacterControllerProfileBuffer.byId immediately. Live characters pick up changes next tick. "Clone" duplicates the active profile under a new id and switches the editor + live character to the new id (= safe to experiment without overwriting the original).</small>
@@ -249,21 +250,42 @@ export function cloneActiveProfile(reg: Registry): string | null {
   return newId;
 }
 
-/** Register the ProfileEditor mode. The systems list includes the SM
- *  + overlay visibility + the editor's render system. There is no
- *  separate "data" system — the render system reads from canonical
- *  buffers directly. */
-export function registerProfileEditorMode(reg: Registry): void {
+/**
+ * Serialize the active profile to a JSON-friendly object. Suitable
+ * for `JSON.stringify` + clientside download or filesystem write.
+ * Returns null if the active profile id has no profile.
+ */
+export function serializeActiveProfile(reg: Registry): { profileId: string; profile: CharacterControllerProfile } | null {
+  const ed = reg.getBuffer<ProfileEditorBufferData>(PROFILE_EDITOR_BUFFER_ID);
+  const activeId = readBuffer(ed).activeProfileId;
+  const profiles = reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID);
+  const p = readBuffer(profiles).byId.get(activeId);
+  if (!p) return null;
+  return { profileId: activeId, profile: p };
+}
+
+/** Register the ProfileEditor mode as an OVERLAY on top of Running.
+ *  Gameplay continues (= character keeps simulating) while the editor
+ *  is open; edits to the profile buffer take effect on the live
+ *  character next tick. Per user 2026-05-23: "I want to be able to
+ *  tweak and play in the gym scene so that I can swap out profiles
+ *  on the controller or tweak specific values and test out".
+ *
+ *  Caller supplies the Running mode's systems list — this avoids a
+ *  src/app/ → src/runtime/ circular reference for the mode lookup,
+ *  and ensures the editor's systems list grows automatically when
+ *  Running's does.
+ */
+export function registerProfileEditorMode(reg: Registry, runningSystems: string[]): void {
+  const editorOnly = [PROFILE_EDITOR_RENDER_SYSTEM_ID];
+  // Dedupe — Running already includes panelVisibilitySystem +
+  // overlayVisibilitySystem + stateMachineSystem.
+  const systems = [...runningSystems, ...editorOnly.filter((id) => !runningSystems.includes(id))];
   reg.registerMode({
     id: PROFILE_EDITOR_MODE_ID,
     label: "Profile Editor",
     tags: ["debug"],
-    systems: [
-      "stateMachineSystem",
-      "overlayVisibilitySystem",
-      "panelVisibilitySystem",
-      PROFILE_EDITOR_RENDER_SYSTEM_ID,
-    ],
+    systems,
     ownedBuffers: [PROFILE_EDITOR_BUFFER_ID],
   });
 }

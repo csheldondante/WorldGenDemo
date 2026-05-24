@@ -63,10 +63,13 @@ export type TestInput =
 
 /** One execution step. `tickSystems` builds a one-off graph from a hand-picked
  *  system list; `tickActiveGraph` runs whichever graph the SM currently has
- *  selected (identical to `startLoop`). */
+ *  selected (identical to `startLoop`). `mutate` runs an arbitrary callback
+ *  against the registry between tick steps (= for injecting events,
+ *  swapping bindings, simulating a UI action mid-scenario, etc.). */
 export type TestStep =
   | { kind: "tickSystems"; systemIds: SystemId[]; ticks: number; dt?: number }
-  | { kind: "tickActiveGraph"; ticks: number; dt?: number };
+  | { kind: "tickActiveGraph"; ticks: number; dt?: number }
+  | { kind: "mutate"; fn: (reg: Registry) => void };
 
 export interface BufferTest {
   name: string;
@@ -229,6 +232,13 @@ function executeStep(
   stepIdx: number,
   startingTick: number,
 ): number {
+  if (step.kind === "mutate") {
+    // Inter-step mutation hook — caller-supplied callback runs against
+    // the registry. No ticks advance. Useful for emitting events,
+    // applying a binding, or simulating a UI action between tick batches.
+    step.fn(reg);
+    return startingTick;
+  }
   const dt = step.dt ?? 1 / 60;
   let tick = startingTick;
   if (step.kind === "tickActiveGraph") {
