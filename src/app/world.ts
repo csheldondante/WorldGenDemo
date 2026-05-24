@@ -16,6 +16,7 @@ import {
 import { attachBuilderListeners } from "../systems/builderInput";
 import { type InputRecordingState } from "../systems/testing/inputRecording";
 import { createInputSourceSelectorSystem } from "../systems/inputSourceSelector";
+import { applyProfileEdit, type EditableField } from "./profileEditor";
 import type { Registry } from "../runtime/registry";
 import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
@@ -69,6 +70,29 @@ export function startWorld(opts: WorldOptions): WorldHandle {
   ].join(";");
   document.body.appendChild(libraryViewerPanel);
 
+  // Profile editor panel — sibling of the library-viewer overlay.
+  // Same lifecycle (visible while activeMode === "ProfileEditor",
+  // hidden otherwise — managed by OverlayVisibilitySystem).
+  const profileEditorPanel = document.createElement("div");
+  profileEditorPanel.id = "profile-editor-panel";
+  profileEditorPanel.style.cssText = libraryViewerPanel.style.cssText;
+  document.body.appendChild(profileEditorPanel);
+  // Listener: form inputs (range + number) write back to the active
+  // profile via applyProfileEdit. Both input + change events fire so
+  // drag-during-slide + commit-on-release both work.
+  function onProfileInput(e: Event) {
+    const t = e.target as HTMLInputElement;
+    const field = t.dataset.peField as EditableField | undefined;
+    if (!field) return;
+    const value = Number(t.value);
+    if (!Number.isFinite(value)) return;
+    applyProfileEdit(reg, field, value);
+    const siblings = profileEditorPanel.querySelectorAll<HTMLInputElement>(`input[data-pe-field="${field}"]`);
+    siblings.forEach((s) => { if (s !== t) s.value = String(value); });
+  }
+  profileEditorPanel.addEventListener("input", onProfileInput);
+  profileEditorPanel.addEventListener("change", onProfileInput);
+
   // 2. Configurable runtime bootstrap (same factory the scenario harness uses
   //    in --play mode). Wires registry + core buffers/systems/graphs + Three.js
   //    handles + initial scene load via the LoadRequested event. Also registers
@@ -86,6 +110,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     },
     sceneName,
     libraryViewerTarget: libraryViewerPanel,
+    profileEditorTarget: profileEditorPanel,
   });
   const reg = app.registry;
   const { inputAccumulator, builderAccumulator, builderDom } = app.coreSystems;
@@ -490,10 +515,13 @@ function attachModeSwitcher(opts: ModeSwitcherOptions): void {
   sep.style.color = "#444";
   bar.appendChild(sep);
 
-  // Character binding picker — paramOverrides per binding produce
-  // different "feel" (standard / agile / heavy). Phase 5; current
-  // biped systems don't yet consume ControllerParamsBuffer so the
-  // swap is data-only — visible behavior change lands in Phase 5b.
+  // Character binding picker — each binding installs a distinct
+  // CharacterControllerProfile into the character intent slot
+  // (= different 6DoF accel curves, grip, turn rate). Standard /
+  // agile / heavy each have noticeably different feel because the
+  // existing controller systems read from CharacterControllerProfileBuffer
+  // and pick up the new curves on the next tick. See
+  // src/app/characterBindings.ts.
   const bindingLabel = document.createElement("span");
   bindingLabel.textContent = "binding:";
   bindingLabel.style.color = "#888";

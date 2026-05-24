@@ -2,10 +2,13 @@ import type { Registry } from "./registry";
 import { readBuffer, writeBuffer } from "./buffer";
 import { executeGraph } from "./scheduler";
 import { getOrBuildGraphForMode } from "./mode";
+import { buildExecutionGraph, type ExecutionGraph } from "./graph";
 import {
   STATE_MACHINE_BUFFER_ID,
   type StateMachineBufferData,
 } from "./stateMachine";
+
+const TRANSITION_STATE_BUFFER_ID_LOCAL = "transitionState"; // avoid circular import
 
 export interface LoopHandle {
   stop(): void;
@@ -53,6 +56,19 @@ export function startLoop(registry: Registry): LoopHandle {
   let last = performance.now();
   let accumulator = 0;
   let tickIdx = 0;
+  // Cache for transition graphs (= the same shape as the mode graph
+  // cache in src/runtime/mode.ts, but for transitions). Key by
+  // transition id; rebuild on miss.
+  const transitionGraphCache = new Map<string, ExecutionGraph>();
+  function getOrBuildTransitionGraph(transitionId: string): ExecutionGraph {
+    let g = transitionGraphCache.get(transitionId);
+    if (g) return g;
+    const t = registry.getTransition?.(transitionId);
+    if (!t) throw new Error(`startLoop: transition '${transitionId}' not registered`);
+    g = buildExecutionGraph({ id: `transition:${transitionId}`, nodes: t.systems, registry });
+    transitionGraphCache.set(transitionId, g);
+    return g;
+  }
 
   function tick() {
     if (stopped) return;
@@ -67,12 +83,30 @@ export function startLoop(registry: Registry): LoopHandle {
     while (accumulator >= STEP_DT && stepsThisFrame < MAX_STEPS_PER_FRAME) {
       try {
         const smBuf = registry.getBuffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID);
-        // Phase 1b: derive the active graph from `activeMode` via the
-        // ModeRegistry instead of looking up a pre-registered graph.
-        // The graph is cached per mode-id so subsequent ticks pay zero
-        // topo-sort cost. See `docs/modes-and-modules.md`.
-        const modeId = readBuffer(smBuf).activeMode;
-        const graph = getOrBuildGraphForMode(registry, modeId);
+        // Phase 3b: if a transition is in flight, run its graph
+        // instead of the active mode's graph. On the tick its
+        // isComplete returns true, clear the transition state +
+        // advance activeMode to the transition's `to` mode. This is
+        // how the Rebuilding pipeline runs as a transition between
+        // Loading and Running — see src/app/transitions.ts.
+        let graph: ExecutionGraph;
+        let activeTransitionId: string | null = null;
+        if (registry.hasBuffer(TRANSITION_STATE_BUFFER_ID_LOCAL)) {
+          const tsBuf = registry.getBuffer<{ activeTransitionId: string | null; startedTick: number }>(
+            TRANSITION_STATE_BUFFER_ID_LOCAL,
+          );
+          activeTransitionId = readBuffer(tsBuf).activeTransitionId;
+        }
+        if (activeTransitionId !== null && registry.getTransition?.(activeTransitionId)) {
+          graph = getOrBuildTransitionGraph(activeTransitionId);
+        } else {
+          // Phase 1b: derive the active graph from `activeMode` via the
+          // ModeRegistry instead of looking up a pre-registered graph.
+          // The graph is cached per mode-id so subsequent ticks pay zero
+          // topo-sort cost. See `docs/modes-and-modules.md`.
+          const modeId = readBuffer(smBuf).activeMode;
+          graph = getOrBuildGraphForMode(registry, modeId);
+        }
         // `now` exposed to systems is derived from tickIdx, NOT wall-clock —
         // so systems that timestamp by `ctx.now` see a deterministic, fixed-
         // dt-derived clock. Same convention as runBufferTest.
@@ -88,6 +122,19 @@ export function startLoop(registry: Registry): LoopHandle {
             });
           }
         });
+        // Post-execute: if we ran a transition's systems this tick,
+        // check isComplete. On true: clear the transition state +
+        // advance activeMode to the transition's `to` mode.
+        if (activeTransitionId !== null) {
+          const t = registry.getTransition?.(activeTransitionId);
+          if (t && t.isComplete(registry)) {
+            const tsBuf = registry.getBuffer<{ activeTransitionId: string | null; startedTick: number }>(
+              TRANSITION_STATE_BUFFER_ID_LOCAL,
+            );
+            writeBuffer(tsBuf, (d) => { d.activeTransitionId = null; d.startedTick = 0; });
+            writeBuffer(smBuf, (d) => { d.activeMode = t.to; });
+          }
+        }
       } catch (err) {
         // Errors at the loop level (e.g. unregistered active graph) are
         // fatal-ish; log and keep going so devtools can grab the trace.

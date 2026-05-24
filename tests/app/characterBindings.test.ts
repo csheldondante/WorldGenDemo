@@ -5,31 +5,32 @@ import { registerCoreBuffers } from "../../src/buffers";
 import { registerCoreSystems } from "../../src/systems";
 import { buildAndRegisterCoreGraphs } from "../../src/app/graphs";
 import { registerInfrastructureSystems } from "../../src/runtime/infrastructureSystems";
+import { createTransitionActivatorSystem } from "../../src/app/transitionActivator";
 import { registerBipedDefaultBinding } from "../../src/app/bipedBinding";
 import {
   BIPED_STANDARD,
   BIPED_AGILE,
-  BIPED_HEAVY,
+  BIPED_STANDARD_PROFILE,
+  BIPED_AGILE_PROFILE,
+  BIPED_HEAVY_PROFILE,
   CHARACTER_BINDINGS,
   materializeBindings,
 } from "../../src/app/characterBindings";
+import { applyControllerBinding } from "../../src/app/applyControllerBinding";
+import { SLOT_CHARACTER_INTENT } from "../../src/runtime/slotIds";
 import {
-  applyControllerBinding,
-  createControllerParamsBuffer,
-  CONTROLLER_PARAMS_BUFFER_ID,
-  type ControllerParamsBufferData,
-} from "../../src/runtime/controllerParams";
-import { SLOT_CHARACTER_INTENT, SLOT_PHYSICS } from "../../src/runtime/slotIds";
+  CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
+  type CharacterControllerProfileBufferData,
+  type CharacterControllerProfile,
+} from "../../src/buffers/characterControllerProfile";
 
 /**
- * Phase 5 — multiple character bindings sharing modules but carrying
- * different paramOverrides (= "some may be faster, accelerate more
- * easily, have different grip", per user 2026-05-23).
- *
- * These tests verify the catalog SHAPE + the binding-swap mechanism.
- * The visible-behavior demo (= systems reading ControllerParamsBuffer
- * to change actual character feel) is Phase 5b — deferred until at
- * least one existing system is refactored to consume the buffer.
+ * Phase 5 character bindings — each binding installs a full
+ * `CharacterControllerProfile` into `CharacterControllerProfileBuffer.byId`
+ * via `applyControllerBinding`. Refactored 2026-05-23: bindings no
+ * longer carry multiplier paramOverrides — the profile is the
+ * canonical data. See
+ * wiki/worldgen-demo-bindings-install-profiles-not-multipliers.
  */
 
 describe("Character bindings catalog", () => {
@@ -38,25 +39,33 @@ describe("Character bindings catalog", () => {
     expect(ids).toEqual(["biped:standard", "biped:agile", "biped:heavy"]);
   });
 
-  it("agile has faster speed + lower grip than standard", () => {
-    const standard = BIPED_STANDARD.paramOverrides![SLOT_CHARACTER_INTENT];
-    const agile = BIPED_AGILE.paramOverrides![SLOT_CHARACTER_INTENT];
-    expect((agile.speedMultiplier as number)).toBeGreaterThan(standard.speedMultiplier as number);
-    expect((agile.gripMultiplier as number)).toBeLessThan(standard.gripMultiplier as number);
+  it("each binding's characterIntent slotData is a CharacterControllerProfile", () => {
+    for (const b of CHARACTER_BINDINGS) {
+      const p = b.slotData?.[SLOT_CHARACTER_INTENT] as CharacterControllerProfile | undefined;
+      expect(p).toBeDefined();
+      expect(typeof p!.id).toBe("string");
+      expect(typeof p!.forwardAccel.vMax).toBe("number");
+      expect(typeof p!.downAccel.accelAtZero).toBe("number");
+    }
   });
 
-  it("heavy has slower speed + higher grip than standard", () => {
-    const standard = BIPED_STANDARD.paramOverrides![SLOT_CHARACTER_INTENT];
-    const heavy = BIPED_HEAVY.paramOverrides![SLOT_CHARACTER_INTENT];
-    expect((heavy.speedMultiplier as number)).toBeLessThan(standard.speedMultiplier as number);
-    expect((heavy.gripMultiplier as number)).toBeGreaterThan(standard.gripMultiplier as number);
+  it("agile profile is faster + slipperier than standard (= higher vMax, lower slideGripScale, snappier turn)", () => {
+    expect(BIPED_AGILE_PROFILE.forwardAccel.vMax).toBeGreaterThan(BIPED_STANDARD_PROFILE.forwardAccel.vMax);
+    expect(BIPED_AGILE_PROFILE.slideGripScale).toBeLessThan(BIPED_STANDARD_PROFILE.slideGripScale);
+    expect(BIPED_AGILE_PROFILE.desiredTurnRate).toBeGreaterThan(BIPED_STANDARD_PROFILE.desiredTurnRate);
+  });
+
+  it("heavy profile is slower + grippier than standard (= lower vMax, higher slideGripScale, slower turn)", () => {
+    expect(BIPED_HEAVY_PROFILE.forwardAccel.vMax).toBeLessThan(BIPED_STANDARD_PROFILE.forwardAccel.vMax);
+    expect(BIPED_HEAVY_PROFILE.slideGripScale).toBeGreaterThan(BIPED_STANDARD_PROFILE.slideGripScale);
+    expect(BIPED_HEAVY_PROFILE.desiredTurnRate).toBeLessThan(BIPED_STANDARD_PROFILE.desiredTurnRate);
   });
 
   it("materializeBindings merges biped:default slot assignments into every catalog binding", () => {
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
-    registerInfrastructureSystems(reg);
+    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
     buildAndRegisterCoreGraphs(reg);
     const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
 
@@ -65,26 +74,46 @@ describe("Character bindings catalog", () => {
     for (const m of materialized) {
       // Slot assignments come from biped:default.
       expect(m.bindings).toEqual(bipedDefault.bindings);
-      // But the per-binding paramOverrides are preserved.
-      const orig = CHARACTER_BINDINGS.find((b) => b.id === m.id)!;
-      expect(m.paramOverrides).toEqual(orig.paramOverrides);
+      // Each materialized binding's profile uses the canonical "default"
+      // id so installing the binding replaces the live character's
+      // profile without re-pointing it.
+      const p = m.slotData?.[SLOT_CHARACTER_INTENT] as CharacterControllerProfile | undefined;
+      expect(p).toBeDefined();
+      expect(p!.id).toBe("default");
     }
   });
 
-  it("applyControllerBinding swap from standard → agile updates ControllerParamsBuffer", () => {
+  it("applyControllerBinding installs the binding's profile into CharacterControllerProfileBuffer.byId", () => {
     const reg = createRegistry();
-    reg.registerBuffer(createControllerParamsBuffer());
+    registerCoreBuffers(reg);
+    registerCoreSystems(reg);
+    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
+    buildAndRegisterCoreGraphs(reg);
+    const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
+    const materialized = materializeBindings(bipedDefault);
+    const agile = materialized.find((b) => b.id === BIPED_AGILE.id)!;
 
-    // Use the test-only buffer; doesn't need the full bootstrap.
-    applyControllerBinding(reg, BIPED_STANDARD);
-    let params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
-    expect(params.bindingId).toBe("biped:standard");
-    expect(params.bySlot[SLOT_CHARACTER_INTENT]).toEqual({ speedMultiplier: 1.0, gripMultiplier: 1.0 });
+    applyControllerBinding(reg, agile);
+    const profiles = readBuffer(reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
+    const installed = profiles.byId.get("default")!;
+    expect(installed.forwardAccel.vMax).toBeCloseTo(BIPED_AGILE_PROFILE.forwardAccel.vMax, 5);
+    expect(installed.slideGripScale).toBeCloseTo(BIPED_AGILE_PROFILE.slideGripScale, 5);
+  });
 
-    applyControllerBinding(reg, BIPED_AGILE);
-    params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
-    expect(params.bindingId).toBe("biped:agile");
-    expect(params.bySlot[SLOT_CHARACTER_INTENT]).toEqual({ speedMultiplier: 1.6, gripMultiplier: 0.7 });
-    expect(params.bySlot[SLOT_PHYSICS]).toEqual({ dragMultiplier: 0.8 });
+  it("re-applying standard after agile restores standard's curves (= heals drift)", () => {
+    const reg = createRegistry();
+    registerCoreBuffers(reg);
+    registerCoreSystems(reg);
+    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
+    buildAndRegisterCoreGraphs(reg);
+    const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
+    const materialized = materializeBindings(bipedDefault);
+
+    applyControllerBinding(reg, materialized.find((b) => b.id === BIPED_AGILE.id)!);
+    applyControllerBinding(reg, materialized.find((b) => b.id === BIPED_STANDARD.id)!);
+    const profiles = readBuffer(reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
+    const installed = profiles.byId.get("default")!;
+    expect(installed.forwardAccel.vMax).toBeCloseTo(BIPED_STANDARD_PROFILE.forwardAccel.vMax, 5);
+    expect(installed.slideGripScale).toBeCloseTo(BIPED_STANDARD_PROFILE.slideGripScale, 5);
   });
 });

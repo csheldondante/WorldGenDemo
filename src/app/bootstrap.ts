@@ -26,8 +26,16 @@ import {
   type LibraryViewerRenderTarget,
 } from "../runtime/libraryViewer";
 import { SCENE_CATALOG } from "./sceneCatalog";
+import { registerTransitions } from "./transitions";
+import { createTransitionActivatorSystem } from "./transitionActivator";
+import {
+  createProfileEditorBuffer,
+  createProfileEditorRenderSystem,
+  registerProfileEditorMode,
+  type ProfileEditorRenderTarget,
+} from "./profileEditor";
 import { registerBipedDefaultBinding } from "./bipedBinding";
-import { applyControllerBinding } from "../runtime/controllerParams";
+import { applyControllerBinding } from "./applyControllerBinding";
 import { materializeBindings, BIPED_STANDARD } from "./characterBindings";
 import type { ControllerBinding } from "../runtime/moduleSlots";
 import { registerInfrastructureSystems } from "../runtime/infrastructureSystems";
@@ -51,6 +59,8 @@ export interface BootstrapOptions {
    *  LibraryViewer mode is active. If undefined, the renderer is
    *  registered with a null target (= no-op). Optional. */
   libraryViewerTarget?: LibraryViewerRenderTarget | null;
+  /** DOM panel for the ProfileEditor mode. Null = no-op. */
+  profileEditorTarget?: ProfileEditorRenderTarget | null;
   /** Three.js + DOM handles. Omit for headless (no rendering). */
   rendering?: RenderingHandles;
   /** Scene to load on bootstrap. Emits a `LoadRequested` event for this name.
@@ -97,6 +107,38 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   registerInfrastructureSystems(reg, {
     libraryViewerTarget: options.libraryViewerTarget ?? null,
     bindingCatalog: characterBindings,
+    applyBinding: (b) => applyControllerBinding(reg, b),
+    // BindingSwapSystem declares write access to the buffer the
+    // installer touches (= the character profile buffer for the
+    // characterIntent slot). Hazard validator uses this to flag any
+    // other writer/reader collisions.
+    bindingWriteBufferIds: ["characterControllerProfile"],
+    // ... and runs BEFORE every character system that reads the
+    // profile so a binding swap takes effect on the same tick.
+    bindingReaderSystemIds: [
+      "bodyLeanSystem",
+      "characterControllerSystem",
+      "characterOrientationSystem",
+      "footIkSystem",
+      "footPlannerSystem",
+      "forceFieldSystem",
+      "surfaceConstrainedVelocitySystem",
+      "surfaceConstraintSystem",
+      "tangentInputMapperSystem",
+    ],
+    // Phase 3b — transition activator. Lives in src/app/ (knows the
+    // SM-state → app-transition mapping). Loading + Rebuilding graphs
+    // reference this system by id.
+    extraSystems: [createTransitionActivatorSystem()],
+    // App-specific overlay bindings beyond the LibraryViewer panel.
+    extraOverlays: options.profileEditorTarget
+      ? [{
+          modeId: "ProfileEditor",
+          target: options.profileEditorTarget.style
+            ? (options.profileEditorTarget as { style: { display: string } })
+            : null,
+        }]
+      : [],
   });
   buildAndRegisterCoreGraphs(reg); // validates: throws if any contract is violated
   // Register every catalog scene as a Mode sharing the Running graph's
@@ -107,8 +149,20 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
   // very different from the gameplay modes). Switching to it stops
   // gameplay and shows the registry overlay.
   registerLibraryViewerMode(reg);
-  // Apply the default standard binding immediately so
-  // ControllerParamsBuffer has sensible values from tick 0.
+  // Profile editor mode + its render system + selector buffer. Edits
+  // write back into CharacterControllerProfileBuffer directly — see
+  // src/app/profileEditor.ts. No intermediate snapshot buffer: the
+  // render system reads the canonical profile buffer.
+  reg.registerBuffer(createProfileEditorBuffer());
+  reg.registerSystem(createProfileEditorRenderSystem(options.profileEditorTarget ?? null));
+  registerProfileEditorMode(reg);
+  // Phase 3b — register app-level transitions. The Rebuilding pipeline
+  // is now also expressed as a Transition (Loading → Running via the
+  // Rebuilding graph). The runtime loop honors transitions via
+  // TransitionStateBuffer + isComplete polling. See src/app/transitions.ts.
+  registerTransitions(reg);
+  // Apply the default standard binding immediately so the character
+  // profile buffer has sensible values from tick 0.
   applyControllerBinding(reg, characterBindings.find((b) => b.id === BIPED_STANDARD.id)!);
   // Register a "DebugGym" mode: same systems as Running, tagged "debug".
   // Cycling UI uses it as a sandbox for binding experimentation.

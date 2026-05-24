@@ -9,14 +9,13 @@
  * — no behavior change, only that the system list is now DERIVED
  * from the binding rather than hand-curated in `graphs.ts`.
  *
- * Future work:
- *   - Wrap the character systems in module factories that read
- *     `ControllerParamsBuffer` for tunable values (= agility, grip,
- *     max speed). Then a sibling binding "biped:agile" with different
- *     paramOverrides will produce a different feel without swapping
- *     module identities.
- *   - Sibling archetypes ("vehicle", "drone") provide different
- *     modules for the same slots.
+ * Sibling bindings (biped:agile, biped:heavy) share these module
+ * choices but install distinct `CharacterControllerProfile`s into
+ * the characterIntent slot via `slotData` (see
+ * `src/app/characterBindings.ts`). Different feel, same modules.
+ *
+ * Future work: sibling archetypes ("vehicle", "drone") provide
+ * different modules for the same slots.
  */
 
 import { createModuleRegistry, type ControllerBinding, type ModuleRegistry } from "../runtime/moduleSlots";

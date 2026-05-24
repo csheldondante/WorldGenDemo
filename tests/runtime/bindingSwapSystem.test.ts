@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createRegistry } from "../../src/runtime/registry";
 import { createBuffer, readBuffer, writeBuffer } from "../../src/runtime/buffer";
 import { buildExecutionGraph } from "../../src/runtime/graph";
@@ -11,22 +11,18 @@ import {
   EVENT_BUFFER_ID,
   type RuntimeEvent,
 } from "../../src/runtime/stateMachine";
-import {
-  CONTROLLER_PARAMS_BUFFER_ID,
-  createControllerParamsBuffer,
-  type ControllerParamsBufferData,
-} from "../../src/runtime/controllerParams";
-import {
-  SLOT_CHARACTER_INTENT,
-  SLOT_PHYSICS,
-} from "../../src/runtime/slotIds";
 import type { ControllerBinding } from "../../src/runtime/moduleSlots";
 
 /**
- * Tech-debt payoff 2026-05-23: BindingSwapSystem drains
- * `BindingRequested` events from the event buffer and applies the
- * referenced binding via `applyControllerBinding`. Replaces direct
- * imperative calls from the binding-picker UI.
+ * BindingSwapSystem drains `BindingRequested` events from the event
+ * buffer and invokes a caller-injected `apply` callback on the matching
+ * binding. The runtime layer doesn't know about specific destination
+ * buffers; the app layer's installer does the actual write (see
+ * src/app/applyControllerBinding.ts).
+ *
+ * Refactored 2026-05-23 — the prior contract leaned on the deprecated
+ * ControllerParamsBuffer + paramOverrides shape. See
+ * wiki/worldgen-demo-bindings-install-profiles-not-multipliers.
  */
 
 describe("BindingSwapSystem", () => {
@@ -37,26 +33,24 @@ describe("BindingSwapSystem", () => {
       description: "events",
       initial: [],
     }));
-    reg.registerBuffer(createControllerParamsBuffer());
     const standard: ControllerBinding = {
       id: "biped:standard",
       bindings: {},
-      paramOverrides: {
-        [SLOT_CHARACTER_INTENT]: { speedMultiplier: 1.0 },
-        [SLOT_PHYSICS]: { dragMultiplier: 1.0 },
-      },
+      slotData: { characterIntent: { tag: "standard" } },
     };
     const agile: ControllerBinding = {
       id: "biped:agile",
       bindings: {},
-      paramOverrides: {
-        [SLOT_CHARACTER_INTENT]: { speedMultiplier: 1.6 },
-        [SLOT_PHYSICS]: { dragMultiplier: 0.8 },
-      },
+      slotData: { characterIntent: { tag: "agile" } },
     };
     const catalog = [standard, agile];
-    reg.registerSystem(createBindingSwapSystem(reg, catalog));
-    return { reg, catalog };
+    const apply = vi.fn();
+    reg.registerSystem(createBindingSwapSystem({
+      catalog,
+      apply,
+      writeBufferIds: [], // no real destination in this unit test
+    }));
+    return { reg, catalog, apply };
   }
 
   function tick(reg: ReturnType<typeof setup>["reg"]) {
@@ -68,15 +62,14 @@ describe("BindingSwapSystem", () => {
     executeGraph(g, reg, { dt: 0, now: 0 });
   }
 
-  it("applies the requested binding when a BindingRequested event is drained", () => {
-    const { reg } = setup();
+  it("invokes apply(binding) when a BindingRequested event is drained", () => {
+    const { reg, apply, catalog } = setup();
     writeBuffer(reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID), (d) => {
       d.push({ type: "BindingRequested", payload: { bindingId: "biped:agile" } });
     });
     tick(reg);
-    const params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
-    expect(params.bindingId).toBe("biped:agile");
-    expect(params.bySlot[SLOT_CHARACTER_INTENT]).toEqual({ speedMultiplier: 1.6 });
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(catalog[1]);
   });
 
   it("drains the BindingRequested event after handling it", () => {
@@ -100,23 +93,23 @@ describe("BindingSwapSystem", () => {
     expect(remaining.find((e) => e.type === "WorldReady")).toBeDefined();
   });
 
-  it("ignores BindingRequested for unknown binding ids (= no throw, no state change)", () => {
-    const { reg } = setup();
+  it("ignores BindingRequested for unknown binding ids (= no throw, no apply call)", () => {
+    const { reg, apply } = setup();
     writeBuffer(reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID), (d) => {
       d.push({ type: "BindingRequested", payload: { bindingId: "biped:ghost" } });
     });
     expect(() => tick(reg)).not.toThrow();
-    const params = readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID));
-    expect(params.bindingId).toBe("");  // unchanged from initial
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it("uses the LAST BindingRequested event when multiple arrive in one tick", () => {
-    const { reg } = setup();
+    const { reg, apply, catalog } = setup();
     writeBuffer(reg.getBuffer<RuntimeEvent[]>(EVENT_BUFFER_ID), (d) => {
       d.push({ type: "BindingRequested", payload: { bindingId: "biped:standard" } });
       d.push({ type: "BindingRequested", payload: { bindingId: "biped:agile" } });
     });
     tick(reg);
-    expect(readBuffer(reg.getBuffer<ControllerParamsBufferData>(CONTROLLER_PARAMS_BUFFER_ID)).bindingId).toBe("biped:agile");
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(catalog[1]); // agile
   });
 });

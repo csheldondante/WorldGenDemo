@@ -1,14 +1,13 @@
 /**
- * OverlayVisibilitySystem — toggles a DOM element's `display` based
- * on the runtime's active mode. Replaces the prior imperative
- * `panel.style.display = ...` calls from the mode-switcher widget's
- * DOM event handlers. Tech-debt payoff 2026-05-23.
+ * OverlayVisibilitySystem — toggles DOM element `display` based on
+ * the runtime's active mode. One registered instance can manage
+ * multiple panels (each shown when its bound modeId is active).
  *
- * Pattern: factory closes over the target element + the mode id
- * the element should be visible in. Each tick reads `activeMode`
- * from `StateMachineBuffer` and writes `display` accordingly. When
- * target is `null`, the system is a no-op (= production may register
- * before the DOM exists, headless tests may run without DOM).
+ * Pattern: factory closes over a list of (target, modeId) bindings.
+ * Each tick reads `activeMode` from `StateMachineBuffer` and sets
+ * each bound target's display: shown when its modeId matches active,
+ * hidden otherwise. Targets with `null` style are no-ops (= test
+ * stubs without `style` field).
  */
 
 import { readBuffer } from "./buffer";
@@ -24,34 +23,52 @@ export interface OverlayVisibilityTarget {
   style: { display: string };
 }
 
-export interface OverlayVisibilityOptions {
-  /** DOM element to toggle. `null` = no-op. */
+export interface OverlayBinding {
+  /** Mode id at which `target` becomes visible. */
+  modeId: string;
+  /** DOM element to toggle. `null` = no-op for this binding. */
   target: OverlayVisibilityTarget | null;
-  /** Mode id at which the target becomes visible (= `display: block`).
-   *  At any other activeMode, the target hides (= `display: none`). */
-  showWhenActiveMode: string;
   /** CSS display value when shown. Defaults to "block". */
+  shownDisplay?: string;
+}
+
+export interface OverlayVisibilityOptions {
+  /** Either a single binding (= pre-existing single-target API) or
+   *  multiple bindings (each panel shown when its mode is active).
+   *  Mixed usage: omitted parameters use a single legacy binding. */
+  bindings?: OverlayBinding[];
+  /** Single-target API (legacy compat). If `bindings` is also set,
+   *  this binding is appended to it. */
+  target?: OverlayVisibilityTarget | null;
+  showWhenActiveMode?: string;
   shownDisplay?: string;
 }
 
 export function createOverlayVisibilitySystem(
   opts: OverlayVisibilityOptions,
 ): SystemDescriptor {
-  const shown = opts.shownDisplay ?? "block";
+  const all: OverlayBinding[] = opts.bindings ? [...opts.bindings] : [];
+  if (opts.showWhenActiveMode !== undefined) {
+    all.push({
+      modeId: opts.showWhenActiveMode,
+      target: opts.target ?? null,
+      shownDisplay: opts.shownDisplay,
+    });
+  }
   return {
     id: OVERLAY_VISIBILITY_SYSTEM_ID,
     description:
-      "Toggles an overlay DOM element's display attribute based on the runtime's activeMode. Reads StateMachineBuffer; writes only to the target's CSS style.",
+      "Toggles one or more overlay DOM elements' display attribute based on the runtime's activeMode. Reads StateMachineBuffer; writes only to the targets' CSS style.",
     buffers: [{ id: STATE_MACHINE_BUFFER_ID, access: "read" }],
-    // Read AFTER SM has updated activeMode this tick (= so a
-    // ModeSwitchRequested processed this tick is immediately visible).
     runsAfter: ["stateMachineSystem"],
     execute: ({ buffer }) => {
-      if (!opts.target) return;
       const sm = readBuffer(buffer<StateMachineBufferData>(STATE_MACHINE_BUFFER_ID));
-      const next = sm.activeMode === opts.showWhenActiveMode ? shown : "none";
-      if (opts.target.style.display !== next) {
-        opts.target.style.display = next;
+      for (const b of all) {
+        if (!b.target) continue;
+        const next = sm.activeMode === b.modeId ? (b.shownDisplay ?? "block") : "none";
+        if (b.target.style.display !== next) {
+          b.target.style.display = next;
+        }
       }
     },
   };

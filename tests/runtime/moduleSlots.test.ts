@@ -129,17 +129,18 @@ describe("resolveBinding", () => {
     expect(() => resolveBinding(reg, binding)).toThrow(/slot/i);
   });
 
-  it("applies paramOverrides to a clone of the binding (= immutable source)", () => {
+  it("carries slotData per slot (= installer-shaped data for binding application)", () => {
     const reg = setup();
+    // Refactored 2026-05-23: paramOverrides → slotData. The data is
+    // opaque to the runtime (interpreted by applyControllerBinding in
+    // src/app/applyControllerBinding.ts per slot). See
+    // wiki/worldgen-demo-bindings-install-profiles-not-multipliers.
     const binding: ControllerBinding = {
       id: "biped",
       bindings: { characterIntent: ["biped:intent"], physics: ["biped:phys"] },
-      paramOverrides: { characterIntent: { vMax: 7.5 } },
+      slotData: { characterIntent: { profileShape: "test-marker" } },
     };
-    // Test contract: paramOverrides are accessible on the binding but
-    // not consumed by resolveBinding (= consumers like the future
-    // character controller read them separately).
-    expect(binding.paramOverrides?.characterIntent).toEqual({ vMax: 7.5 });
+    expect(binding.slotData?.characterIntent).toEqual({ profileShape: "test-marker" });
     const systems = resolveBinding(reg, binding);
     expect(systems.length).toBe(2);
   });

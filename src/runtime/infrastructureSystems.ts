@@ -15,6 +15,8 @@
  */
 
 import type { Registry } from "./registry";
+import type { BufferId } from "./buffer";
+import type { SystemDescriptor } from "./system";
 import type { ControllerBinding } from "./moduleSlots";
 import {
   createLibraryViewerBuffer,
@@ -24,7 +26,7 @@ import {
   type LibraryViewerRenderTarget,
 } from "./libraryViewer";
 import { createBindingSwapSystem } from "./bindingSwapSystem";
-import { createOverlayVisibilitySystem } from "./overlayVisibility";
+import { createOverlayVisibilitySystem, type OverlayBinding } from "./overlayVisibility";
 
 export interface InfrastructureOptions {
   /** DOM panel for the Library Viewer renderer + overlay visibility
@@ -34,6 +36,26 @@ export interface InfrastructureOptions {
    *  on BindingRequested events. Defaults to empty (= no-op on every
    *  request; tests that don't exercise bindings can omit). */
   bindingCatalog?: ControllerBinding[];
+  /** Function that applies a binding to runtime buffers. Caller-injected
+   *  so this runtime-layer helper stays buffer-type-agnostic. Defaults
+   *  to a no-op. */
+  applyBinding?: (binding: ControllerBinding) => void;
+  /** Buffer ids the `applyBinding` callback writes to. Declared in the
+   *  BindingSwapSystem's access list for hazard validation. */
+  bindingWriteBufferIds?: BufferId[];
+  /** System ids that read the destination buffers; BindingSwapSystem
+   *  declares runsBefore on each so the swap is visible this tick. */
+  bindingReaderSystemIds?: string[];
+  /** Extra systems to register alongside the core infrastructure
+   *  (= app-layer systems referenced by core graphs, e.g.
+   *  transitionActivatorSystem). Caller supplies the descriptors
+   *  since they often live in src/app/ which the runtime layer
+   *  cannot import directly. */
+  extraSystems?: SystemDescriptor[];
+  /** Additional overlay panels to manage. Each binding is shown when
+   *  its `modeId` matches activeMode. Useful for app-specific overlays
+   *  (= ProfileEditor) layered on the runtime's LibraryViewer. */
+  extraOverlays?: OverlayBinding[];
 }
 
 /**
@@ -45,15 +67,26 @@ export function registerInfrastructureSystems(
   reg: Registry,
   opts: InfrastructureOptions = {},
 ): void {
-  // ControllerParamsBuffer is now a core buffer (registered by
-  // registerCoreBuffers) since core character systems read from it.
   reg.registerBuffer(createLibraryViewerBuffer());
   reg.registerSystem(createLibraryViewerSystem(reg));
   reg.registerSystem(createLibraryViewerRenderSystem(opts.libraryViewerTarget ?? null));
   const lvTarget = opts.libraryViewerTarget ?? null;
   reg.registerSystem(createOverlayVisibilitySystem({
-    target: lvTarget && lvTarget.style ? (lvTarget as { style: { display: string } }) : null,
-    showWhenActiveMode: LIBRARY_VIEWER_MODE_ID,
+    bindings: [
+      {
+        modeId: LIBRARY_VIEWER_MODE_ID,
+        target: lvTarget && lvTarget.style ? (lvTarget as { style: { display: string } }) : null,
+      },
+      ...(opts.extraOverlays ?? []),
+    ],
   }));
-  reg.registerSystem(createBindingSwapSystem(reg, opts.bindingCatalog ?? []));
+  reg.registerSystem(createBindingSwapSystem({
+    catalog: opts.bindingCatalog ?? [],
+    apply: opts.applyBinding ?? (() => { /* no-op when no installer provided */ }),
+    writeBufferIds: opts.bindingWriteBufferIds ?? [],
+    runsBefore: opts.bindingReaderSystemIds,
+  }));
+  if (opts.extraSystems) {
+    for (const sys of opts.extraSystems) reg.registerSystem(sys);
+  }
 }

@@ -62,13 +62,16 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
   rebuilding: ExecutionGraph;
   builder: ExecutionGraph;
 } {
-  // Loading graph: just SM + Input + LoadScene + Render + Hud. No camera
-  // movement (the camera is static on the placeholder background until the
-  // world is built).
+  // Loading graph: SM + Input + LoadScene + Render + Hud + the
+  // transition activator (= observes SM state to switch into the
+  // Rebuilding transition when state moves to Rebuilding). No camera
+  // movement (the camera is static on the placeholder background
+  // until the world is built).
   const loading = buildExecutionGraph({
     id: LOADING_GRAPH_ID,
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
+      "transitionActivatorSystem",
       INPUT_SYSTEM_ID,
       LOAD_SCENE_SYSTEM_ID,
       RENDER_SYSTEM_ID,
@@ -99,6 +102,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
     id: REBUILDING_GRAPH_ID,
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
+      "transitionActivatorSystem",
       PARSE_BITMAP_SYSTEM_ID,
       SPLIT_LAYERS_SYSTEM_ID,
       JFA_SYSTEM_ID,

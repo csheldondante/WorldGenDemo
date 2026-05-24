@@ -1,10 +1,14 @@
 /**
- * Phase 5b — TangentInputMapper consumes ControllerParamsBuffer.
+ * TangentInputMapperSystem — the input → tangent-frame projection
+ * reads `CharacterControllerProfile` for the active profileId and
+ * uses its forward/backward/lateral accel curves to compute vDes.
  *
- * Verifies vDesF / vDesR scale by `speedMultiplier` from the
- * CHARACTER_INTENT slot params. Default 1.0 = identical to pre-5b;
- * agile 1.6 = 60% faster; heavy 0.7 = 30% slower. Missing buffer
- * entry falls back to 1.0.
+ * The contract verified here: when a different
+ * CharacterControllerProfile is installed in the buffer (= via
+ * `applyControllerBinding`), the system reads the new curves and
+ * produces a different vDes. This replaces the prior 5b "multiplier
+ * scaling" tests — the same outcome reached via the canonical model
+ * (profile is the source of truth), not via an over-layer.
  */
 
 import { describe, it, expect } from "vitest";
@@ -25,6 +29,7 @@ import {
 import {
   CHARACTER_CONTROLLER_PROFILE_BUFFER_ID,
   type CharacterControllerProfileBufferData,
+  type CharacterControllerProfile,
   DEFAULT_PLAYER_PROFILE,
 } from "../../src/buffers/characterControllerProfile";
 import {
@@ -43,8 +48,6 @@ import {
   createTangentInputMapperSystem,
   TANGENT_INPUT_MAPPER_SYSTEM_ID,
 } from "../../src/systems/tangentInputMapper";
-import { applyControllerBinding } from "../../src/runtime/controllerParams";
-import { SLOT_CHARACTER_INTENT } from "../../src/runtime/slotIds";
 
 function runOneTick(reg: Registry): CharacterTangentInputBufferData {
   const graph = buildExecutionGraph({
@@ -56,13 +59,12 @@ function runOneTick(reg: Registry): CharacterTangentInputBufferData {
   return readBuffer(reg.getBuffer<CharacterTangentInputBufferData>(CHARACTER_TANGENT_INPUT_BUFFER_ID));
 }
 
-function setup(): Registry {
+function setup(profile: CharacterControllerProfile): Registry {
   const reg = createRegistry();
   registerCoreBuffers(reg);
   reg.registerSystem(createTangentInputMapperSystem());
 
   const id = 1;
-  // moveY=1 (forward), camera looking +Z, world-up.
   writeBuffer(reg.getBuffer<CharacterInputBufferData>(CHARACTER_INPUT_BUFFER_ID), (d) => {
     d.byEntity.set(id, {
       ...emptyInput(0),
@@ -75,7 +77,7 @@ function setup(): Registry {
     d.byEntity.set(id, {
       locomotionMode: "surfaceConstrained",
       state: "surfaceRun",
-      profileId: DEFAULT_PLAYER_PROFILE.id,
+      profileId: profile.id,
       lastTransitionReason: "spawn",
       transitions: [],
       timeInState: 0,
@@ -92,9 +94,8 @@ function setup(): Registry {
     });
   });
   writeBuffer(reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID), (d) => {
-    d.byId.set(DEFAULT_PLAYER_PROFILE.id, DEFAULT_PLAYER_PROFILE);
+    d.byId.set(profile.id, profile);
   });
-  // Flat horizontal surface: normal=+Y, tangentU=+X, tangentV=+Z.
   writeBuffer(reg.getBuffer<SurfaceAttachmentBufferData>(SURFACE_ATTACHMENT_BUFFER_ID), (d) => {
     d.byEntity.set(id, {
       surfaceId: "plane",
@@ -121,44 +122,51 @@ function setup(): Registry {
   return reg;
 }
 
-describe("TangentInputMapper — Phase 5b speedMultiplier", () => {
-  it("default (no binding applied) → vDesF = xIntercept of forward curve (= multiplier 1.0)", () => {
-    const reg = setup();
-    const ti = runOneTick(reg);
-    const t = ti.byEntity.get(1)!;
+describe("TangentInputMapper — profile is the source of truth", () => {
+  it("vDesF equals forwardAccel.vMax (= xIntercept under zero external accel) for the default profile", () => {
+    const reg = setup(DEFAULT_PLAYER_PROFILE);
+    const t = runOneTick(reg).byEntity.get(1)!;
     expect(t.vDesF).toBeCloseTo(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax, 5);
   });
 
-  it("speedMultiplier=1.6 (agile) scales vDesF up by 60%", () => {
-    const reg = setup();
-    applyControllerBinding(reg, {
-      id: "test:agile",
-      bindings: {},
-      paramOverrides: { [SLOT_CHARACTER_INTENT]: { speedMultiplier: 1.6 } },
-    });
+  it("installing a profile with 1.6× forwardAccel.vMax produces 1.6× vDesF (= agile-style binding)", () => {
+    const agileProfile: CharacterControllerProfile = {
+      ...DEFAULT_PLAYER_PROFILE,
+      forwardAccel: {
+        ...DEFAULT_PLAYER_PROFILE.forwardAccel,
+        vMax: DEFAULT_PLAYER_PROFILE.forwardAccel.vMax * 1.6,
+      },
+    };
+    const reg = setup(agileProfile);
     const t = runOneTick(reg).byEntity.get(1)!;
     expect(t.vDesF).toBeCloseTo(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax * 1.6, 5);
   });
 
-  it("speedMultiplier=0.7 (heavy) scales vDesF down by 30%", () => {
-    const reg = setup();
-    applyControllerBinding(reg, {
-      id: "test:heavy",
-      bindings: {},
-      paramOverrides: { [SLOT_CHARACTER_INTENT]: { speedMultiplier: 0.7 } },
-    });
+  it("installing a profile with 0.7× forwardAccel.vMax produces 0.7× vDesF (= heavy-style binding)", () => {
+    const heavyProfile: CharacterControllerProfile = {
+      ...DEFAULT_PLAYER_PROFILE,
+      forwardAccel: {
+        ...DEFAULT_PLAYER_PROFILE.forwardAccel,
+        vMax: DEFAULT_PLAYER_PROFILE.forwardAccel.vMax * 0.7,
+      },
+    };
+    const reg = setup(heavyProfile);
     const t = runOneTick(reg).byEntity.get(1)!;
     expect(t.vDesF).toBeCloseTo(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax * 0.7, 5);
   });
 
-  it("binding without CHARACTER_INTENT params → vDesF unchanged (= 1.0 default)", () => {
-    const reg = setup();
-    applyControllerBinding(reg, {
-      id: "test:no-intent",
-      bindings: {},
-      paramOverrides: {}, // empty
+  it("mutating the profile in-buffer between ticks immediately changes the produced vDes", () => {
+    const reg = setup(DEFAULT_PLAYER_PROFILE);
+    const t0 = runOneTick(reg).byEntity.get(1)!;
+    expect(t0.vDesF).toBeCloseTo(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax, 5);
+    // Simulate applyControllerBinding installing a different profile.
+    writeBuffer(reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID), (d) => {
+      d.byId.set(DEFAULT_PLAYER_PROFILE.id, {
+        ...DEFAULT_PLAYER_PROFILE,
+        forwardAccel: { ...DEFAULT_PLAYER_PROFILE.forwardAccel, vMax: 42 },
+      });
     });
-    const t = runOneTick(reg).byEntity.get(1)!;
-    expect(t.vDesF).toBeCloseTo(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax, 5);
+    const t1 = runOneTick(reg).byEntity.get(1)!;
+    expect(t1.vDesF).toBeCloseTo(42, 5);
   });
 });

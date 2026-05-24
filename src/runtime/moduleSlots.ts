@@ -60,15 +60,20 @@ export interface Module {
  * SLOT_ANIMATION. The list order within a slot is preserved (= passed
  * to `buildExecutionGraph` which topo-sorts respecting runsAfter).
  *
- * `paramOverrides` carries per-slot parameter values that override
- * module defaults; the active character system reads these to
- * configure module behavior at runtime. Per-slot, not per-module —
- * modules in the same slot share the slot's param object.
+ * `slotData` carries per-slot canonical data that gets installed into
+ * the slot's destination buffer at apply time. Shapes are
+ * application-level (= the runtime stores opaque blobs; the app's
+ * `applyControllerBinding` interprets them per-slot). For the biped's
+ * characterIntent slot, the shape is a `CharacterControllerProfile`
+ * — installed into `CharacterControllerProfileBuffer.byId`. Per user
+ * 2026-05-23: bindings install canonical profiles, they do NOT invent
+ * multiplier knobs that duplicate the underlying model. See
+ * [[worldgen-demo-bindings-install-profiles-not-multipliers]].
  */
 export interface ControllerBinding {
   id: string;
   bindings: Record<SlotId, ModuleId[]>;
-  paramOverrides?: Record<SlotId, Record<string, unknown>>;
+  slotData?: Record<SlotId, unknown>;
 }
 
 export interface ModuleRegistry {
