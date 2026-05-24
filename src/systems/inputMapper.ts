@@ -7,7 +7,7 @@ import {
   type InputMapBufferData,
   type ButtonState,
 } from "../buffers/inputMap";
-import { INPUT_SYSTEM_ID } from "./input";
+import { INPUT_SYSTEM_ID, SCRIPTED_INPUT_SYSTEM_ID } from "./input";
 
 export const INPUT_MAPPER_SYSTEM_ID = "inputMapperSystem";
 
@@ -67,7 +67,10 @@ export function createInputMapperSystem(): SystemDescriptor {
       { id: INPUT_BUFFER_ID, access: "readwrite" },
       { id: INPUT_MAP_BUFFER_ID, access: "readwrite" },
     ],
-    runsAfter: [STATE_MACHINE_SYSTEM_ID, INPUT_SYSTEM_ID],
+    // Run after whichever input source provided InputBuffer this tick.
+    // Both ids live in the registry but only one runs in the active
+    // mode's graph; out-of-graph ids are silently dropped.
+    runsAfter: [STATE_MACHINE_SYSTEM_ID, INPUT_SYSTEM_ID, SCRIPTED_INPUT_SYSTEM_ID],
     execute: ({ buffer, dt }) => {
       const inputBuf = buffer<InputBufferData>(INPUT_BUFFER_ID);
       const imBuf = buffer<InputMapBufferData>(INPUT_MAP_BUFFER_ID);

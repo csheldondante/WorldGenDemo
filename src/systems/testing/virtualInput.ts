@@ -31,7 +31,7 @@
 import type { SystemDescriptor } from "../../runtime/system";
 import { writeBuffer } from "../../runtime/buffer";
 import { INPUT_BUFFER_ID, type InputBufferData } from "../../buffers/input";
-import { INPUT_SYSTEM_ID } from "../input";
+import { SCRIPTED_INPUT_SYSTEM_ID } from "../input";
 
 export interface VirtualInputState {
   keys: Set<string>;
@@ -63,9 +63,9 @@ export function createVirtualInput(): VirtualInputState {
  */
 export function createVirtualInputSystem(state: VirtualInputState): SystemDescriptor {
   return {
-    id: INPUT_SYSTEM_ID,
+    id: SCRIPTED_INPUT_SYSTEM_ID,
     description:
-      "Test virtual input source. Drop-in replacement for the real inputSystem: copies a programmable VirtualInputState into InputBuffer each tick instead of polling DOM/gamepad. Mouse deltas are one-shot per tick (cleared from the state after copy).",
+      "Test virtual input source. Sibling of inputSystem under SCRIPTED_INPUT_SYSTEM_ID: copies a programmable VirtualInputState into InputBuffer each tick instead of polling DOM/gamepad. Mouse deltas are one-shot per tick (cleared from the state after copy).",
     buffers: [{ id: INPUT_BUFFER_ID, access: "readwrite" }],
     execute: ({ buffer }) => {
       writeBuffer(buffer<InputBufferData>(INPUT_BUFFER_ID), (d) => {

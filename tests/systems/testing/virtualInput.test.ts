@@ -57,7 +57,7 @@ describe("Virtual input system", () => {
 
     const g = buildExecutionGraph({
       id: "vi-test",
-      nodes: ["inputSystem", "inputMapperSystem", "characterInputSystem"],
+      nodes: ["scriptedInputSystem", "inputMapperSystem", "characterInputSystem"],
       registry: reg,
     });
     return { reg, vi, g, id };

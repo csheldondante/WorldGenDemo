@@ -21,7 +21,7 @@
 import type { SystemDescriptor } from "../../runtime/system";
 import { readBuffer } from "../../runtime/buffer";
 import { INPUT_BUFFER_ID, type InputBufferData } from "../../buffers/input";
-import { INPUT_SYSTEM_ID } from "../input";
+import { INPUT_SYSTEM_ID, SCRIPTED_INPUT_SYSTEM_ID } from "../input";
 import { INPUT_MAPPER_SYSTEM_ID } from "../inputMapper";
 import type { InputFrame, InputRecording } from "./inputPlayback";
 
@@ -96,7 +96,9 @@ export function createInputRecordingSystem(state: InputRecordingState): SystemDe
     // After the input source (real DOM / playback / simulated) writes
     // InputBuffer; BEFORE inputMapper drains mouseDx/mouseDy. Otherwise we'd
     // record a frame where the mouse deltas have already been zeroed.
-    runsAfter: [INPUT_SYSTEM_ID],
+    // Both ids declared so the recording sees whichever input source
+    // (live DOM or scripted) populated InputBuffer this tick.
+    runsAfter: [INPUT_SYSTEM_ID, SCRIPTED_INPUT_SYSTEM_ID],
     runsBefore: [INPUT_MAPPER_SYSTEM_ID],
     execute: ({ buffer }) => {
       if (!state.active) return;

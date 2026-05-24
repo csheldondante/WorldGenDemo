@@ -13,7 +13,7 @@
 import type { SystemDescriptor } from "../../runtime/system";
 import { writeBuffer } from "../../runtime/buffer";
 import { INPUT_BUFFER_ID, type InputBufferData } from "../../buffers/input";
-import { INPUT_SYSTEM_ID } from "../input";
+import { SCRIPTED_INPUT_SYSTEM_ID } from "../input";
 
 export interface SimulatedInputSample {
   keys?: Set<string>;
@@ -41,9 +41,9 @@ export type SimulatedInputGenerator = (tick: number) => SimulatedInputSample;
 export function createSimulatedInputSystem(generator: SimulatedInputGenerator): SystemDescriptor {
   let cursor = 0;
   return {
-    id: INPUT_SYSTEM_ID,
+    id: SCRIPTED_INPUT_SYSTEM_ID,
     description:
-      "Programmatic input source for tests/stress. Drop-in for inputSystem: a per-tick generator function decides what to write into InputBuffer. Used for random-walk fuzz tests, hold-forward smoke tests, and scripted action chains that aren't worth pre-recording.",
+      "Programmatic input source for tests/stress. Sibling of inputSystem under the SCRIPTED_INPUT_SYSTEM_ID slot: a per-tick generator function decides what to write into InputBuffer. Used for random-walk fuzz tests, hold-forward smoke tests, and scripted action chains that aren't worth pre-recording. The active mode's `systems` list selects between this and the live inputSystem.",
     buffers: [{ id: INPUT_BUFFER_ID, access: "readwrite" }],
     execute: ({ buffer }) => {
       const sample = generator(cursor);

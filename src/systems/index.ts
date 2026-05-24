@@ -63,16 +63,16 @@ export interface CoreSystems {
 
 export interface RegisterCoreSystemsOptions {
   /**
-   * Optional input-system override. Pass a SystemDescriptor with id =
-   * `INPUT_SYSTEM_ID` (the canonical id) to swap the real DOM/gamepad polling
-   * for a test-time source: virtual scripted input (`src/systems/testing/virtualInput.ts`),
-   * recorded playback, simulated random-walk, etc.
+   * Optional ADDITIONAL input source — a SystemDescriptor with id
+   * `SCRIPTED_INPUT_SYSTEM_ID` (= the canonical id for non-DOM input
+   * variants: simulated, playback, virtual). Registered ALONGSIDE the
+   * live DOM `inputSystem`; the active mode's `systems` list selects
+   * which one actually runs in any given graph. Both ids are listed
+   * in downstream `runsAfter` so the consumers work with either.
    *
-   * All downstream systems (inputMapper, characterInput, controllers) consume
-   * the same `InputBuffer`, so swapping at this seam is transparent.
-   *
-   * Defaults to the real `createInputSystem(inputAccumulator)` which polls
-   * the DOM/gamepad listeners attached via `attachInputListeners()`.
+   * Headless test setups register only the scripted variant + tick a
+   * graph that references the scripted id. Browser scenario playback
+   * registers both + lets the user swap via mode change.
    */
   inputSystem?: SystemDescriptor;
 }
@@ -91,7 +91,11 @@ export function registerCoreSystems(reg: Registry, options: RegisterCoreSystemsO
   const builderAccumulator = createBuilderAccumulator();
   const builderDom = createBuilderDom();
   reg.registerSystem(createStateMachineSystem());
-  reg.registerSystem(options.inputSystem ?? createInputSystem(inputAccumulator));
+  // Live DOM input — always registered. Scripted variants (if any)
+  // register under the sibling SCRIPTED_INPUT_SYSTEM_ID. The active
+  // mode's `systems` list picks which one ticks each frame.
+  reg.registerSystem(createInputSystem(inputAccumulator));
+  if (options.inputSystem) reg.registerSystem(options.inputSystem);
   reg.registerSystem(createInputMapperSystem());
   reg.registerSystem(createLoadSceneSystem());
   reg.registerSystem(createRenderSystem());

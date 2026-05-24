@@ -8,11 +8,7 @@ import type { ControllerBinding } from "../runtime/moduleSlots";
 import { TIMING_BUFFER_ID, type TimingBufferData } from "../buffers/timing";
 import { WORLD_DATA_BUFFER_ID, type WorldDataBufferData } from "../buffers/worldData";
 import { BUILDER_BUFFER_ID, type BuilderBufferData } from "../buffers/builder";
-import {
-  attachInputListeners,
-  createAccumulator,
-  createInputSystem,
-} from "../systems/input";
+import { attachInputListeners } from "../systems/input";
 import { attachBuilderListeners } from "../systems/builderInput";
 import { type InputRecordingState } from "../systems/testing/inputRecording";
 import { createInputSourceSelectorSystem } from "../systems/inputSourceSelector";
@@ -246,14 +242,6 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   opts.panelEl.insertBefore(canvas, opts.panelEl.firstChild);
   const { scene, renderer } = createSceneBundle(canvas);
 
-  // Live DOM input accumulator. Listeners attached unconditionally so the
-  // accumulator is current whenever the user clicks "play" — at that point
-  // we just swap the registered inputSystem (via `reg.replaceSystem`) to a
-  // real-DOM inputSystem reading from this accumulator. Pointer lock is
-  // requested on canvas click by attachInputListeners.
-  const liveAccumulator = createAccumulator();
-  attachInputListeners(liveAccumulator, { pointerLockTarget: canvas });
-
   const app = bootstrapApp({
     inputSystem: test.inputSystem,
     rendering: {
@@ -272,21 +260,26 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
   if (!test.inputSystem) {
     throw new Error(`scenario "${scenarioName}" has no inputSystem — browser play requires one`);
   }
-  const scenarioInputSystem = test.inputSystem;
-  const liveInputSystem = createInputSystem(liveAccumulator);
+  // The live input system was registered by registerCoreSystems with
+  // its own accumulator (= app.coreSystems.inputAccumulator). DOM
+  // listeners attach to THAT accumulator so the live system actually
+  // sees user keys when ScenarioFreePlay / ScenarioRecording modes
+  // run it. The scripted variant was registered alongside under
+  // SCRIPTED_INPUT_SYSTEM_ID; the active mode's `systems` list picks
+  // which one ticks.
+  attachInputListeners(app.coreSystems.inputAccumulator, { pointerLockTarget: canvas });
 
-  // Register the input-source selector — it observes activeMode and
-  // applies the matching input descriptor + recording flag. The
-  // play/record/stop buttons (= attachTopMenu) now only emit
-  // ModeSwitchRequested; the selector is the single place that
-  // performs the imperative swap. Per user 2026-05-23: "use the
-  // systems we build and patterns we build to make clean, extendable,
-  // readable code with thorough tests".
+  // Recording-flag activator. Observes activeMode → sets
+  // recordingState.active when in ScenarioRecording mode. The
+  // input-source SWAP is now data-driven via the mode's `systems`
+  // list (= ScenarioPlayback picks scriptedInputSystem;
+  // ScenarioFreePlay / Recording pick the live inputSystem). No more
+  // imperative replaceSystem. See the modes registered below.
   reg.registerSystem(createInputSourceSelectorSystem(reg, {
     modes: {
-      ScenarioPlayback: { input: scenarioInputSystem },
-      ScenarioFreePlay: { input: liveInputSystem },
-      ScenarioRecording: { input: liveInputSystem, recording: true },
+      ScenarioPlayback: { input: test.inputSystem },
+      ScenarioFreePlay: { input: test.inputSystem },
+      ScenarioRecording: { input: test.inputSystem, recording: true },
     },
     recordingState,
     onRecordingComplete: (state) => {
@@ -677,35 +670,41 @@ function attachTopMenu(panelEl: HTMLElement, opts: TopMenuOptions): void {
     const reg = opts.registry;
     const recording = opts.recordingState;
 
-    // Register the three scenario sub-modes. Their `systems` lists
-    // include the InputSourceSelectorSystem (registered in
-    // startScenarioWorld) so it runs in every sub-mode and reacts to
-    // activeMode changes by swapping the input descriptor + flipping
-    // the recording flag. The buttons themselves do nothing but emit
-    // the event + update UI feedback — no imperative replaceSystem
-    // or recording.active mutation here. Per user 2026-05-23: "use
-    // the systems we build and patterns we build".
+    // Register the three scenario sub-modes with DIFFERENT systems
+    // lists. The mode's systems list IS the dispatcher — switching to
+    // ScenarioPlayback rebuilds the graph with scriptedInputSystem in
+    // the input slot instead of the live inputSystem. Per
+    // [[worldgen-demo-system-swap-is-dod]]: "swapping which
+    // SystemDescriptor occupies a conceptual slot is a data operation,
+    // not an imperative override." No InputSourceSelector swap needed.
     const baseSystems = reg.getMode("Running")!.systems;
-    const scenarioSystems = baseSystems.includes("inputSourceSelectorSystem")
+    // Playback substitutes the scripted input system for the live one.
+    const playbackSystems = baseSystems.map((id) =>
+      id === "inputSystem" ? "scriptedInputSystem" : id,
+    );
+    // Free-play uses live input as-is (= Running's systems list).
+    // Recording adds inputSourceSelectorSystem to toggle the recording
+    // flag — see InputSourceSelector wired in startScenarioWorld.
+    const freePlaySystems = baseSystems.includes("inputSourceSelectorSystem")
       ? baseSystems
       : [...baseSystems, "inputSourceSelectorSystem"];
     reg.registerMode({
       id: "ScenarioPlayback",
       label: `▶ ${opts.scenarioName} (playback)`,
       tags: ["scenario-state"],
-      systems: scenarioSystems,
+      systems: playbackSystems,
     });
     reg.registerMode({
       id: "ScenarioFreePlay",
       label: `● ${opts.scenarioName} (free play)`,
       tags: ["scenario-state"],
-      systems: scenarioSystems,
+      systems: freePlaySystems,
     });
     reg.registerMode({
       id: "ScenarioRecording",
       label: `⏺ ${opts.scenarioName} (recording)`,
       tags: ["scenario-state"],
-      systems: scenarioSystems,
+      systems: freePlaySystems,
     });
     // Initial activeMode: playback. The selector will observe the
     // first tick's activeMode and apply ScenarioPlayback's spec.

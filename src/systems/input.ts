@@ -4,6 +4,14 @@ import { INPUT_BUFFER_ID, type InputBufferData } from "../buffers/input";
 import { readPrimaryGamepad } from "../lib/input/gamepad";
 
 export const INPUT_SYSTEM_ID = "inputSystem";
+/**
+ * Stable id for scripted / simulated / playback input systems
+ * (= drop-in alternatives to INPUT_SYSTEM_ID for headless tests +
+ * scenario playback). Both ids can coexist in the same registry; the
+ * mode's `systems` list picks which one runs. Downstream systems
+ * that depend on input listed BOTH ids in their `runsAfter`.
+ */
+export const SCRIPTED_INPUT_SYSTEM_ID = "scriptedInputSystem";
 
 /**
  * Owns raw input device collection: DOM event listeners (keydown/up,

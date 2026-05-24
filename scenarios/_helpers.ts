@@ -41,7 +41,9 @@ export const GAMEPLAY_OUTPUT_BUFFERS = [
  */
 export const HEADLESS_GAMEPLAY_SYSTEMS = [
   "stateMachineSystem",
-  "inputSystem", "inputMapperSystem", "characterInputSystem",
+  // Scenarios run scripted input — sibling id under the same input
+  // slot as the live DOM "inputSystem". See src/systems/input.ts.
+  "scriptedInputSystem", "inputMapperSystem", "characterInputSystem",
   "tangentInputMapperSystem", "characterOrientationSystem",
   "forceFieldSystem", "characterControllerSystem",
   "surfaceConstrainedVelocitySystem", "volumetricConstrainedVelocitySystem",
@@ -51,11 +53,11 @@ export const HEADLESS_GAMEPLAY_SYSTEMS = [
 ];
 
 /**
- * Subset for input+camera-only scenarios (no player physics). 4 systems.
+ * Subset for input+camera-only scenarios (no player physics).
  */
 export const HEADLESS_INPUT_CAMERA_SYSTEMS = [
   "stateMachineSystem",
-  "inputSystem", "inputMapperSystem", "cameraPivotSystem", "cameraOrbitSystem",
+  "scriptedInputSystem", "inputMapperSystem", "cameraPivotSystem", "cameraOrbitSystem",
 ];
 
 export interface SeedPlayerOpts {

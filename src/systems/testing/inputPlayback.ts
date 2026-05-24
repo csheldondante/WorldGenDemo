@@ -15,7 +15,7 @@
 import type { SystemDescriptor } from "../../runtime/system";
 import { writeBuffer } from "../../runtime/buffer";
 import { INPUT_BUFFER_ID, type InputBufferData } from "../../buffers/input";
-import { INPUT_SYSTEM_ID } from "../input";
+import { SCRIPTED_INPUT_SYSTEM_ID } from "../input";
 
 /**
  * One frame of recorded input state. Sets are serialized as sorted arrays;
@@ -69,9 +69,9 @@ export function createInputPlaybackSystem(recording: InputRecording): SystemDesc
   let cursor = 0;
 
   return {
-    id: INPUT_SYSTEM_ID,
+    id: SCRIPTED_INPUT_SYSTEM_ID,
     description:
-      "Scenario playback input source. Drop-in for inputSystem: reads a recorded InputRecording timeline + advances one frame per tick, copying the matching state into InputBuffer. Sticky keys/buttons/axes carry forward; mouseDx/Dy are one-shot per frame.",
+      "Scenario playback input source. Sibling of inputSystem under SCRIPTED_INPUT_SYSTEM_ID: reads a recorded InputRecording timeline + advances one frame per tick, copying state into InputBuffer. Sticky keys/buttons/axes carry forward; mouseDx/Dy are one-shot per frame.",
     buffers: [{ id: INPUT_BUFFER_ID, access: "readwrite" }],
     execute: ({ buffer }) => {
       const frame = byTick.get(cursor);
