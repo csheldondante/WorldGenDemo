@@ -24,6 +24,8 @@ import { test as cylinderGalaxy } from "./cylinder-galaxy";
 import { test as sphereGalaxy } from "./sphere-galaxy";
 import { test as torusGalaxy } from "./torus-galaxy";
 import { test as bindingSwapPropagation } from "./binding-swap-propagation";
+import { test as profileEditPropagation } from "./profile-edit-propagation";
+import { test as rebuildPipeline } from "./rebuild-pipeline";
 
 export const SCENARIOS: Record<string, BufferTest> = {
   [flatPlaneForward.name]: flatPlaneForward,
@@ -44,6 +46,8 @@ export const SCENARIOS: Record<string, BufferTest> = {
   [sphereGalaxy.name]: sphereGalaxy,
   [torusGalaxy.name]: torusGalaxy,
   [bindingSwapPropagation.name]: bindingSwapPropagation,
+  [profileEditPropagation.name]: profileEditPropagation,
+  [rebuildPipeline.name]: rebuildPipeline,
 };
 
 export function getScenario(name: string): BufferTest {

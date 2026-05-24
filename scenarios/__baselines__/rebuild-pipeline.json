@@ -1,0 +1,60 @@
+{
+  "name": "rebuild-pipeline",
+  "buffers": {
+    "entity": {
+      "alive": {
+        "__set__": true,
+        "values": [
+          1
+        ]
+      },
+      "nextId": 2
+    },
+    "transform": {
+      "byEntity": {
+        "1": {
+          "position": [
+            0,
+            0.8994127470254898,
+            1.6800000000000002
+          ],
+          "scale": 1,
+          "yaw": 0
+        },
+        "__map__": true
+      }
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "activeMode": "Running",
+      "pendingEvents": [
+        {
+          "type": "WorldReady"
+        }
+      ],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 1,
+      "state": "Running"
+    },
+    "timing": {
+      "stages": {
+        "assetPlacement": 0.039800000000013824,
+        "heightmap": 0.14049999999997453,
+        "jfa": 0.016799999999989268,
+        "parametricSurface": 0.02729999999996835,
+        "parse": 0.22070000000007894,
+        "playerSpawn": 0.438199999999938,
+        "split": 0.13330000000007658,
+        "surfaceProvider": 0.09160000000008495,
+        "terrainMesh": 0.02100000000007185
+      },
+      "totalRebuildMs": 0,
+      "warnings": []
+    }
+  },
+  "toleranceOverrides": {},
+  "excludePaths": [
+    "timing.stages.**"
+  ]
+}

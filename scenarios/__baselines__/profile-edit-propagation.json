@@ -1,0 +1,341 @@
+{
+  "name": "profile-edit-propagation",
+  "buffers": {
+    "entity": {
+      "alive": {
+        "__set__": true,
+        "values": [
+          1
+        ]
+      },
+      "nextId": 2
+    },
+    "transform": {
+      "byEntity": {
+        "1": {
+          "position": [
+            3.518226089265215e-20,
+            0.49995704985093625,
+            12.355367677473144
+          ],
+          "scale": 1,
+          "yaw": -3.141592653074203
+        },
+        "__map__": true
+      }
+    },
+    "velocity": {
+      "byEntity": {
+        "1": {
+          "linear": [
+            -8.726699112566551e-16,
+            0,
+            7.9983045986579295
+          ],
+          "prevLinear": [
+            -8.726602707369905e-16,
+            0,
+            7.9981504712631954
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "characterController": {
+      "byEntity": {
+        "1": {
+          "bodyUpCurrent": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "bodyUpWorld": [
+            0,
+            1,
+            0
+          ],
+          "desiredFacingTangent": [
+            -1.091068613969871e-16,
+            0,
+            1
+          ],
+          "jumpDir": [
+            0,
+            0,
+            0
+          ],
+          "jumpHolding": false,
+          "jumpImpulseApplied": 0,
+          "jumpImpulseMagMax": 0,
+          "lastTransitionReason": "spawn",
+          "locomotionMode": "surfaceConstrained",
+          "orientation": {
+            "current": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "target": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "profileId": "player",
+          "state": "surfaceRun",
+          "targetYaw": 3.141592653589793,
+          "timeInState": 1.9999999999999978,
+          "transitions": [],
+          "yawVel": -4.759293403822085e-9
+        },
+        "__map__": true
+      }
+    },
+    "characterInput": {
+      "byEntity": {
+        "1": {
+          "cameraLookDir": [
+            -1.0178618737471136e-16,
+            -0.36012610523009075,
+            0.9329036329288279
+          ],
+          "cameraUp": [
+            0,
+            1,
+            0
+          ],
+          "cameraYaw": 3.141592653589793,
+          "jumpHeld": false,
+          "jumpHoldSec": 0,
+          "jumpPressed": false,
+          "jumpReleased": false,
+          "moveX": 0,
+          "moveY": 1
+        },
+        "__map__": true
+      }
+    },
+    "characterTangentInput": {
+      "byEntity": {
+        "1": {
+          "forwardTangent": [
+            -1.0910686139698708e-16,
+            0,
+            1
+          ],
+          "rightTangent": [
+            -1,
+            0,
+            -1.0910686139698708e-16
+          ],
+          "vDesF": 8,
+          "vDesR": 0
+        },
+        "__map__": true
+      }
+    },
+    "forceAccumulator": {
+      "byEntity": {
+        "1": {
+          "accel": [
+            0,
+            0,
+            0
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "sphereBody": {
+      "byEntity": {
+        "1": {
+          "radius": 0.5
+        },
+        "__map__": true
+      }
+    },
+    "surfaceAttachment": {
+      "byEntity": {
+        "1": {
+          "contactOffset": [
+            3.518226089265215e-20,
+            0.49995704985093625,
+            -0.0003014794395526382
+          ],
+          "cornerJumpIterationCapHits": 0,
+          "offsetAlongNormal": 0.5,
+          "sample": {
+            "friction": 1,
+            "normal": [
+              0,
+              1,
+              0
+            ],
+            "normalInMax": 800,
+            "normalOutMax": 200,
+            "position": [
+              0,
+              0,
+              12.355669156912697
+            ],
+            "slopeRad": 0,
+            "tangentU": [
+              1,
+              0,
+              0
+            ],
+            "tangentUNorm": 200,
+            "tangentV": [
+              0,
+              0,
+              -1
+            ],
+            "tangentVNorm": 200,
+            "traversable": true
+          },
+          "surfaceId": "flat",
+          "uv": [
+            0.5,
+            0.4382216542154365
+          ]
+        },
+        "__map__": true
+      }
+    },
+    "skeleton": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "footLock": {
+      "byEntity": {
+        "__map__": true
+      }
+    },
+    "input": {
+      "gamepadAxes": {
+        "leftX": 0,
+        "leftY": 0,
+        "rightX": 0,
+        "rightY": 0
+      },
+      "gamepadButtons": {
+        "__set__": true,
+        "values": []
+      },
+      "gamepadConnected": false,
+      "keys": {
+        "__set__": true,
+        "values": [
+          "KeyW"
+        ]
+      },
+      "mouseDx": 0,
+      "mouseDy": 0,
+      "pointerLocked": false
+    },
+    "inputMap": {
+      "actions": {
+        "jump": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        },
+        "toggleHud": {
+          "held": false,
+          "heldSec": 0,
+          "pressed": false,
+          "released": false
+        }
+      },
+      "lookDelta": {
+        "pitch": 0,
+        "yaw": 0
+      },
+      "moveAxis": {
+        "x": 0,
+        "y": 1
+      }
+    },
+    "camera": {
+      "aspect": 1,
+      "far": 800,
+      "fov": 70,
+      "lookDir": [
+        -1.0178540991052239e-16,
+        -0.3601263398833133,
+        0.9329035423462858
+      ],
+      "near": 0.1,
+      "params": {
+        "distance": 6.539113089708726,
+        "fovDefault": 70,
+        "orbitResponsiveness": 10,
+        "pitchCushionStiffness": 40,
+        "pitchMax": 1.5207963267948965,
+        "pitchMin": 0.05,
+        "pitchSoftMin": 0.18,
+        "pivotResponsiveness": 12
+      },
+      "pitch": -0.3684033164206003,
+      "pivot": {
+        "fwd": [
+          0,
+          0,
+          -1
+        ],
+        "position": [
+          5.788209098555035e-20,
+          0.49992930026597654,
+          11.753168968661493
+        ],
+        "up": [
+          0,
+          1,
+          0
+        ]
+      },
+      "pos": [
+        7.348985069715779e-16,
+        3.099864446849858,
+        5.018063980493699
+      ],
+      "target": {
+        "distance": 6.539113089708726,
+        "fov": 70,
+        "pitch": 0.4089078289509254,
+        "roll": 0,
+        "yaw": 3.141592653589793
+      },
+      "yaw": 3.141592653589793
+    },
+    "stateMachine": {
+      "activeGraph": "Running",
+      "activeMode": "Running",
+      "pendingEvents": [],
+      "pendingLoad": null,
+      "pendingRebuild": null,
+      "rebuildGeneration": 0,
+      "state": "Running"
+    },
+    "volumeField": {
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "volumes": []
+    },
+    "events": [],
+    "timing": {
+      "stages": {},
+      "totalRebuildMs": 0,
+      "warnings": []
+    }
+  },
+  "toleranceOverrides": {}
+}
