@@ -277,6 +277,9 @@ export function registerLibraryViewerMode(reg: Registry): void {
       // Overlay visibility tracker also ticks so toggling out flips
       // the panel back to hidden.
       "overlayVisibilitySystem",
+      // Top-level panel class toggling so the world panel stays
+      // active (= canvas visible underneath the overlay).
+      "panelVisibilitySystem",
       // Binding swap + library viewer data + render.
       "bindingSwapSystem",
       LIBRARY_VIEWER_SYSTEM_ID,

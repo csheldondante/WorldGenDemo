@@ -6,6 +6,7 @@ import { registerCoreSystems } from "../../src/systems";
 import { buildAndRegisterCoreGraphs } from "../../src/app/graphs";
 import { registerInfrastructureSystems } from "../../src/runtime/infrastructureSystems";
 import { createTransitionActivatorSystem } from "../../src/app/transitionActivator";
+import { createPanelVisibilitySystem } from "../../src/runtime/panelVisibility";
 import { registerBipedDefaultBinding } from "../../src/app/bipedBinding";
 import {
   BIPED_STANDARD,
@@ -65,7 +66,12 @@ describe("Character bindings catalog", () => {
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
-    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
+    registerInfrastructureSystems(reg, {
+      extraSystems: [
+        createTransitionActivatorSystem(),
+        createPanelVisibilitySystem({ bindings: [] }),
+      ],
+    });
     buildAndRegisterCoreGraphs(reg);
     const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
 
@@ -87,7 +93,12 @@ describe("Character bindings catalog", () => {
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
-    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
+    registerInfrastructureSystems(reg, {
+      extraSystems: [
+        createTransitionActivatorSystem(),
+        createPanelVisibilitySystem({ bindings: [] }),
+      ],
+    });
     buildAndRegisterCoreGraphs(reg);
     const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
     const materialized = materializeBindings(bipedDefault);
@@ -104,7 +115,12 @@ describe("Character bindings catalog", () => {
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
-    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
+    registerInfrastructureSystems(reg, {
+      extraSystems: [
+        createTransitionActivatorSystem(),
+        createPanelVisibilitySystem({ bindings: [] }),
+      ],
+    });
     buildAndRegisterCoreGraphs(reg);
     const { binding: bipedDefault } = registerBipedDefaultBinding(reg);
     const materialized = materializeBindings(bipedDefault);

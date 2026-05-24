@@ -25,6 +25,10 @@ import {
   type CharacterControllerProfileBufferData,
   type CharacterControllerProfile,
 } from "../buffers/characterControllerProfile";
+import {
+  CHARACTER_CONTROLLER_BUFFER_ID,
+  type CharacterControllerBufferData,
+} from "../buffers/characterController";
 
 export const PROFILE_EDITOR_BUFFER_ID = "profileEditor";
 export const PROFILE_EDITOR_RENDER_SYSTEM_ID = "profileEditorRenderSystem";
@@ -111,8 +115,10 @@ function renderEditor(activeId: string, p: CharacterControllerProfile | undefine
     return `${EDITOR_CSS}<div class="pe"><h2>Profile Editor</h2><small>(no profile "${activeId}" loaded)</small></div>`;
   }
   return `${EDITOR_CSS}<div class="pe">
-<h2>Profile Editor — <span class="pe-active">${activeId}</span></h2>
-<small>Edits write back to CharacterControllerProfileBuffer.byId immediately. Live characters pick up changes next tick.</small>
+<h2>Profile Editor — <span class="pe-active">${activeId}</span>
+  <button data-pe-action="clone" style="float:right;background:#2c4a78;color:#fff;border:1px solid #444;padding:2px 10px;font:inherit;border-radius:3px;cursor:pointer">＋ clone</button>
+</h2>
+<small>Edits write back to CharacterControllerProfileBuffer.byId immediately. Live characters pick up changes next tick. "Clone" duplicates the active profile under a new id and switches the editor + live character to the new id (= safe to experiment without overwriting the original).</small>
 <h3>Forward accel</h3>
 <div class="pe-section">
   ${row("forward.vMax", "forwardVMax", p.forwardAccel.vMax, 0.5, 30, 0.1, "Sustainable forward speed (m/s)")}
@@ -179,6 +185,70 @@ export function applyProfileEdit(
   });
 }
 
+/**
+ * Clone the active profile under a new id. Per user 2026-05-23:
+ * "adding a new profile (cloning one) would just copy a new entry
+ * into the data buffer which editors would then directly edit".
+ *
+ * Steps:
+ *   1. Read the active profile from CharacterControllerProfileBuffer.
+ *   2. Write a copy with a new id (= base id + "-clone-N" suffix,
+ *      where N is the next free integer).
+ *   3. Point ProfileEditorBuffer.activeProfileId at the new id.
+ *   4. Repoint every CharacterController entity that referenced the
+ *      old id to the new id (= live characters feel subsequent edits).
+ *
+ * The original profile remains in the buffer — you can re-select it
+ * from the editor's profile-id picker (future) or by writing the id
+ * back into activeProfileId.
+ *
+ * Returns the new profile id (= for UI feedback / further automation).
+ */
+export function cloneActiveProfile(reg: Registry): string | null {
+  const ed = reg.getBuffer<ProfileEditorBufferData>(PROFILE_EDITOR_BUFFER_ID);
+  const sourceId = readBuffer(ed).activeProfileId;
+  const profiles = reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID);
+  const source = readBuffer(profiles).byId.get(sourceId);
+  if (!source) return null;
+  // Find the next free clone id: sourceId-clone-1, -2, ...
+  const baseId = sourceId.replace(/-clone-\d+$/, "");
+  let n = 1;
+  let newId = `${baseId}-clone-${n}`;
+  while (readBuffer(profiles).byId.has(newId)) {
+    n += 1;
+    newId = `${baseId}-clone-${n}`;
+  }
+  // Deep enough copy: the curve sub-objects are mutated independently
+  // by applyProfileEdit, so they need their own references.
+  const cloneProfile: CharacterControllerProfile = {
+    ...source,
+    id: newId,
+    forwardAccel: { ...source.forwardAccel },
+    backwardAccel: { ...source.backwardAccel },
+    lateralAccel: { ...source.lateralAccel },
+    upAccel: { ...source.upAccel },
+    downAccel: { ...source.downAccel },
+    jump: { ...source.jump },
+    climb: { ...source.climb },
+  };
+  writeBuffer(profiles, (d) => { d.byId.set(newId, cloneProfile); });
+  writeBuffer(ed, (d) => { d.activeProfileId = newId; });
+  // Repoint live characters from sourceId → newId so they feel
+  // subsequent edits. Characters that used a different profile id
+  // are untouched.
+  if (reg.hasBuffer(CHARACTER_CONTROLLER_BUFFER_ID)) {
+    const cc = reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID);
+    writeBuffer(cc, (d) => {
+      for (const [id, ctrl] of d.byEntity) {
+        if (ctrl.profileId === sourceId) {
+          d.byEntity.set(id, { ...ctrl, profileId: newId });
+        }
+      }
+    });
+  }
+  return newId;
+}
+
 /** Register the ProfileEditor mode. The systems list includes the SM
  *  + overlay visibility + the editor's render system. There is no
  *  separate "data" system — the render system reads from canonical
@@ -191,6 +261,7 @@ export function registerProfileEditorMode(reg: Registry): void {
     systems: [
       "stateMachineSystem",
       "overlayVisibilitySystem",
+      "panelVisibilitySystem",
       PROFILE_EDITOR_RENDER_SYSTEM_ID,
     ],
     ownedBuffers: [PROFILE_EDITOR_BUFFER_ID],

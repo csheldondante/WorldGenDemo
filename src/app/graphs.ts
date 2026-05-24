@@ -43,7 +43,8 @@ const RUNNING_NON_CHARACTER_PRE_SYSTEMS = [
   STATE_MACHINE_SYSTEM_ID,
   INPUT_RECORDING_SYSTEM_ID,  // wraps input; precedes mapping (= part of normalization layer)
   "bindingSwapSystem",        // drains BindingRequested events → applies binding
-  "overlayVisibilitySystem",  // toggles LibraryViewer panel based on activeMode
+  "overlayVisibilitySystem",  // toggles LibraryViewer / ProfileEditor panel display based on activeMode
+  "panelVisibilitySystem",    // toggles .world/.builder panel `.active` class based on activeMode
 ];
 const RUNNING_NON_CHARACTER_POST_SYSTEMS = [
   DEBUG_GIZMO_SYSTEM_ID,
@@ -72,6 +73,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
       "transitionActivatorSystem",
+      "panelVisibilitySystem",
       INPUT_SYSTEM_ID,
       LOAD_SCENE_SYSTEM_ID,
       RENDER_SYSTEM_ID,
@@ -103,6 +105,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
       "transitionActivatorSystem",
+      "panelVisibilitySystem",
       PARSE_BITMAP_SYSTEM_ID,
       SPLIT_LAYERS_SYSTEM_ID,
       JFA_SYSTEM_ID,
@@ -124,6 +127,7 @@ export function buildAndRegisterCoreGraphs(reg: Registry): {
     id: BUILDER_GRAPH_ID,
     nodes: [
       STATE_MACHINE_SYSTEM_ID,
+      "panelVisibilitySystem",
       BUILDER_INPUT_SYSTEM_ID,
       BUILDER_SYSTEM_ID,
       HUD_SYSTEM_ID,

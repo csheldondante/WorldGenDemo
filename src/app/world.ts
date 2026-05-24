@@ -16,7 +16,7 @@ import {
 import { attachBuilderListeners } from "../systems/builderInput";
 import { type InputRecordingState } from "../systems/testing/inputRecording";
 import { createInputSourceSelectorSystem } from "../systems/inputSourceSelector";
-import { applyProfileEdit, type EditableField } from "./profileEditor";
+import { applyProfileEdit, cloneActiveProfile, type EditableField } from "./profileEditor";
 import type { Registry } from "../runtime/registry";
 import type { RuntimeMode } from "../runtime/stateMachine";
 import { createSceneBundle } from "../render/scene";
@@ -92,6 +92,16 @@ export function startWorld(opts: WorldOptions): WorldHandle {
   }
   profileEditorPanel.addEventListener("input", onProfileInput);
   profileEditorPanel.addEventListener("change", onProfileInput);
+  // Clone-button click: copies the active profile into the buffer
+  // under a new id + repoints the editor + live characters at it.
+  profileEditorPanel.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    if (t.dataset.peAction === "clone") {
+      const newId = cloneActiveProfile(reg);
+      // eslint-disable-next-line no-console
+      if (newId) console.log(`[profileEditor] cloned active profile → ${newId}`);
+    }
+  });
 
   // 2. Configurable runtime bootstrap (same factory the scenario harness uses
   //    in --play mode). Wires registry + core buffers/systems/graphs + Three.js
@@ -111,6 +121,10 @@ export function startWorld(opts: WorldOptions): WorldHandle {
     sceneName,
     libraryViewerTarget: libraryViewerPanel,
     profileEditorTarget: profileEditorPanel,
+    panels: {
+      world: opts.panelEl,
+      builder: opts.builderPanelEl ?? null,
+    },
   });
   const reg = app.registry;
   const { inputAccumulator, builderAccumulator, builderDom } = app.coreSystems;
@@ -154,13 +168,7 @@ export function startWorld(opts: WorldOptions): WorldHandle {
   attachModeSwitcher({
     registry: reg,
     emit: app.emit,
-    libraryViewerPanel,
     characterBindings: app.characterBindings,
-    panels: {
-      Running: opts.panelEl,
-      DebugGym: opts.panelEl,
-      ...(opts.builderPanelEl ? { Builder: opts.builderPanelEl } : {}),
-    },
   });
 
   // 5. Start the runtime loop.
@@ -375,12 +383,7 @@ export function startScenarioWorld(opts: WorldOptions, scenarioName: string): Wo
 interface ModeSwitcherOptions {
   registry: Registry;
   emit: (event: RuntimeEvent) => void;
-  libraryViewerPanel: HTMLElement;
   characterBindings: ControllerBinding[];
-  /** mode id → DOM panel to .activate when that mode is selected. Modes
-   *  not in this map don't trigger a panel swap (= overlay-style, or
-   *  scene-loads-into-Running which is the default Running panel). */
-  panels: Record<string, HTMLElement>;
 }
 
 function attachModeSwitcher(opts: ModeSwitcherOptions): void {
@@ -484,14 +487,9 @@ function attachModeSwitcher(opts: ModeSwitcherOptions): void {
     const isBuilder = modeId === "Builder";
     const isRunning = modeId === "Running";
 
-    // Flip DOM panels (= which top-level pane is visible). Modes not in
-    // the panels map don't trigger a swap.
-    const targetPanel: HTMLElement | undefined = isBuilder
-      ? opts.panels["Builder"]
-      : opts.panels["Running"];
-    if (targetPanel) {
-      for (const p of Object.values(opts.panels)) p.classList.toggle("active", p === targetPanel);
-    }
+    // (DOM panel `.active` class toggling moved to
+    // PanelVisibilitySystem — it observes activeMode and toggles
+    // classes after the SM transitions. No imperative DOM work here.)
 
     // Route the event by mode kind.
     if (isScene) {

@@ -19,11 +19,17 @@ import {
   createProfileEditorRenderSystem,
   registerProfileEditorMode,
   applyProfileEdit,
+  cloneActiveProfile,
   PROFILE_EDITOR_BUFFER_ID,
   PROFILE_EDITOR_RENDER_SYSTEM_ID,
   PROFILE_EDITOR_MODE_ID,
   type ProfileEditorBufferData,
 } from "../../src/app/profileEditor";
+import {
+  createCharacterControllerBuffer,
+  CHARACTER_CONTROLLER_BUFFER_ID,
+  type CharacterControllerBufferData,
+} from "../../src/buffers/characterController";
 import {
   createCharacterControllerProfileBuffer,
   DEFAULT_PLAYER_PROFILE,
@@ -127,6 +133,70 @@ describe("ProfileEditor mode", () => {
   it("render system no-ops when target is null", () => {
     const { tick } = setup(null);
     expect(() => tick()).not.toThrow();
+  });
+
+  it("cloneActiveProfile copies the active profile under a new id + repoints the editor", () => {
+    const { reg } = setup();
+    const newId = cloneActiveProfile(reg);
+    expect(newId).toBe(`${DEFAULT_PLAYER_PROFILE.id}-clone-1`);
+    const profiles = readBuffer(reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
+    // Original preserved.
+    expect(profiles.byId.has(DEFAULT_PLAYER_PROFILE.id)).toBe(true);
+    // Clone present + has same values.
+    expect(profiles.byId.has(newId!)).toBe(true);
+    expect(profiles.byId.get(newId!)!.forwardAccel.vMax).toBe(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax);
+    // Editor's activeProfileId points at the clone.
+    expect(readBuffer(reg.getBuffer<ProfileEditorBufferData>(PROFILE_EDITOR_BUFFER_ID)).activeProfileId).toBe(newId);
+  });
+
+  it("cloneActiveProfile picks the next free numeric suffix", () => {
+    const { reg } = setup();
+    cloneActiveProfile(reg);
+    cloneActiveProfile(reg);
+    const third = cloneActiveProfile(reg);
+    // After the first clone, activeProfileId == "player-clone-1"; the
+    // second clone strips the suffix from the base + picks "-clone-2";
+    // the third strips again + picks "-clone-3".
+    expect(third).toBe(`${DEFAULT_PLAYER_PROFILE.id}-clone-3`);
+  });
+
+  it("editing the clone does NOT affect the original", () => {
+    const { reg } = setup();
+    cloneActiveProfile(reg);
+    applyProfileEdit(reg, "forwardVMax", 99);
+    const profiles = readBuffer(reg.getBuffer<CharacterControllerProfileBufferData>(CHARACTER_CONTROLLER_PROFILE_BUFFER_ID));
+    expect(profiles.byId.get(DEFAULT_PLAYER_PROFILE.id)!.forwardAccel.vMax).toBe(DEFAULT_PLAYER_PROFILE.forwardAccel.vMax);
+    expect(profiles.byId.get(`${DEFAULT_PLAYER_PROFILE.id}-clone-1`)!.forwardAccel.vMax).toBe(99);
+  });
+
+  it("cloneActiveProfile repoints CharacterController entities referencing the old profile id", () => {
+    const { reg } = setup();
+    // Add a synthetic CharacterControllerBuffer with an entity using
+    // the default profile id; verify clone repoints it.
+    reg.registerBuffer(createCharacterControllerBuffer());
+    writeBuffer(reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID), (d) => {
+      d.byEntity.set(1, {
+        locomotionMode: "surfaceConstrained",
+        state: "surfaceRun",
+        profileId: DEFAULT_PLAYER_PROFILE.id,
+        lastTransitionReason: "spawn",
+        transitions: [],
+        timeInState: 0,
+        yawVel: 0,
+        targetYaw: 0,
+        bodyUpCurrent: [0, 0, 0, 1],
+        bodyUpWorld: [0, 1, 0],
+        orientation: { current: [0, 0, 0, 1], target: [0, 0, 0, 1] },
+        desiredFacingTangent: [0, 0, -1],
+        jumpHolding: false,
+        jumpDir: [0, 0, 0],
+        jumpImpulseMagMax: 0,
+        jumpImpulseApplied: 0,
+      });
+    });
+    const newId = cloneActiveProfile(reg);
+    const cc = readBuffer(reg.getBuffer<CharacterControllerBufferData>(CHARACTER_CONTROLLER_BUFFER_ID));
+    expect(cc.byEntity.get(1)!.profileId).toBe(newId);
   });
 
   it("registerProfileEditorMode registers the mode with the expected systems list + tag", () => {

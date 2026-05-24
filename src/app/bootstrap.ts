@@ -29,6 +29,10 @@ import { SCENE_CATALOG } from "./sceneCatalog";
 import { registerTransitions } from "./transitions";
 import { createTransitionActivatorSystem } from "./transitionActivator";
 import {
+  createPanelVisibilitySystem,
+  type PanelClassTarget,
+} from "../runtime/panelVisibility";
+import {
   createProfileEditorBuffer,
   createProfileEditorRenderSystem,
   registerProfileEditorMode,
@@ -61,6 +65,10 @@ export interface BootstrapOptions {
   libraryViewerTarget?: LibraryViewerRenderTarget | null;
   /** DOM panel for the ProfileEditor mode. Null = no-op. */
   profileEditorTarget?: ProfileEditorRenderTarget | null;
+  /** Top-level DOM panels keyed by their conceptual role (= "world"
+   *  vs "builder"). PanelVisibilitySystem toggles `.active` based on
+   *  activeMode: Builder mode → builder panel active; else world. */
+  panels?: { world?: PanelClassTarget | null; builder?: PanelClassTarget | null };
   /** Three.js + DOM handles. Omit for headless (no rendering). */
   rendering?: RenderingHandles;
   /** Scene to load on bootstrap. Emits a `LoadRequested` event for this name.
@@ -129,7 +137,24 @@ export function bootstrapApp(options: BootstrapOptions = {}): AppHandle {
     // Phase 3b — transition activator. Lives in src/app/ (knows the
     // SM-state → app-transition mapping). Loading + Rebuilding graphs
     // reference this system by id.
-    extraSystems: [createTransitionActivatorSystem()],
+    // PanelVisibilitySystem — toggles top-level .world/.builder DOM
+    // panel `.active` class from activeMode (= replaces imperative
+    // toggling from the mode-dropdown handler).
+    extraSystems: [
+      createTransitionActivatorSystem(),
+      createPanelVisibilitySystem({
+        bindings: [
+          {
+            panel: options.panels?.world ?? null,
+            isActiveFor: (m) => m !== "Builder",
+          },
+          {
+            panel: options.panels?.builder ?? null,
+            isActiveFor: (m) => m === "Builder",
+          },
+        ],
+      }),
+    ],
     // App-specific overlay bindings beyond the LibraryViewer panel.
     extraOverlays: options.profileEditorTarget
       ? [{

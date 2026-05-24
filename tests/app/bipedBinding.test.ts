@@ -5,6 +5,7 @@ import { registerCoreSystems } from "../../src/systems";
 import { buildAndRegisterCoreGraphs, RUNNING_GRAPH_ID } from "../../src/app/graphs";
 import { registerInfrastructureSystems } from "../../src/runtime/infrastructureSystems";
 import { createTransitionActivatorSystem } from "../../src/app/transitionActivator";
+import { createPanelVisibilitySystem } from "../../src/runtime/panelVisibility";
 import {
   registerBipedDefaultBinding,
   bipedDefaultSystemIds,
@@ -42,7 +43,12 @@ describe("Biped default binding", () => {
     const reg = createRegistry();
     registerCoreBuffers(reg);
     registerCoreSystems(reg);
-    registerInfrastructureSystems(reg, { extraSystems: [createTransitionActivatorSystem()] });
+    registerInfrastructureSystems(reg, {
+      extraSystems: [
+        createTransitionActivatorSystem(),
+        createPanelVisibilitySystem({ bindings: [] }),
+      ],
+    });
     buildAndRegisterCoreGraphs(reg);
     const result = registerBipedDefaultBinding(reg);
     return { reg, ...result };
@@ -110,6 +116,7 @@ describe("Biped default binding", () => {
       "inputRecordingSystem",
       "minimapSystem",
       "overlayVisibilitySystem",
+      "panelVisibilitySystem",
       "renderSystem",
       "stateMachineSystem",
     ]);
